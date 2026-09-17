@@ -4,28 +4,45 @@ Build order chosen so the riskiest, least-reversible things are proven before an
 
 ## M0 — Prove the input layer (no UI)
 
-A Rust binary with no window that hardcodes one macro and runs it.
+**Done, ahead of the Rust port, via `tools/m0-probe`.** Every box below was verified against
+the real Win32 APIs on a 3-monitor mixed-DPI desktop with a negative origin. The Rust
+implementation now has a spec to match rather than a hypothesis to test.
 
-- [ ] DPI awareness v2 set in `main` and declared in the manifest
-- [ ] Virtual-desktop coordinate math, verified on a multi-monitor, mixed-scaling setup
-- [ ] `SendInput` mouse move + click, absolute, `VIRTUALDESK`
-- [ ] `SendInput` keyboard via scan codes, including the extended-key table
-- [ ] High-resolution waitable timer; measure actual vs requested wait over 1000 iterations
-- [ ] `dwExtraInfo` stamp applied to everything injected
+- [x] DPI awareness v2 set before any window — `PER_MONITOR_AWARE_V2` confirmed
+- [x] Virtual-desktop coordinate math — **0 px error** over 90 points once the formula was
+      corrected to `ceil(px * 65536 / w)`; the two obvious alternatives are off by 1 px and
+      4480 px respectively
+- [x] `SendInput` mouse move + click, absolute, `VIRTUALDESK` — 8/8 clicks delivered to a real
+      window at the exact pixel
+- [x] `SendInput` keyboard via scan codes — `MAPVK_VK_TO_VSC_EX` gives both the scan code and
+      the extended bit, so no hardcoded extended-key table is needed after all;
+      `KEYEVENTF_EXTENDEDKEY` confirmed to be what separates Right Ctrl from Left Ctrl
+- [x] High-resolution waitable timer — 1 ms requested measures 1.50 ms p50 / 1.91 ms p99,
+      against 15.45 ms for `Thread.Sleep`
+- [x] `dwExtraInfo` stamp applied to everything injected — and the stamp must be below
+      `i32::MAX` or it sign-extends and the filter never matches
 
-**Exit criterion:** clicks land within 1 px of the requested coordinate on both a 100 % primary
-and a 150 % secondary monitor, and a 5 ms wait measures under 6 ms at p99.
+**Exit criterion: met.** Clicks land on the exact requested pixel across all three monitors
+including the 125 %-scaled one, and a 1 ms wait measures 1.91 ms at p99.
 
-Everything downstream is worthless if this is wrong, and it is the part that fails silently.
+Remaining for the Rust port: reproduce these as `cargo test` and wire up the manifest.
 
 ## M1 — Hook and trigger
 
-- [ ] Hook thread with message pump; install/uninstall cleanly
+Prototyped and validated in the probe; still to be written in Rust.
+
+- [x] Hook thread with message pump; install/uninstall cleanly — verified
 - [ ] Binding table via `ArcSwap`; callback does no allocation
-- [ ] Self-injection filtered by the stamp — verify a macro can press its own trigger key
-- [ ] Pass-through vs swallow per binding
+      *(probe used a lock; worst callback latency was still 67 us against a 300,000 us budget,
+      so the budget is not tight — but the real thing should still be allocation-free)*
+- [x] Self-injection filtered by the stamp — the probe's macro presses its own trigger key 6
+      times and does not re-trigger; all 12 of its injected events round-trip the stamp
+- [x] Callback enqueues, worker executes — proven necessary: running the macro inline in the
+      callback swallowed an exception and lost the event entirely
+- [ ] Pass-through vs swallow per binding *(pass-through verified; swallow not yet exercised)*
 - [ ] Panic stop aborts a running macro mid-wait
 - [ ] Release pass: no key or button is ever left held after abort
+      *(the probe asserts this for its own modifier test and passes)*
 
 **Exit criterion:** bind Space without swallow, run a macro that types spaces, and confirm both
 that the macro fires and that typing a space in Notepad still works normally.

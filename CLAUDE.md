@@ -17,8 +17,14 @@ apps, browsers, Electron apps, emulators — not just windows this app owns.
 
 ## Status
 
-Pre-implementation. Only docs exist. Read [docs/README.md](docs/README.md) first; the
-design is already written down and should be followed rather than re-invented.
+Pre-implementation. Docs plus a validation harness. Read [docs/README.md](docs/README.md)
+first; the design is already written down and should be followed rather than re-invented.
+
+The M0 assumptions have been **measured, not assumed**, by `tools/m0-probe` (PowerShell +
+inline C#, no toolchain needed). Every rule below that carries a number came out of a real
+run on this machine — see [tools/m0-probe/README.md](tools/m0-probe/README.md). Re-run it
+before porting each piece to Rust, and delete the directory once `src-tauri/` covers the same
+ground in `cargo test`.
 
 ## Stack
 
@@ -77,6 +83,9 @@ These are the things that silently break this category of app. Full reasoning in
 
 2. **Absolute mouse moves always use `MOUSEEVENTF_VIRTUALDESK`.** Without it, coordinates
    normalize against the primary monitor only and secondary monitors are unreachable.
+   The pixel→normalized conversion is `ceil(px * 65536 / w)`, **not** the `65535 / (w - 1)`
+   the MSDN wording implies — measured, the latter is off by a pixel and plain `floor` against
+   65536 is off by thousands.
 
 3. **Keyboard synthesis uses scan codes (`KEYEVENTF_SCANCODE`), not virtual key codes.**
    DirectInput/Raw Input consumers (most games, some emulators) ignore VK-only injection.
@@ -87,7 +96,9 @@ These are the things that silently break this category of app. Full reasoning in
 
 5. **Tag our own injected input and ignore it in the hook.** Set a magic constant in
    `MOUSEINPUT.dwExtraInfo` / `KEYBDINPUT.dwExtraInfo` and skip those events, or a macro that
-   presses its own trigger key re-triggers itself forever.
+   presses its own trigger key re-triggers itself forever. The constant must be **below
+   `i32::MAX`** — a high-bit value sign-extends on x64 when written and zero-extends when read
+   back, so the filter silently never matches.
 
 6. **Never sleep naively.** Default timer granularity is ~15.6 ms, so `sleep(5ms)` overshoots
    badly. Use a high-resolution waitable timer (`CREATE_WAITABLE_TIMER_HIGH_RESOLUTION`).

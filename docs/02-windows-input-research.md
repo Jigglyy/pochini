@@ -31,6 +31,11 @@ every other monitor unreachable.
 Adding `MOUSEEVENTF_VIRTUALDESK` normalizes against the whole virtual desktop instead. Always
 set it.
 
+The obvious reading of the MSDN wording is that 65535 spans `w - 1`. **Measurement says
+otherwise.** Windows converts a normalized value back to a pixel with `floor(n * w / 65536)`,
+so the correct forward conversion is the smallest `n` that floors to the pixel you want —
+a *ceiling* against 65536:
+
 ```rust
 // Virtual-desktop pixel -> normalized SendInput coordinate.
 // SM_XVIRTUALSCREEN / SM_YVIRTUALSCREEN can be negative
@@ -40,14 +45,30 @@ fn to_normalized(x: i32, y: i32) -> (i32, i32) {
     let vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
     let vw = GetSystemMetrics(SM_CXVIRTUALSCREEN) as i64;
     let vh = GetSystemMetrics(SM_CYVIRTUALSCREEN) as i64;
-    let nx = ((x - vx) as i64 * 65535 + (vw - 1) / 2) / (vw - 1);
-    let ny = ((y - vy) as i64 * 65535 + (vh - 1) / 2) / (vh - 1);
+    // Windows inverts with floor(n * w / 65536); pick the smallest n that lands
+    // on our pixel, i.e. ceil(px * 65536 / w).
+    let nx = ((((x - vx) as i64 * 65536) + vw - 1) / vw).min(65535);
+    let ny = ((((y - vy) as i64 * 65536) + vh - 1) / vh).min(65535);
     (nx as i32, ny as i32)
 }
 ```
 
-The rounding term matters: naive truncation loses up to a pixel on large virtual desktops, and
-off-by-one at a button edge is a miss.
+Measured on a 3-monitor mixed-DPI virtual desktop with a negative origin
+(`origin (-1920, 0)`, `6400 x 1440`, scales 100 / 125 / 100 %), 90 target points, comparing the
+requested pixel against `GetCursorPos` after a real `SendInput`:
+
+| forward formula | max error | mean error |
+|---|---|---|
+| `round(px * 65535 / (w - 1))` — the MSDN reading | 1 px | 0.03 px |
+| `floor(px * 65536 / w)` | **4480 px** | 102 px |
+| `ceil(px * 65536 / w)` — **correct** | **0 px** | 0.00 px |
+
+The floor variant is not merely imprecise: asking for `(-1920, 156)`, the top-left of the
+leftmost monitor, put the cursor at `(2560, 159)` — on a different monitor entirely. The
+`65535 / (w - 1)` variant is nearly right, which is worse in a way, because it will pass
+casual testing and then miss a button edge by one pixel in the field.
+
+Reproduce with `tools/m0-probe/probe.ps1 cursor -Yes`, which runs all three.
 
 Always emit `MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK` as its own
 event *before* the button event, rather than assuming a button event carries a position. Some
@@ -88,11 +109,23 @@ Three details that bite:
 
 - **Extended keys.** Arrows, Insert/Delete/Home/End/PageUp/PageDown, right Ctrl, right Alt,
   Numpad Enter, and the Windows keys need `KEYEVENTF_EXTENDEDKEY` alongside the scan code.
-  A hardcoded table of these is required; getting it wrong makes Right Alt behave as Left Alt.
+  Getting it wrong makes Right Ctrl behave as Left Ctrl — verified: the *same* scan code
+  `0x1D` registers as `VK_RCONTROL` with the flag and `VK_LCONTROL` without it.
 - **Layout independence.** `MapVirtualKeyW(vk, MAPVK_VK_TO_VSC_EX)` converts a VK to a scan
-  code using the *current* layout. Store scan codes in the macro file so a macro does not
-  change meaning when the user switches between QWERTY and AZERTY; keep the VK alongside it
-  for display purposes only.
+  code using the *current* layout, and returns the `0xE0` prefix in the high byte for extended
+  keys. That means **no hardcoded extended-key table is needed** — derive both the scan code
+  and the extended bit from one call:
+
+  ```rust
+  let sc = MapVirtualKeyW(vk, MAPVK_VK_TO_VSC_EX);
+  let extended = (sc >> 8) & 0xFF == 0xE0;
+  let scan = (sc & 0xFF) as u16;
+  ```
+
+  Confirmed for Right Ctrl. Spot-check the rest of the extended set when porting; `VK_PAUSE`
+  and `VK_NUMLOCK` are documented oddities. Store scan codes in the macro file so a macro does
+  not change meaning when the user switches between QWERTY and AZERTY; keep the VK alongside
+  it for display purposes only.
 - **Unicode text.** For a "type text" step, `KEYEVENTF_UNICODE` with `wScan` set to the UTF-16
   code unit handles arbitrary characters without layout games. Surrogate pairs go as two
   consecutive events. Note that `KEYEVENTF_UNICODE` is the one case where a game may not see
@@ -155,9 +188,18 @@ Cost and constraints:
   binding table and push a message onto a channel. Macro execution happens on a separate
   worker thread. Never allocate, log to disk, or take a mutex the UI thread can hold.
 - **It must ignore our own input.** Every event we inject is stamped with a magic value in
-  `dwExtraInfo` (e.g. `0xC0DE_C11C`), and the hook drops any event carrying it. Checking
-  `LLKHF_INJECTED` alone is too broad — that would also ignore input from other legitimate
-  tools. Without the stamp, a macro that presses its own bound key re-triggers itself forever.
+  `dwExtraInfo`, and the hook drops any event carrying it. Checking `LLKHF_INJECTED` alone is
+  too broad — that would also ignore input from other legitimate tools. Without the stamp, a
+  macro that presses its own bound key re-triggers itself forever.
+
+  **The stamp must fit in a positive 32-bit value.** `KEYBDINPUT.dwExtraInfo` is written as a
+  pointer-sized signed value but read back out of `KBDLLHOOKSTRUCT.dwExtraInfo` as an unsigned
+  one. A stamp with the high bit set — `0xC0DEC11C`, say — sign-extends to
+  `0xFFFFFFFF_C0DEC11C` on x64 on the way in and is compared against `0x00000000_C0DEC11C` on
+  the way out, so the filter silently never matches and the self-trigger guard is dead code
+  that looks fine. This was a real bug in the probe; it is now `0x434C4943`. Verified by
+  `probe.ps1 hook -Yes -SelfPress -Simulate 6`, where the macro presses its own trigger key and
+  must not re-trigger.
 - **UIPI applies here too.** A non-elevated hook does not observe keystrokes going to an
   elevated foreground window, so a hotkey will appear dead while such a window has focus.
 - **Anti-virus friction.** A global keyboard hook is the defining behaviour of a keylogger.
@@ -203,6 +245,15 @@ Options, best first:
    without changing global system state. It also gives cancellation for free:
    `WaitForMultipleObjects` on `[timer, cancel_event]` means the panic stop interrupts a long
    wait instantly. **This is the design.**
+
+   Measured, 200 samples per row:
+
+   | requested | waitable timer p50 | p99 | `Thread.Sleep` p50 |
+   |---|---|---|---|
+   | 1 ms | 1.50 ms | 1.91 ms | 15.45 ms |
+   | 5 ms | 5.17 ms | 5.74 ms | 15.46 ms |
+   | 50 ms | 50.30 ms | 50.62 ms | 62.17 ms |
+
 2. `timeBeginPeriod(1)` (winmm) — raises timer resolution process-wide and, on builds before
    Windows 10 2004, system-wide, increasing power draw. Fallback only, and pair every call
    with `timeEndPeriod`.
@@ -279,3 +330,7 @@ feature for users who own such hardware — it is not on the roadmap.
 - [Low-level keyboard hook in C# — Microsoft archive](https://learn.microsoft.com/en-us/archive/blogs/toub/low-level-keyboard-hook-in-c)
 - [Tauri v2 Global Shortcut plugin](https://v2.tauri.app/plugin/global-shortcut/)
 - [tauri-plugin-user-input (enigo-backed input simulation)](https://lib.rs/crates/tauri-plugin-user-input)
+
+The coordinate, timer, extended-key and stamp numbers above are not quoted from any of these —
+they were measured on the dev machine with `tools/m0-probe`. See
+[tools/m0-probe/README.md](../tools/m0-probe/README.md).
