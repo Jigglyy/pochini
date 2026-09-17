@@ -56,9 +56,9 @@ origin** — the layout that breaks naive implementations:
 
 ```
 virtual desktop: origin (-1920, 0)  size 6400 x 1440
-\.\DISPLAY1             rect [-1920,156 1920x1080]   96 dpi  100% scale
-\.\DISPLAY2 (primary)   rect [0,0 2560x1440]        120 dpi  125% scale
-\.\DISPLAY3             rect [2560,159 1920x1080]    96 dpi  100% scale
+\\.\DISPLAY1             rect [-1920,156 1920x1080]   96 dpi  100% scale
+\\.\DISPLAY2 (primary)   rect [0,0 2560x1440]        120 dpi  125% scale
+\\.\DISPLAY3             rect [2560,159 1920x1080]    96 dpi  100% scale
 ```
 
 **All seven tests pass.** What they established:
