@@ -206,6 +206,42 @@ export function MacroEditor({
           </Field>
         )}
 
+        <div className="flex flex-col gap-2">
+          <ToggleRow
+            label="Hotkey on"
+            hint="When off, this macro ignores its hotkey. Run and Test still work."
+            checked={m.enabled}
+            onChange={(enabled) => edit({ enabled })}
+          />
+          {t && (
+            <ToggleRow
+              label="Block the key from other apps"
+              hint="The app or game you are in never sees the key press. Off by default, so the key keeps working normally too."
+              checked={t.swallow}
+              onChange={(swallow) => edit({ trigger: { ...t, swallow } })}
+            />
+          )}
+          {risky && (
+            <Notice>
+              {t?.key.label} is a key you type all the time. With blocking on, it stops working in every
+              other app while macros are on.
+            </Notice>
+          )}
+          <ToggleRow
+            label="App only"
+            hint="The hotkey only works while the mouse is over the chosen app. Anywhere else the key behaves normally and is never blocked."
+            checked={m.guard !== null}
+            onChange={(on) => edit({ guard: on ? (m.guard ?? { process: "", label: "" }) : null })}
+          >
+            <AppPicker value={m.guard?.process ? m.guard : null} onChange={(guard) => edit({ guard })} />
+            {m.guard && !m.guard.process && (
+              <p className="mt-2 text-xs text-warning">Choose an app, or this hotkey will never fire.</p>
+            )}
+          </ToggleRow>
+        </div>
+      </Section>
+
+      <Section title="When it runs">
         <Field label="Repeat">
           <Select
             value={m.repeat.kind}
@@ -244,26 +280,6 @@ export function MacroEditor({
 
         <div className="flex flex-col gap-2">
           <ToggleRow
-            label="Hotkey on"
-            hint="When off, this macro ignores its hotkey. Run and Test still work."
-            checked={m.enabled}
-            onChange={(enabled) => edit({ enabled })}
-          />
-          {t && (
-            <ToggleRow
-              label="Block the key from other apps"
-              hint="The app or game you are in never sees the key press. Off by default, so the key keeps working normally too."
-              checked={t.swallow}
-              onChange={(swallow) => edit({ trigger: { ...t, swallow } })}
-            />
-          )}
-          {risky && (
-            <Notice>
-              {t?.key.label} is a key you type all the time. With blocking on, it stops working in every
-              other app while macros are on.
-            </Notice>
-          )}
-          <ToggleRow
             label="Queue presses"
             hint={
               t && t.mode !== "once"
@@ -275,16 +291,11 @@ export function MacroEditor({
             onChange={(queue) => edit({ queue })}
           />
           <ToggleRow
-            label="App only"
-            hint="The hotkey only works while the mouse is over the chosen app. Anywhere else the key behaves normally and is never blocked."
-            checked={m.guard !== null}
-            onChange={(on) => edit({ guard: on ? (m.guard ?? { process: "", label: "" }) : null })}
-          >
-            <AppPicker value={m.guard?.process ? m.guard : null} onChange={(guard) => edit({ guard })} />
-            {m.guard && !m.guard.process && (
-              <p className="mt-2 text-xs text-warning">Choose an app, or this hotkey will never fire.</p>
-            )}
-          </ToggleRow>
+            label="Move mouse back to where it started"
+            hint="When the macro finishes, the cursor jumps back to where it was when you pressed the hotkey (or when the Run countdown ended). Also after releasing a hold-to-repeat key or pressing a toggle hotkey again; not after Panic or Stop, which leave the mouse alone."
+            checked={m.return_to_start}
+            onChange={(return_to_start) => edit({ return_to_start })}
+          />
         </div>
       </Section>
 

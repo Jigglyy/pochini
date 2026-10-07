@@ -13,7 +13,8 @@ ordered list of steps (click at X,Y / click where the mouse is / press a key / w
 with optional randomness), you bind it to a hotkey, and pressing the hotkey anywhere runs it
 against whatever is on screen. A master switch (and a global toggle hotkey) turns every
 hotkey on or off; each macro also has its own switch, can **queue** repeated presses, and can
-be restricted to **one app** (the hotkey only fires while the mouse is over that app).
+be restricted to **one app** (the hotkey only fires while the mouse is over that app), and
+can **move the mouse back** to where it started when the run ends.
 
 Because input is synthesized at the OS level, macros work against **any** target (native
 apps, browsers, Electron apps, emulators, games without kernel anti-cheat), not just windows
@@ -22,7 +23,7 @@ this app owns.
 ## Status
 
 Implemented and building. `src-tauri/` has the full Rust core (model, storage, input,
-hotkey, engine, IPC) with **101 passing unit tests**; `src/` is a ShadCN + Tailwind v4 UI
+hotkey, engine, IPC) with **110 passing unit tests**; `src/` is a ShadCN + Tailwind v4 UI
 styled after Kanbini (macro list, step editor, settings). `npm run tauri dev` opens the app.
 
 The M0/M1 Win32 assumptions were measured before being ported; see
@@ -31,9 +32,8 @@ original design docs; the numbered rules below are the corrected versions and ea
 regression test. Read [docs/README.md](docs/README.md) before changing behaviour.
 
 Not yet done: tray icon, drag-to-reorder, ts-rs type generation, code signing, installer.
-Open issue: the toggle hotkey was reported doing nothing; 0.2.1 adds RegisterHotKey, a hook
-watchdog and a Hotkey check panel, root cause still unconfirmed
-([docs/06-open-questions.md](docs/06-open-questions.md)).
+The toggle hotkey once did nothing; fixed in 0.2.1 by RegisterHotKey plus a hook watchdog
+([docs/06-open-questions.md](docs/06-open-questions.md) #9).
 See [docs/05-roadmap.md](docs/05-roadmap.md).
 
 ## Stack
@@ -246,7 +246,7 @@ Mostly carried over from Kanbini, whose renderer this UI copies the look of:
 
 ## Testing
 
-`cargo test` is the gate: 101 tests, no Windows APIs required for most of them.
+`cargo test` is the gate: 110 tests, no Windows APIs required for most of them.
 
 - `input/coords.rs` walks **every pixel** of six virtual-desktop layouts (including negative
   origins and odd sizes) through the round trip, and has an explicit regression test that

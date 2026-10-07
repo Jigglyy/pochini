@@ -11,9 +11,16 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 /// Shared cancellation for one macro run.
+///
+/// Two kinds: `cancel` is a hard stop (Panic, the Stop button, switching
+/// macros off: "stop driving my mouse"); `stop` is a normal end requested by
+/// the hotkey itself (releasing a hold-to-repeat key, the second press of a
+/// toggle). The engine treats a `stop` like finishing, for example it still
+/// moves the mouse back to where the macro started.
 #[derive(Clone)]
 pub struct CancelToken {
     flag: Arc<AtomicBool>,
+    soft: Arc<AtomicBool>,
     #[cfg(windows)]
     event: Arc<OwnedEvent>,
 }
@@ -22,15 +29,33 @@ impl CancelToken {
     pub fn new() -> Self {
         Self {
             flag: Arc::new(AtomicBool::new(false)),
+            soft: Arc::new(AtomicBool::new(false)),
             #[cfg(windows)]
             event: Arc::new(OwnedEvent::new()),
         }
     }
 
+    /// Hard stop. Wins over an earlier `stop`.
     pub fn cancel(&self) {
+        self.soft.store(false, Ordering::SeqCst);
         self.flag.store(true, Ordering::SeqCst);
         #[cfg(windows)]
         self.event.set();
+    }
+
+    /// Normal end requested by the hotkey (see the type docs).
+    pub fn stop(&self) {
+        if !self.flag.load(Ordering::SeqCst) {
+            self.soft.store(true, Ordering::SeqCst);
+        }
+        self.flag.store(true, Ordering::SeqCst);
+        #[cfg(windows)]
+        self.event.set();
+    }
+
+    /// Ended by `stop` rather than `cancel`.
+    pub fn is_soft_stop(&self) -> bool {
+        self.flag.load(Ordering::SeqCst) && self.soft.load(Ordering::SeqCst)
     }
 
     pub fn is_cancelled(&self) -> bool {
@@ -206,6 +231,19 @@ mod tests {
         let t = Instant::now();
         assert!(!wait(5_000, &c));
         assert!(t.elapsed() < Duration::from_millis(50));
+    }
+
+    #[test]
+    fn a_hard_cancel_wins_over_a_soft_stop() {
+        let c = CancelToken::new();
+        c.stop();
+        assert!(c.is_cancelled() && c.is_soft_stop());
+        c.cancel();
+        assert!(c.is_cancelled() && !c.is_soft_stop());
+        let d = CancelToken::new();
+        d.cancel();
+        d.stop();
+        assert!(!d.is_soft_stop(), "a stop after a cancel stays hard");
     }
 
     #[test]

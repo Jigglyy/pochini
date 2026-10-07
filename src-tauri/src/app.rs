@@ -131,6 +131,18 @@ impl AppState {
         }
     }
 
+    /// End `macro_id`'s run the way its own hotkey does (a hold-to-repeat key
+    /// released, a toggle pressed again): a normal end, not an abort, so
+    /// "move mouse back" still happens.
+    pub fn stop_if(&self, macro_id: &str) {
+        let mut g = self.running.lock().unwrap();
+        if g.as_ref().is_some_and(|h| h.macro_id == macro_id) {
+            if let Some(h) = g.take() {
+                h.cancel.stop();
+            }
+        }
+    }
+
     pub fn running_id(&self) -> Option<String> {
         self.running.lock().unwrap().as_ref().map(|h| h.macro_id.clone())
     }
@@ -233,15 +245,8 @@ pub fn spawn_worker(state: Arc<AppState>, rx: Receiver<TriggerEvent>) -> std::th
 fn handle(state: &Arc<AppState>, ev: TriggerEvent) {
     match ev {
         TriggerEvent::Panic => state.abort(),
-        TriggerEvent::Stop { macro_id } => {
-            // Only the running instance: a hold-repeat run is never queued.
-            let mut g = state.running.lock().unwrap();
-            if g.as_ref().is_some_and(|h| h.macro_id == macro_id) {
-                if let Some(h) = g.take() {
-                    h.cancel.cancel();
-                }
-            }
-        }
+        // Only the running instance: a hold-repeat run is never queued.
+        TriggerEvent::Stop { macro_id } => state.stop_if(&macro_id),
         TriggerEvent::ToggleEnabled => {
             let now = !state.settings.lock().unwrap().enabled;
             let _ = state.set_enabled(now);
@@ -257,7 +262,7 @@ fn handle(state: &Arc<AppState>, ev: TriggerEvent) {
                 && delay_ms == 0
                 && state.running_id().as_deref() == Some(macro_id.as_str())
             {
-                state.abort_if(&macro_id);
+                state.stop_if(&macro_id);
                 return;
             }
             // HoldRepeat loops until the key comes up (a Stop event).
@@ -682,6 +687,39 @@ mod tests {
             handle(&st, TriggerEvent::Seen(Seen { vk: 0x1B, mods: 0, result: SeenResult::Panic, via: Via::Hook }));
         }
         assert_eq!(st.recent_keys().len(), RECENT_KEYS);
+    }
+
+    fn hold_repeat_returning(id: &str) -> Macro {
+        let mut m = long_wait(id);
+        m.return_to_start = true;
+        m.trigger = Some(Trigger {
+            key: KeyRef { vk: 0x41, scancode: 0x1E, extended: false, label: "A".into() },
+            modifiers: vec![],
+            mode: TriggerMode::HoldRepeat,
+            swallow: false,
+        });
+        m
+    }
+
+    #[test]
+    fn releasing_a_hold_repeat_key_returns_the_mouse_to_the_press_point() {
+        let (st, input, _) = state_with(vec![hold_repeat_returning("h")]);
+        handle(&st, TriggerEvent::Start { macro_id: "h".into(), delay_ms: 0, at: Some((90, 45)) });
+        assert!(wait_until(|| st.running_id().is_some(), 500));
+        handle(&st, TriggerEvent::Stop { macro_id: "h".into() });
+        assert!(wait_until(|| st.running_id().is_none(), 500));
+        assert!(wait_until(|| input.events() == vec![Event::Move(90, 45)], 500), "{:?}", input.events());
+    }
+
+    #[test]
+    fn panic_never_moves_the_mouse_back() {
+        let (st, input, _) = state_with(vec![hold_repeat_returning("h")]);
+        handle(&st, TriggerEvent::Start { macro_id: "h".into(), delay_ms: 0, at: Some((90, 45)) });
+        assert!(wait_until(|| st.running_id().is_some(), 500));
+        handle(&st, TriggerEvent::Panic);
+        assert!(wait_until(|| st.running_id().is_none(), 500));
+        std::thread::sleep(Duration::from_millis(80));
+        assert!(input.events().is_empty(), "{:?}", input.events());
     }
 
     #[test]

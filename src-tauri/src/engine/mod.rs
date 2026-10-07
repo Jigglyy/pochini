@@ -121,7 +121,21 @@ impl Engine {
         let mut held = HeldState::default();
         let result = self.run_inner(m, cancel, &mut held);
         // The release pass runs on success, on error and on cancellation.
+        // It comes before the return move, or a held button would drag.
         self.release_all(&mut held);
+
+        // "Move mouse back to starting position": on a normal finish or a
+        // hotkey stop, never after a hard cancel ("stop moving my mouse") or
+        // an input error.
+        let ended_normally = match &result {
+            Ok(()) => true,
+            Err(EngineError::Cancelled) => cancel.is_soft_stop(),
+            Err(EngineError::Input(_)) => false,
+        };
+        if m.return_to_start && ended_normally {
+            let (x, y) = self.activation;
+            let _ = self.input.move_to(x, y);
+        }
         result
     }
 
@@ -502,6 +516,102 @@ mod tests {
         }]);
         e.run_at(&m, &CancelToken::new(), Some((640, 480))).unwrap();
         assert_eq!(f.events(), vec![Event::Move(640, 480)]);
+    }
+
+    fn to(x: i32, y: i32) -> Step {
+        Step::Move {
+            id: "to".into(),
+            x,
+            y,
+            anchor: Anchor::Fixed,
+            coord_jitter_px: 0,
+            move_duration_ms: 0,
+            capture: None,
+        }
+    }
+
+    #[test]
+    fn return_to_start_moves_the_cursor_back_after_the_run() {
+        let f = Arc::new(FakeInput::with_cursor(300, 400));
+        let mut e = Engine::new(f.clone(), Some(1));
+        let mut m = mac(vec![to(10, 10)]);
+        m.return_to_start = true;
+        e.run(&m, &CancelToken::new()).unwrap();
+        assert_eq!(f.events(), vec![Event::Move(10, 10), Event::Move(300, 400)]);
+    }
+
+    #[test]
+    fn without_return_to_start_the_cursor_stays_put() {
+        let f = Arc::new(FakeInput::with_cursor(300, 400));
+        let mut e = Engine::new(f.clone(), Some(1));
+        e.run(&mac(vec![to(10, 10)]), &CancelToken::new()).unwrap();
+        assert_eq!(f.events(), vec![Event::Move(10, 10)]);
+    }
+
+    #[test]
+    fn return_to_start_happens_once_after_all_repeats_and_uses_the_press_point() {
+        let f = Arc::new(FakeInput::with_cursor(1, 1));
+        let mut e = Engine::new(f.clone(), Some(1));
+        let mut m = mac(vec![to(10, 10)]);
+        m.repeat = Repeat::Count { n: 3 };
+        m.return_to_start = true;
+        e.run_at(&m, &CancelToken::new(), Some((640, 480))).unwrap();
+        assert_eq!(
+            f.events(),
+            vec![Event::Move(10, 10), Event::Move(10, 10), Event::Move(10, 10), Event::Move(640, 480)]
+        );
+    }
+
+    #[test]
+    fn a_held_button_is_released_before_the_cursor_returns() {
+        let f = Arc::new(FakeInput::with_cursor(5, 5));
+        let mut e = Engine::new(f.clone(), Some(1));
+        let mut m = mac(vec![Step::Click {
+            id: "hold".into(),
+            x: 50,
+            y: 50,
+            button: MouseButton::Left,
+            action: ClickAction::Down,
+            anchor: Anchor::Fixed,
+            coord_jitter_px: 0,
+            hold_ms: Jitter::exact(0),
+            settle_ms: Jitter::exact(0),
+            move_duration_ms: 0,
+            capture: None,
+        }]);
+        m.return_to_start = true;
+        e.run(&m, &CancelToken::new()).unwrap();
+        let ev = f.events();
+        assert_eq!(&ev[ev.len() - 2..], &[Event::Button(MouseButton::Left, false), Event::Move(5, 5)]);
+    }
+
+    fn stopped_after_40ms(soft: bool) -> Vec<Event> {
+        let f = Arc::new(FakeInput::with_cursor(7, 8));
+        let mut e = Engine::new(f.clone(), Some(1));
+        let mut m = mac(vec![Step::Wait { id: "w".into(), ms: Jitter::exact(30_000) }]);
+        m.return_to_start = true;
+        let cancel = CancelToken::new();
+        let c2 = cancel.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(40));
+            if soft {
+                c2.stop()
+            } else {
+                c2.cancel()
+            }
+        });
+        assert!(matches!(e.run(&m, &cancel), Err(EngineError::Cancelled)));
+        f.events()
+    }
+
+    #[test]
+    fn a_hotkey_stop_still_returns_to_start() {
+        assert_eq!(stopped_after_40ms(true), vec![Event::Move(7, 8)]);
+    }
+
+    #[test]
+    fn a_panic_or_stop_button_does_not_move_the_mouse_back() {
+        assert!(stopped_after_40ms(false).is_empty());
     }
 
     #[test]

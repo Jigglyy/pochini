@@ -97,6 +97,8 @@ export type Macro = {
   repeat: Repeat;
   /** Presses while running are queued instead of ignored. */
   queue: boolean;
+  /** When the run ends, move the cursor back to where the macro started. */
+  return_to_start: boolean;
   steps: Step[];
   guard: Guard | null;
   created_at: string;

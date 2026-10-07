@@ -69,26 +69,11 @@ the working title `coordsclickermacro`.
 binding. The user's screenshot tool owns the bare F12 to F14 keys, which Ctrl+Shift+F12 does not
 trigger; the user preferred to keep the default. It can be rebound in Settings.
 
-## 9. Toggle hotkey ignored (mitigated in 0.2.1, root cause unconfirmed)
+## 9. Toggle hotkey ignored (resolved in 0.2.1)
 
-**History.** In injected-key tests the toggle worked every time with another window focused.
-With Pochini focused, results were mixed: twice the hook logged nothing at all (not even the
-Ctrl press), once it did see an injected F12. The user then reported that a real Ctrl+Shift+F12
-"doesn't do anything".
-
-**Candidate causes**, none confirmed:
-
-- Windows silently and permanently removed the hook after one slow callback (it does this
-  without notice; heavy CPU load during release builds is a plausible trigger).
-- Another program's low-level hook, installed after ours, swallowed the key first. Hooks run
-  newest first.
-- The app was not running (closing the window quits it; there is no tray icon yet).
-- Physical keyboard specifics (an Fn layer on F12).
-
-**Mitigations in 0.2.1:** the toggle is also registered with `RegisterHotKey`, so Windows
-delivers it regardless of focus or hook state; the hook is reinstalled every 30 s (revives a
-removed hook and keeps ours first in the chain); and Settings > Hotkey check shows hook
-health, whether Windows accepted the combo, and what each press of a bound key did.
-
-**Next step:** ask the user to press Ctrl+Shift+F12 with Settings > Hotkey check open, and read
-what it reports.
+**Resolved.** The user reported a real Ctrl+Shift+F12 doing nothing; after 0.2.1 it works. In
+the built exe Windows accepted the combo, so no other program owned it, which points at the
+low-level hook having missed the key (Windows removes a slow hook silently and permanently, and
+other programs' hooks run before older ones). 0.2.1 registers the toggle with `RegisterHotKey`,
+reinstalls the hook every 30 s, and adds Settings > Hotkey check. Which of the first two fixed
+it is unknown; both stay.

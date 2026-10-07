@@ -69,15 +69,18 @@ STEPS                                              Takes 480 ms to 705 ms
 - **Trigger** section:
   - Hotkey: press Record, then the key combo. Escape cancels rather than binding Escape.
   - Mode: run once per press / repeat while held / press to start, press again to stop.
-  - Repeat: once / a set number of times / until stopped.
   - "Hotkey on" mirrors the row switch on the home screen.
-  - **Queue presses**: presses while this macro runs are queued instead of ignored. Disabled
-    (with a note) unless the mode is "Run once per press".
   - **App only**: when on, a picker lists apps that have a window open (executable and window
     title, with Refresh); the hotkey then only fires while the mouse is over that app. A saved
     app that is not running stays selectable, marked "not running".
   - "Block the key from other apps" is off by default. Turning it on for a bare key you type
     all the time (Space, letters, digits, Enter...) shows an amber warning.
+- **When it runs** section:
+  - Repeat: once / a set number of times / until stopped.
+  - **Queue presses**: presses while this macro runs are queued instead of ignored. Disabled
+    (with a note) unless the mode is "Run once per press".
+  - **Move mouse back to where it started**: after the run, the cursor returns to the press
+    point. Not after Panic or Stop.
 - **Steps**: each step is a card with a number, a type icon and a plain-English summary;
   reorder (arrows or Alt+Up/Down), duplicate, delete, expand. A newly added step opens
   expanded.

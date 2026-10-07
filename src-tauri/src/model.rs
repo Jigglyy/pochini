@@ -323,6 +323,10 @@ pub struct Macro {
     /// run instead of ignoring the press. Only meaningful for `TriggerMode::Once`.
     #[serde(default)]
     pub queue: bool,
+    /// When the run ends, move the cursor back to where the macro started
+    /// (the activation point). Not after Panic / Stop / switching off.
+    #[serde(default)]
+    pub return_to_start: bool,
     #[serde(default)]
     pub steps: Vec<Step>,
     #[serde(default)]
@@ -347,6 +351,7 @@ impl Macro {
             trigger: None,
             repeat: Repeat::Once,
             queue: false,
+            return_to_start: false,
             steps: Vec::new(),
             guard: None,
             created_at: now.clone(),
@@ -551,6 +556,7 @@ mod tests {
     fn queue_defaults_off_and_guard_roundtrips() {
         let m: Macro = serde_json::from_str(r#"{"id":"a","name":"n","trigger":null}"#).unwrap();
         assert!(!m.queue);
+        assert!(!m.return_to_start);
         assert!(m.guard.is_none());
 
         let mut m = Macro::new("x");

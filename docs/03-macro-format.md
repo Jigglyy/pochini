@@ -27,6 +27,7 @@ version.
   "trigger": { /* Trigger */ },
   "repeat": { "kind": "once" },  // or {"kind":"count","n":10} | {"kind":"forever"}
   "queue": false,                // true: presses while running are queued, not ignored
+  "return_to_start": false,      // true: move the cursor back to where the run started
   "steps": [ /* Step */ ],
   "guard": null,                 // optional Guard, see below
   "created_at": "2026-09-17T12:00:00Z",
@@ -181,6 +182,16 @@ turned back on, or stopped, from inside a fullscreen game. A file written before
 cleared it and stays cleared.
 
 Theme (system / light / dark) is a renderer-only preference kept in localStorage, not here.
+
+## Return to start
+
+`"return_to_start": true` moves the cursor back to the activation point (where the mouse was at
+the press, or when the Run countdown ended) once the run is over: after the last repeat, not
+after every pass. The release pass runs first, so a held button is let go before the cursor
+moves. It also happens when the hotkey itself ends the run (releasing a hold-to-repeat key, the
+second press of a toggle), which `CancelToken::stop` marks as a normal end. It does not happen
+after Panic, the Stop button, or switching macros off (`CancelToken::cancel`): those mean "stop
+moving my mouse". A queued run returns to the point from its own press.
 
 ## Guard ("App only")
 
