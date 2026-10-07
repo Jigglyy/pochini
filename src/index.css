@@ -1,0 +1,138 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* Theme tokens: ShadCN's names, Kanbini's values. Dark is the default and
+   doubles as the :root fallback; the light theme overrides under
+   :root[data-theme='light']. data-theme is set before first paint by the
+   inline script in index.html and at runtime by lib/theme.ts.
+
+   Rule of thumb (from Kanbini): anything that varies by theme must come
+   from one of these tokens. A hardcoded oklch/hex or a fixed Tailwind shade
+   such as text-yellow-200 only works on the theme it was picked for. */
+:root {
+  --radius: 0.5rem;
+
+  --background: oklch(0.16 0 0);
+  --foreground: oklch(0.97 0 0);
+  --card: oklch(0.27 0 0);
+  --card-foreground: oklch(0.97 0 0);
+  --popover: oklch(0.21 0 0);
+  --popover-foreground: oklch(0.97 0 0);
+  --primary: oklch(0.62 0.19 264);
+  --primary-foreground: oklch(0.98 0 0);
+  --secondary: oklch(0.27 0 0);
+  --secondary-foreground: oklch(0.98 0 0);
+  --muted: oklch(0.23 0 0);
+  --muted-foreground: oklch(0.72 0 0);
+  --accent: oklch(0.27 0 0);
+  --accent-foreground: oklch(0.98 0 0);
+  --destructive: oklch(0.7 0.18 25);
+  --border: oklch(0.36 0 0);
+  --input: oklch(0.37 0 0);
+  --ring: oklch(0.62 0.19 264);
+
+  /* Status accents. Darkened in the light theme so text keeps contrast. */
+  --warning: oklch(0.8 0.14 78);
+  --success: oklch(0.74 0.16 152);
+}
+
+:root[data-theme='light'] {
+  --background: oklch(0.96 0 0);
+  --foreground: oklch(0.21 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.21 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.21 0 0);
+  --primary: oklch(0.55 0.2 264);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.91 0 0);
+  --secondary-foreground: oklch(0.21 0 0);
+  --muted: oklch(0.93 0 0);
+  --muted-foreground: oklch(0.49 0 0);
+  --accent: oklch(0.91 0 0);
+  --accent-foreground: oklch(0.21 0 0);
+  --destructive: oklch(0.53 0.19 27);
+  --border: oklch(0.88 0 0);
+  --input: oklch(0.88 0 0);
+  --ring: oklch(0.55 0.2 264);
+  --warning: oklch(0.52 0.13 70);
+  --success: oklch(0.5 0.14 152);
+}
+
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-warning: var(--warning);
+  --color-success: var(--success);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-background text-foreground;
+    margin: 0;
+  }
+  /* Sensible default cursors app-wide (browsers default buttons to the arrow). */
+  button:not(:disabled),
+  summary,
+  [role='button'],
+  [role='switch'] {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+}
+
+/* Scrollbars: a translucent pill built from the foreground token, so it
+   reads on either theme. Transparent border + padding-box clip insets it. */
+* {
+  scrollbar-color: color-mix(in oklab, var(--foreground) 45%, transparent) transparent;
+}
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: color-mix(in oklab, var(--foreground) 40%, transparent);
+  border: 3px solid transparent;
+  border-radius: 9999px;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in oklab, var(--foreground) 60%, transparent);
+}

@@ -1,0 +1,77 @@
+import { useEffect, useRef, useState } from "react";
+import { Square } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { isRunning, RUN_COUNTDOWN_MS, stopMacro } from "@/lib/ipc";
+
+export type PendingRun = { label: string; at: number; token: number };
+
+/** Bottom pill: the countdown after Run/Test, then "Running", with Stop.
+ *  Also shows runs started by a hotkey. The user must always be able to tell
+ *  that something is driving their mouse, and stop it. */
+export function RunIndicator({ pending, onDone }: { pending: PendingRun | null; onDone: () => void }) {
+  const [running, setRunning] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const seenRunning = useRef(false);
+
+  useEffect(() => {
+    seenRunning.current = false;
+  }, [pending?.token]);
+
+  useEffect(() => {
+    const t = window.setInterval(async () => {
+      setNow(Date.now());
+      try {
+        const r = await isRunning();
+        setRunning(r);
+        if (r) {
+          seenRunning.current = true;
+        } else if (pending && (seenRunning.current || Date.now() - pending.at > RUN_COUNTDOWN_MS + 2000)) {
+          onDone();
+        }
+      } catch {
+        /* backend busy for a tick; try again */
+      }
+    }, 200);
+    return () => window.clearInterval(t);
+  }, [pending, onDone]);
+
+  if (!running && !pending) return null;
+
+  const left = pending ? RUN_COUNTDOWN_MS - (now - pending.at) : 0;
+  const counting = pending !== null && left > 0;
+
+  return (
+    <div
+      role="status"
+      className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-full border border-border bg-popover py-1.5 pl-4 pr-1.5 text-sm text-popover-foreground shadow-2xl"
+    >
+      <span className="relative flex size-2.5">
+        <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-60" />
+        <span className="relative inline-flex size-2.5 rounded-full bg-primary" />
+      </span>
+      {counting ? (
+        <span>
+          <span className="font-medium tabular-nums">Starting in {Math.ceil(left / 1000)}</span>
+          <span className="text-muted-foreground">: switch to your target and place the mouse</span>
+        </span>
+      ) : (
+        <span>
+          <span className="text-muted-foreground">Running </span>
+          <span className="font-medium">{pending?.label ?? "a macro"}</span>
+        </span>
+      )}
+      <Button
+        size="sm"
+        variant="outline"
+        className="rounded-full"
+        onClick={() => {
+          void stopMacro();
+          onDone();
+        }}
+      >
+        <Square className="fill-current" />
+        {counting ? "Cancel" : "Stop"}
+      </Button>
+    </div>
+  );
+}
