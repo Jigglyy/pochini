@@ -1,0 +1,78 @@
+#!/usr/bin/env node
+// Build a versioned Pochini executable.
+//
+//   npm run release -- patch      0.1.0 -> 0.1.1
+//   npm run release -- minor      0.1.0 -> 0.2.0
+//   npm run release -- major      0.1.0 -> 1.0.0
+//   npm run release -- 0.3.0      set an exact version
+//   npm run release -- current    rebuild the current version without bumping
+//
+// The version lives in package.json (and package-lock.json); tauri.conf.json
+// reads it from there, and Cargo.toml is kept in step here. The result is
+// release/Pochini-<version>.exe, and any older Pochini-*.exe in release/ is
+// deleted: there is only ever one current build.
+
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { execSync } from "node:child_process";
+import path from "node:path";
+
+const root = path.resolve(import.meta.dirname, "..");
+const arg = process.argv[2] ?? "patch";
+
+const pkg = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
+const current = pkg.version;
+
+function bump(v, kind) {
+  const [maj, min, pat] = v.split(".").map(Number);
+  if (kind === "major") return `${maj + 1}.0.0`;
+  if (kind === "minor") return `${maj}.${min + 1}.0`;
+  return `${maj}.${min}.${pat + 1}`;
+}
+
+let next;
+if (arg === "current") next = current;
+else if (/^\d+\.\d+\.\d+$/.test(arg)) next = arg;
+else if (["patch", "minor", "major"].includes(arg)) next = bump(current, arg);
+else {
+  console.error(`Unknown version argument "${arg}". Use patch, minor, major, current, or X.Y.Z.`);
+  process.exit(1);
+}
+
+const run = (cmd) => execSync(cmd, { cwd: root, stdio: "inherit" });
+
+console.log(`\nPochini ${current} -> ${next}\n`);
+
+// 1. Versions: package.json + package-lock.json, then Cargo.toml.
+if (next !== current) run(`npm version ${next} --no-git-tag-version`);
+const cargoPath = path.join(root, "src-tauri", "Cargo.toml");
+const cargo = readFileSync(cargoPath, "utf8");
+const bumped = cargo.replace(/(\[package\][^[]*?\nversion\s*=\s*")[^"]+(")/, `$1${next}$2`);
+if (!bumped.includes(`version = "${next}"`)) {
+  console.error("Could not set the version in src-tauri/Cargo.toml");
+  process.exit(1);
+}
+writeFileSync(cargoPath, bumped);
+
+// 2. Build the release executable (no installer bundle).
+run("npm run tauri build -- --no-bundle");
+
+// 3. Keep exactly one build in release/.
+const targetDir = path.join(root, "src-tauri", "target", "release");
+const built = ["Pochini.exe", "pochini.exe"].map((f) => path.join(targetDir, f)).find(existsSync);
+if (!built) {
+  console.error(`Build finished but no Pochini executable was found in ${targetDir}`);
+  process.exit(1);
+}
+const outDir = path.join(root, "release");
+mkdirSync(outDir, { recursive: true });
+for (const f of readdirSync(outDir)) {
+  if (/^Pochini-.*\.exe$/i.test(f)) {
+    rmSync(path.join(outDir, f));
+    console.log(`deleted old build ${f}`);
+  }
+}
+const out = path.join(outDir, `Pochini-${next}.exe`);
+copyFileSync(built, out);
+
+console.log(`\nPochini ${next} built: ${out}`);
+console.log("Remember: add a CHANGELOG.md entry for this version.\n");

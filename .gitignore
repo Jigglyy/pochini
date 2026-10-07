@@ -22,3 +22,9 @@ desktop.ini
 # Local app data / user macros captured during dev
 *.macros.json
 /sandbox/
+
+# Tauri generated schemas
+src-tauri/gen/schemas
+
+# Built executables (npm run release)
+/release/
