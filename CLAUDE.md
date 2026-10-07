@@ -302,9 +302,9 @@ Mostly carried over from Kanbini, whose renderer this UI copies the look of:
   debug builds only, a release exe ignores it) uses `FakeInput`, installs no keyboard hook
   and no toggle hotkey, skips the single-instance check, and runs headless. Specs check
   persistence by reading the data folder's `macros.json`. Lessons learned:
-  - Headless means **off-screen, not hidden**: a hidden WebView2 draws no frames, and Chromium
-    delivers pointer moves and `requestAnimationFrame` on frames, so drags and the run
-    countdown silently do nothing.
+  - Headless means **never shown** (`visible(false)`), as in Kanbini. An off-screen position
+    is not enough: Windows put those windows on the user's main monitor. The user wants no
+    window to appear while tests run; keep it that way.
   - Raw `page.mouse` moves do not scroll: `drag()` scrolls the source into view first, and
     grabs it a third of the way across (the star and buttons never start a drag).
   - dnd-kit swallows clicks for 50 ms after a drop; Radix leaves `pointer-events: none` on the

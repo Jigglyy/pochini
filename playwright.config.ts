@@ -4,7 +4,7 @@ import { defineConfig } from "@playwright/test";
 // (a debug build, `npm run e2e` builds it first) against a throwaway data
 // folder and drives its WebView2 over the DevTools protocol. Test mode
 // (src-tauri/src/e2e.rs) swaps in a fake mouse and keyboard, installs no
-// keyboard hook, and runs headless (the window sits off-screen), so a run
+// keyboard hook, and runs headless (the window is never shown), so a run
 // never clicks on the desktop, reacts to your typing, or touches a Pochini
 // you have open.
 //

@@ -8,9 +8,9 @@
 //! - injects into `FakeInput` instead of the real mouse and keyboard,
 //! - installs no keyboard hook and registers no toggle hotkey,
 //! - skips the single-instance check (a running Pochini stays untouched),
-//! - runs headless like Kanbini's tests, as far as you can see: the window
-//!   sits far off-screen, never takes focus and stays out of the taskbar
-//!   (`POCHINI_E2E_HEADED=1` shows it on screen, for watching a test),
+//! - runs headless like Kanbini's tests: the window is never shown, never
+//!   focused and never in the taskbar (`POCHINI_E2E_HEADED=1` shows it, for
+//!   watching a test),
 //! - gives WebView2 its own profile and a DevTools port
 //!   (`POCHINI_E2E_CDP_PORT`) that Playwright connects to.
 
@@ -45,8 +45,8 @@ impl E2e {
         b: tauri::WebviewWindowBuilder<'a, R, M>,
     ) -> tauri::WebviewWindowBuilder<'a, R, M> {
         // Setting browser args replaces Tauri's defaults, so they are repeated
-        // here. The occlusion and backgrounding switches keep an off-screen
-        // window rendering at full speed.
+        // here. The occlusion and backgrounding switches keep a hidden window
+        // rendering at full speed.
         let args = format!(
             "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion \
              --disable-renderer-backgrounding --disable-background-timer-throttling \
@@ -59,11 +59,10 @@ impl E2e {
         if self.headed {
             b
         } else {
-            // Not `visible(false)`: a hidden WebView2 draws no frames, and
-            // Chromium delivers pointer moves and requestAnimationFrame on
-            // frames, so drags and the run countdown would never happen.
-            // Off-screen it keeps drawing, and nobody sees it.
-            b.position(-20000.0, -20000.0).focused(false).skip_taskbar(true)
+            // Never shown. (An off-screen position is not enough: Windows put
+            // those windows on the main monitor.) WebView2 keeps rendering the
+            // page; the switches above stop it throttling a hidden one.
+            b.visible(false).focused(false).skip_taskbar(true)
         }
     }
 }
