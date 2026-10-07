@@ -1,3 +1,4 @@
+import type { ComponentType, ReactNode } from "react";
 import {
   ArrowUpDown,
   ChevronDown,
@@ -62,6 +63,40 @@ export function Swatch({ color, selected, className }: { color: StepColor; selec
   );
 }
 
+/** The palette as menu items: pass the menu's own Item (ContextMenuItem,
+ *  DropdownMenuItem) so keyboard navigation and close-on-pick work. */
+export function SwatchGrid({
+  value,
+  onPick,
+  Item,
+}: {
+  value: StepColor;
+  onPick: (c: StepColor) => void;
+  Item: ComponentType<{
+    onSelect: () => void;
+    className?: string;
+    title?: string;
+    "aria-label"?: string;
+    children: ReactNode;
+  }>;
+}) {
+  return (
+    <div className="grid grid-cols-5 justify-items-center gap-1 p-1.5">
+      {COLOR_CHOICES.map((c) => (
+        <Item
+          key={c}
+          onSelect={() => onPick(c)}
+          aria-label={colorName(c)}
+          title={colorName(c)}
+          className="size-7 justify-center rounded-full p-0 focus:bg-accent"
+        >
+          <Swatch color={c} selected={value === c} />
+        </Item>
+      ))}
+    </div>
+  );
+}
+
 /** The step-type icon in its coloured chip, as on the step cards. */
 export function KindChip({ kind, color }: { kind: ColorKind; color: StepColor }) {
   const Icon = KIND_ICONS[kind];
@@ -100,19 +135,7 @@ export function StepColorSettings() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
-              <div className="grid grid-cols-5 justify-items-center gap-1 p-1.5">
-                {COLOR_CHOICES.map((c) => (
-                  <DropdownMenuItem
-                    key={c}
-                    onSelect={() => setStepColor(k, c)}
-                    aria-label={colorName(c)}
-                    title={colorName(c)}
-                    className="size-7 justify-center rounded-full p-0 focus:bg-accent"
-                  >
-                    <Swatch color={c} selected={colors[k] === c} />
-                  </DropdownMenuItem>
-                ))}
-              </div>
+              <SwatchGrid value={colors[k]} onPick={(c) => setStepColor(k, c)} Item={DropdownMenuItem} />
               {colors[k] !== DEFAULT_COLORS[k] && (
                 <>
                   <DropdownMenuSeparator />

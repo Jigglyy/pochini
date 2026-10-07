@@ -40,6 +40,10 @@ Panic stop [Esc] stops a running macro at once.
 - The line under the name says what the macro is: step count and duration, "Only in
   <app>" for App only, "Queues presses", and a warning "Hotkey clash". The right side is
   fixed columns (hotkey, switch, Run, menu) so they line up down the list.
+- **Colors**: right-click a row (or its menu > Color) for the same 14-accent palette as steps,
+  plus "No color". A colored row gets the accent as its left edge and a faint wash; a macro
+  that is switched off keeps the edge but not the wash. The right-click menu also has Edit,
+  favorite, Duplicate, Move up / down and Delete.
 - **Favorites**: a star before the name (shown on hover until set, then always, filled). Also
   in the row menu.
 - **Sort** (shown with two or more macros, remembered in localStorage): Custom order,

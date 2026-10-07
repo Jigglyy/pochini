@@ -22,6 +22,7 @@ test.use({
     macros: [
       macro("Fill form", {
         favorite: true,
+        color: "orange",
         trigger: { key: space, modifiers: [], mode: "once", swallow: false },
         guard: { process: "game.exe", label: "Game" },
         queue: true,
@@ -36,6 +37,7 @@ test.use({
         ],
       }),
       macro("Refresh and check", {
+        color: "sky",
         trigger: { key: { vk: 0x52, scancode: 0x13, extended: false, label: "R" }, modifiers: ["ctrl"], mode: "toggle", swallow: true },
         repeat: { kind: "forever" },
         steps: [clickAt(840, 412), wait(1200), clickAt(1320, 700), wait(600)],
@@ -68,6 +70,11 @@ for (const theme of ["dark", "light"] as const) {
     await page.getByRole("button", { name: "Macros", exact: true }).click();
     await expect(page.getByText("Fill form")).toBeVisible();
     await shot(page, `${theme}-1-home`);
+
+    await page.locator("li[data-macro-id]").nth(1).click({ button: "right" });
+    await expect(page.getByRole("menu")).toBeVisible();
+    await shot(page, `${theme}-1b-row-menu`);
+    await page.keyboard.press("Escape");
 
     await page.getByRole("button", { name: /^Fill form/ }).click();
     await shot(page, `${theme}-2-editor`);

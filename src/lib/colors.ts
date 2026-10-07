@@ -67,6 +67,10 @@ export function colorKind(s: Step): ColorKind {
   return s.type === "click" && s.anchor !== "fixed" ? "click_here" : s.type;
 }
 
+/** A stored color (a macro's, say), as one of ours: unknown or missing is "none". */
+export const asColor = (c: string | null | undefined): StepColor =>
+  c && COLOR_CHOICES.includes(c as StepColor) ? (c as StepColor) : "none";
+
 export function accentValue(c: StepColor): string | null {
   return ACCENTS.find((a) => a.name === c)?.value ?? null;
 }
@@ -78,6 +82,8 @@ export type Tone = {
   chip: string;
   /** Icon colour, pulled toward the foreground (lighter in dark, darker in light). */
   icon: string;
+  /** A faint wash of the accent over a card (a colored macro row). */
+  wash: string;
 };
 
 export function tone(c: StepColor): Tone | null {
@@ -87,6 +93,7 @@ export function tone(c: StepColor): Tone | null {
     bar: v,
     chip: `color-mix(in oklab, ${v} 24%, var(--card))`,
     icon: `color-mix(in oklab, ${v} 80%, var(--foreground))`,
+    wash: `color-mix(in oklab, ${v} 9%, var(--card))`,
   };
 }
 

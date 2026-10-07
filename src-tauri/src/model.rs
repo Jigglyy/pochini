@@ -337,6 +337,10 @@ pub struct Macro {
     /// Starred on the macro list. Purely for sorting; never affects a run.
     #[serde(default)]
     pub favorite: bool,
+    /// The macro's color on the macro list: an accent name from the UI's
+    /// palette (src/lib/colors.ts), or none. Display only.
+    #[serde(default)]
+    pub color: Option<String>,
     pub trigger: Option<Trigger>,
     #[serde(default)]
     pub repeat: Repeat,
@@ -362,6 +366,14 @@ fn default_true() -> bool {
     true
 }
 
+/// A color as the UI sends it: trimmed, empty or "none" means no color, and
+/// anything unreasonably long is refused rather than stored.
+pub fn normalize_color(color: Option<String>) -> Option<String> {
+    let c = color?.trim().to_ascii_lowercase();
+    (!c.is_empty() && c != "none" && c.len() <= 32 && c.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-'))
+        .then_some(c)
+}
+
 impl Macro {
     pub fn new(name: impl Into<String>) -> Self {
         let now = crate::storage::now_iso8601();
@@ -370,6 +382,7 @@ impl Macro {
             name: name.into(),
             enabled: true,
             favorite: false,
+            color: None,
             trigger: None,
             repeat: Repeat::Once,
             queue: false,
@@ -627,6 +640,25 @@ mod tests {
         assert!(matches!(old, Step::Click { anchor: Anchor::Activation, dx: 0, dy: 0, .. }));
     }
 
+    #[test]
+    fn colors_are_normalized_before_they_are_stored() {
+        assert_eq!(normalize_color(Some("Red".into())), Some("red".into()));
+        assert_eq!(normalize_color(Some("  sky ".into())), Some("sky".into()));
+        assert_eq!(normalize_color(Some("none".into())), None);
+        assert_eq!(normalize_color(Some("".into())), None);
+        assert_eq!(normalize_color(None), None);
+        assert_eq!(normalize_color(Some("x".repeat(33))), None);
+        assert_eq!(normalize_color(Some("red; drop".into())), None);
+    }
+
+    #[test]
+    fn a_macro_color_roundtrips() {
+        let mut m = Macro::new("c");
+        m.color = Some("teal".into());
+        let back: Macro = serde_json::from_str(&serde_json::to_string(&m).unwrap()).unwrap();
+        assert_eq!(back.color.as_deref(), Some("teal"));
+    }
+
     fn file_of(ids: &[&str]) -> MacroFile {
         let mut f = MacroFile::default();
         for id in ids {
@@ -685,6 +717,7 @@ mod tests {
         assert!(!m.queue);
         assert!(!m.return_to_start);
         assert!(!m.favorite);
+        assert!(m.color.is_none());
         assert!(m.guard.is_none());
 
         let mut m = Macro::new("x");

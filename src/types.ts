@@ -101,6 +101,8 @@ export type Macro = {
   enabled: boolean;
   /** Starred on the macro list. Only affects sorting. */
   favorite: boolean;
+  /** Accent name (lib/colors.ts) shown on the macro list, or null. */
+  color: string | null;
   trigger: Trigger | null;
   repeat: Repeat;
   /** Presses while running are queued instead of ignored. */
@@ -125,6 +127,7 @@ export type MacroSummary = {
   /** "App only" executable, if set. */
   app: string | null;
   favorite: boolean;
+  color: string | null;
   /** RFC 3339. */
   created_at: string;
   updated_at: string;

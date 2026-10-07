@@ -25,6 +25,7 @@ version.
   "name": "Harvest loop",
   "enabled": true,
   "favorite": false,             // starred on the macro list; sorting only
+  "color": null,                 // accent name for the macro list ("red", "teal"...), or null
   "trigger": { /* Trigger */ },
   "repeat": { "kind": "once" },  // or {"kind":"count","n":10} | {"kind":"forever"}
   "queue": false,                // true: presses while running are queued, not ignored
@@ -41,7 +42,9 @@ list edits). Sorting by name or date is a view in the UI and never rewrites the 
 `reorder_macros` takes the new order of all macros, or of one group of them (the favorites, or
 the rest): the listed macros swap among the places they already hold and every other macro
 keeps its place, so reordering favorites never shuffles the others (`MacroFile::reorder`).
-Starring a macro does not change `updated_at`.
+Starring or coloring a macro does not change `updated_at`. `color` is a name from the UI's
+accent palette (`src/lib/colors.ts`), normalized by `normalize_color` (lower case; empty or
+"none" means no color); an unknown name simply shows no color.
 
 `repeat` wraps the whole step list. `{"kind":"forever"}` is only reachable via the panic stop
 or a `Toggle` trigger, and the UI must say so at the point of choice.

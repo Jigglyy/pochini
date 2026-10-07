@@ -4,6 +4,16 @@ All notable changes to Pochini. Versions follow [semantic versioning](https://se
 while the major version is 0, a minor bump may change behaviour or the macro file format.
 Each version is built with `npm run release` into `release/Pochini-<version>.exe`.
 
+## 0.8.0 - 2026-10-08
+
+### Added
+
+- **Color your macros.** Right-click a macro on the list (or use its menu > Color) and pick a
+  color: the row gets a colored edge and a faint wash of it. The colors are the same as for
+  steps, plus "No color". The color is saved with the macro and does not count as an edit.
+- The right-click menu on a macro also has Edit, Add to favorites, Duplicate, Move up / down
+  and Delete.
+
 ## 0.7.1 - 2026-10-07
 
 ### Changed

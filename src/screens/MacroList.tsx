@@ -9,6 +9,7 @@ import {
   GripVertical,
   ListOrdered,
   MoreHorizontal,
+  Palette,
   Pencil,
   Play,
   Plus,
@@ -28,16 +29,29 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuLabel,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { KeyCombo, Kbd } from "@/components/layout";
+import { Swatch, SwatchGrid } from "@/components/StepColors";
+import { asColor, tone, type StepColor } from "@/lib/colors";
 import { comboLabel } from "@/components/KeyCapture";
 import { DROP_ANIMATION, useDragSensors, useSortableItem, type DragHandle } from "@/components/sortable";
 import {
@@ -47,6 +61,7 @@ import {
   listMacros,
   reorderMacros,
   runMacro,
+  setMacroColor,
   setMacroEnabled,
   setMacroFavorite,
 } from "@/lib/ipc";
@@ -122,6 +137,17 @@ export function MacroList({
     }
   };
 
+  const recolor = async (r: MacroSummary, c: StepColor) => {
+    const color = c === "none" ? null : c;
+    setRows((rs) => rs?.map((x) => (x.id === r.id ? { ...x, color } : x)) ?? rs);
+    try {
+      await setMacroColor(r.id, color);
+    } catch (e) {
+      setErr(String(e));
+      reload();
+    }
+  };
+
   /** `group`: the new order of one group (or of everything, in Custom order). */
   const reorder = async (group: MacroSummary[]) => {
     setRows((rs) => rs && applyGroupOrder(rs, group));
@@ -137,6 +163,7 @@ export function MacroList({
     onOpen,
     onToggle: toggleRow,
     onFavorite: favorite,
+    onColor: recolor,
     onRun: (r) => {
       onRun(r.name);
       runMacro(r.id).catch((e) => setErr(String(e)));
@@ -267,6 +294,7 @@ type RowActions = {
   onOpen: (id: string) => void;
   onToggle: (r: MacroSummary, enabled: boolean) => void;
   onFavorite: (r: MacroSummary, favorite: boolean) => void;
+  onColor: (r: MacroSummary, color: StepColor) => void;
   onRun: (r: MacroSummary) => void;
   onDuplicate: (r: MacroSummary) => void;
   onDelete: (r: MacroSummary) => void;
@@ -379,14 +407,17 @@ function MacroRow({
   lifted?: boolean;
 }) {
   const grip = handle !== undefined || lifted;
-  return (
+  const color = asColor(r.color);
+  const t = tone(color);
+  const row = (
     <li
       ref={itemRef}
-      style={style}
+      // A switched-off macro keeps its edge but not the wash, so "off" still reads as off.
+      style={{ ...style, borderLeftColor: t?.bar, backgroundColor: r.enabled ? t?.wash : undefined }}
       data-macro-id={lifted ? undefined : r.id}
       {...handle}
       className={cn(
-        "group flex items-center gap-3 rounded-lg border border-border bg-card py-2.5 pr-3 pl-2 transition-colors hover:border-primary/40",
+        "group flex items-center gap-3 rounded-lg border border-l-[3px] border-border bg-card py-2.5 pr-3 pl-2 transition-colors hover:border-primary/40",
         !r.enabled && "bg-card/50",
         lifted && "cursor-grabbing border-primary/40 bg-card shadow-xl",
       )}
@@ -504,6 +535,16 @@ function MacroRow({
               <Star />
               {r.favorite ? "Remove from favorites" : "Add to favorites"}
             </DropdownMenuItem>
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <Palette />
+                Color
+                <Swatch color={color} className="ml-auto size-3" />
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="w-48">
+                <SwatchGrid value={color} onPick={(c) => actions.onColor(r, c)} Item={DropdownMenuItem} />
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
             <DropdownMenuItem onSelect={() => actions.onDuplicate(r)}>
               <Copy />
               Duplicate
@@ -530,5 +571,46 @@ function MacroRow({
         </DropdownMenu>
       </div>
     </li>
+  );
+  if (lifted) return row;
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>{row}</ContextMenuTrigger>
+      <ContextMenuContent className="w-56">
+        <ContextMenuLabel className="text-xs font-medium text-muted-foreground">Color</ContextMenuLabel>
+        <SwatchGrid value={color} onPick={(c) => actions.onColor(r, c)} Item={ContextMenuItem} />
+        <ContextMenuSeparator />
+        <ContextMenuItem onSelect={() => actions.onOpen(r.id)}>
+          <Pencil />
+          Edit
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={() => actions.onFavorite(r, !r.favorite)}>
+          <Star />
+          {r.favorite ? "Remove from favorites" : "Add to favorites"}
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={() => actions.onDuplicate(r)}>
+          <Copy />
+          Duplicate
+        </ContextMenuItem>
+        {(onMoveUp || onMoveDown) && (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuItem disabled={!onMoveUp} onSelect={onMoveUp}>
+              <ArrowUp />
+              Move up
+            </ContextMenuItem>
+            <ContextMenuItem disabled={!onMoveDown} onSelect={onMoveDown}>
+              <ArrowDown />
+              Move down
+            </ContextMenuItem>
+          </>
+        )}
+        <ContextMenuSeparator />
+        <ContextMenuItem variant="destructive" onSelect={() => actions.onDelete(r)}>
+          <Trash2 />
+          Delete
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }

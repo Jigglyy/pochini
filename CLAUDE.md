@@ -267,8 +267,9 @@ Mostly carried over from Kanbini, whose renderer this UI copies the look of:
 - **User-picked colours are data, not theme.** Step colours come from the accent palette in
   `lib/colors.ts` (Kanbini's), stored by name. Surfaces built from them mix toward a token
   (`color-mix(in oklab, <accent> 24%, var(--card))`) so they read in both themes; see `tone()`.
-- **Right-click menus** use the ShadCN `ContextMenu` (`components/ui/context-menu.tsx`), on the
-  step header only, never over inputs (which keep the native copy/paste menu).
+- **Right-click menus** use the ShadCN `ContextMenu` (`components/ui/context-menu.tsx`), on step
+  headers and macro rows, never over inputs (which keep the native copy/paste menu). Color
+  pickers in any menu use `SwatchGrid` with that menu's own Item component.
 - **Theme preference** (system / light / dark) is renderer-only, stored in localStorage under
   `pochini.settings`, and applied before first paint by the inline script in `index.html`.
 - **One column, one left edge.** The header's contents and every page body share

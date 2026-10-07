@@ -11,6 +11,7 @@ export function macro(name: string, o: Partial<Macro> = {}): Macro {
     name,
     enabled: true,
     favorite: false,
+    color: null,
     trigger: null,
     repeat: { kind: "once" },
     queue: false,

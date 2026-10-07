@@ -173,6 +173,7 @@ pub fn run() {
             commands::save_macro,
             commands::set_macro_enabled,
             commands::set_macro_favorite,
+            commands::set_macro_color,
             commands::delete_macro,
             commands::duplicate_macro,
             commands::reorder_macros,

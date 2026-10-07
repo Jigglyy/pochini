@@ -24,6 +24,9 @@ export const setMacroEnabled = (id: string, enabled: boolean) =>
   invoke<void>("set_macro_enabled", { id, enabled });
 export const setMacroFavorite = (id: string, favorite: boolean) =>
   invoke<void>("set_macro_favorite", { id, favorite });
+/** `null` clears it. */
+export const setMacroColor = (id: string, color: string | null) =>
+  invoke<void>("set_macro_color", { id, color });
 export const deleteMacro = (id: string) => invoke<void>("delete_macro", { id });
 export const duplicateMacro = (id: string) => invoke<Macro>("duplicate_macro", { id });
 /** `ids`: the new order of all macros, or of one group of them (see `MacroFile::reorder`). */

@@ -14,7 +14,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
-  COLOR_CHOICES,
   colorKind,
   DEFAULT_COLORS,
   KIND_LABELS,
@@ -32,7 +31,7 @@ import { JitterField } from "./JitterField";
 import { KeyCapture } from "./KeyCapture";
 import { Field } from "./layout";
 import { useSortableItem, type DragHandle } from "./sortable";
-import { colorName, KIND_ICONS, KindChip, Swatch } from "./StepColors";
+import { colorName, KIND_ICONS, KindChip, SwatchGrid } from "./StepColors";
 
 const MODS: Modifier[] = ["ctrl", "alt", "shift", "win"];
 
@@ -199,19 +198,7 @@ function StepMenu({
       <ContextMenuLabel className="text-xs font-medium text-muted-foreground">
         Color for every {KIND_LABELS[kind]} step
       </ContextMenuLabel>
-      <div className="grid grid-cols-5 justify-items-center gap-1 px-1.5 pb-1.5">
-        {COLOR_CHOICES.map((c) => (
-          <ContextMenuItem
-            key={c}
-            onSelect={() => setStepColor(kind, c)}
-            aria-label={colorName(c)}
-            title={colorName(c)}
-            className="size-7 justify-center rounded-full p-0 focus:bg-accent"
-          >
-            <Swatch color={c} selected={color === c} />
-          </ContextMenuItem>
-        ))}
-      </div>
+      <SwatchGrid value={color} onPick={(c) => setStepColor(kind, c)} Item={ContextMenuItem} />
       {color !== DEFAULT_COLORS[kind] && (
         <ContextMenuItem onSelect={() => resetStepColor(kind)}>
           <RotateCcw />

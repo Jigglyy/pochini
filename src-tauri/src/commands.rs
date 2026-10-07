@@ -26,6 +26,7 @@ pub struct MacroSummary {
     /// "App only" executable, if set.
     pub app: Option<String>,
     pub favorite: bool,
+    pub color: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -63,6 +64,7 @@ pub fn list_macros(state: State<'_, Arc<AppState>>) -> R<Vec<MacroSummary>> {
             queue: m.queue,
             app: m.guard.as_ref().map(|g| g.process.clone()).filter(|p| !p.is_empty()),
             favorite: m.favorite,
+            color: m.color.clone(),
             created_at: m.created_at.clone(),
             updated_at: m.updated_at.clone(),
         })
@@ -141,6 +143,22 @@ pub fn set_macro_favorite(state: State<'_, Arc<AppState>>, id: String, favorite:
             .find(|m| m.id == id)
             .ok_or_else(|| format!("no macro with id {id}"))?;
         m.favorite = favorite;
+    }
+    state.persist()
+}
+
+/// The color on a macro row (right-click, or the row menu). Like the star,
+/// not an edit: `updated_at` stays.
+#[tauri::command]
+pub fn set_macro_color(state: State<'_, Arc<AppState>>, id: String, color: Option<String>) -> R<()> {
+    {
+        let mut f = state.macros.lock().unwrap();
+        let m = f
+            .macros
+            .iter_mut()
+            .find(|m| m.id == id)
+            .ok_or_else(|| format!("no macro with id {id}"))?;
+        m.color = crate::model::normalize_color(color);
     }
     state.persist()
 }
