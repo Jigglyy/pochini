@@ -4,6 +4,20 @@ All notable changes to Pochini. Versions follow [semantic versioning](https://se
 while the major version is 0, a minor bump may change behaviour or the macro file format.
 Each version is built with `npm run release` into `release/Pochini-<version>.exe`.
 
+## 0.3.0 - 2026-10-07
+
+### Added
+
+- **Move mouse back to where it started** (per macro): when the run ends, the cursor jumps back
+  to where it was when you pressed the hotkey (or when the Run countdown ended). Happens once,
+  after the last repeat; also when you end a run with its own hotkey (releasing a hold-to-repeat
+  key, pressing a toggle again). Not after Panic or Stop, which leave the mouse alone.
+
+### Changed
+
+- The editor's Trigger section is split: **Trigger** (hotkey, mode, on/off, blocking, App only)
+  and **When it runs** (repeat, Queue presses, Move mouse back).
+
 ## 0.2.1 - 2026-10-07
 
 ### Fixed
