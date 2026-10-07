@@ -4,6 +4,14 @@ All notable changes to Pochini. Versions follow [semantic versioning](https://se
 while the major version is 0, a minor bump may change behaviour or the macro file format.
 Each version is built with `npm run release` into `release/Pochini-<version>.exe`.
 
+## 0.1.1 - 2026-10-07
+
+### Added
+
+- Pochini app icon: a pastel button being pressed by a cursor, on a navy tile in the style of
+  Kanbini's mark. Used for the executable, the window, and the header. Regenerate every size
+  from `assets/pochini-icon.svg` with `npm run icons`.
+
 ## 0.1.0 - 2026-10-07
 
 First versioned build.
