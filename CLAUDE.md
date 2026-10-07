@@ -267,6 +267,9 @@ Mostly carried over from Kanbini, whose renderer this UI copies the look of:
 - **User-picked colours are data, not theme.** Step colours come from the accent palette in
   `lib/colors.ts` (Kanbini's), stored by name. Surfaces built from them mix toward a token
   (`color-mix(in oklab, <accent> 24%, var(--card))`) so they read in both themes; see `tone()`.
+  A colored card (step, macro row) is outlined all round in its accent, as Kanbini colors
+  its lists and boards, with a thicker left edge: use `outlineStyle()`, which sets the four
+  border-color longhands so React never mixes them with a shorthand.
 - **Right-click menus** use the ShadCN `ContextMenu` (`components/ui/context-menu.tsx`), on step
   headers and macro rows, never over inputs (which keep the native copy/paste menu). Color
   pickers in any menu use `SwatchGrid` with that menu's own Item component.

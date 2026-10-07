@@ -40,6 +40,7 @@ test("right-click recolors every step of that kind, and it sticks", async ({ app
   await menu.getByRole("menuitem", { name: "Red" }).click();
 
   await expect(step(page, "c1")).toHaveCSS("border-left-color", RED);
+  await expect(step(page, "c1")).toHaveCSS("border-bottom-color", RED); // the whole outline
   await expect(step(page, "c2")).toHaveCSS("border-left-color", RED);
   await expect(step(page, "w1")).not.toHaveCSS("border-left-color", RED);
 

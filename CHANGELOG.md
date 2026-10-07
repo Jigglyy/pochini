@@ -4,6 +4,14 @@ All notable changes to Pochini. Versions follow [semantic versioning](https://se
 while the major version is 0, a minor bump may change behaviour or the macro file format.
 Each version is built with `npm run release` into `release/Pochini-<version>.exe`.
 
+## 0.8.1 - 2026-10-08
+
+### Changed
+
+- Colored steps and macros are outlined all the way round in their color, like colored lists
+  and boards in Kanbini, not only on the left edge. A switched-off macro keeps just the
+  colored edge.
+
 ## 0.8.0 - 2026-10-08
 
 ### Added

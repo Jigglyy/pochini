@@ -25,6 +25,9 @@ test("right-click a macro to color it; it is saved with the macro", async ({ app
   await menu.getByRole("menuitem", { name: "Red" }).click();
 
   await expect(row(page, "a")).toHaveCSS("border-left-color", RED);
+  // The whole outline, not just the edge (Kanbini's colored cards).
+  await expect(row(page, "a")).toHaveCSS("border-top-color", RED);
+  await expect(row(page, "a")).toHaveCSS("border-right-color", RED);
   await expect(row(page, "b")).not.toHaveCSS("border-left-color", RED);
   await expect.poll(() => savedColor(dataDir, "a")).toBe("red");
 
@@ -52,4 +55,13 @@ test("coloring is not an edit: Recently edited order stays", async ({ app: { pag
   await expect.poll(() => savedColor(dataDir, "a")).toBe("purple");
   const after = JSON.parse(await readFile(join(dataDir, "macros.json"), "utf8")).macros[0].updated_at;
   expect(after).toBe(before);
+});
+
+test.describe("a switched-off macro", () => {
+  test.use({ seed: { macros: [macro("Off one", { id: "off", enabled: false, color: "red" })] } });
+
+  test("keeps only the colored edge", async ({ app: { page } }) => {
+    await expect(row(page, "off")).toHaveCSS("border-left-color", RED);
+    await expect(row(page, "off")).not.toHaveCSS("border-top-color", RED);
+  });
 });

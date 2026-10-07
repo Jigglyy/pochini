@@ -41,8 +41,9 @@ Panic stop [Esc] stops a running macro at once.
   <app>" for App only, "Queues presses", and a warning "Hotkey clash". The right side is
   fixed columns (hotkey, switch, Run, menu) so they line up down the list.
 - **Colors**: right-click a row (or its menu > Color) for the same 14-accent palette as steps,
-  plus "No color". A colored row gets the accent as its left edge and a faint wash; a macro
-  that is switched off keeps the edge but not the wash. The right-click menu also has Edit,
+  plus "No color". A colored row is outlined in the accent (Kanbini's colored lists and
+  boards), with a thicker left edge and a faint wash; a macro that is switched off keeps only
+  the colored edge. The right-click menu also has Edit,
   favorite, Duplicate, Move up / down and Delete.
 - **Favorites**: a star before the name (shown on hover until set, then always, filled). Also
   in the row menu.
@@ -107,7 +108,7 @@ STEPS                                              Takes 480 ms to 705 ms
   expand), by the arrows, or Alt+Up/Down; duplicate, delete, expand. The open body (inputs)
   never starts a drag. Reordering marks the macro unsaved, like any other edit.
   - **Color coding**: each kind of step (Click, Click at mouse, Move, Key, Type text, Wait,
-    Scroll) has a color: a 3 px left edge on the card and a tinted icon chip. The Add buttons
+    Scroll) has a color: the card's outline (3 px on the left) and a tinted icon chip. The Add buttons
     show the same colors. Defaults: blue, purple, teal, orange, amber, green, pink.
   - **Right-click a step header** (Kanbini's card menu): "Color for every <kind> step" with the
     14 Kanbini accents plus "No color", "Reset to <default>" when changed, then Move up / Move

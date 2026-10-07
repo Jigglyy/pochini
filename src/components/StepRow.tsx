@@ -15,6 +15,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   colorKind,
+  outlineStyle,
   DEFAULT_COLORS,
   KIND_LABELS,
   resetStepColor,
@@ -165,7 +166,7 @@ export function StepFace({ step, index }: { step: Step; index: number }) {
   return (
     <div
       className="flex cursor-grabbing items-center gap-3 rounded-lg border border-l-[3px] border-primary/40 bg-card px-3 py-2.5 text-card-foreground shadow-xl"
-      style={{ borderLeftColor: tone(color)?.bar }}
+      style={outlineStyle(tone(color))}
     >
       <GripVertical className="size-4 shrink-0 text-muted-foreground" />
       <span className="w-5 text-right text-xs tabular-nums text-muted-foreground">{index + 1}</span>
@@ -256,7 +257,7 @@ export function StepRow({
     <div
       ref={itemRef}
       data-step-id={step.id}
-      style={{ ...style, borderLeftColor: tone(color)?.bar }}
+      style={{ ...style, ...outlineStyle(tone(color)) }}
       className="group/step rounded-lg border border-l-[3px] border-border bg-card text-card-foreground"
     >
       <ContextMenu>

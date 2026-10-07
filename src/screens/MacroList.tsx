@@ -51,7 +51,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { KeyCombo, Kbd } from "@/components/layout";
 import { Swatch, SwatchGrid } from "@/components/StepColors";
-import { asColor, tone, type StepColor } from "@/lib/colors";
+import { asColor, outlineStyle, tone, type StepColor } from "@/lib/colors";
 import { comboLabel } from "@/components/KeyCapture";
 import { DROP_ANIMATION, useDragSensors, useSortableItem, type DragHandle } from "@/components/sortable";
 import {
@@ -412,8 +412,10 @@ function MacroRow({
   const row = (
     <li
       ref={itemRef}
-      // A switched-off macro keeps its edge but not the wash, so "off" still reads as off.
-      style={{ ...style, borderLeftColor: t?.bar, backgroundColor: r.enabled ? t?.wash : undefined }}
+      // A colored row is outlined in its color, Kanbini style. A switched-off
+      // macro keeps only the colored edge (no outline, no wash), so "off"
+      // still reads as off. Inline colors also beat the hover border.
+      style={{ ...style, ...outlineStyle(t, r.enabled), backgroundColor: r.enabled ? t?.wash : undefined }}
       data-macro-id={lifted ? undefined : r.id}
       {...handle}
       className={cn(

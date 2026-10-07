@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useSyncExternalStore, type CSSProperties } from "react";
 import type { Step } from "@/types";
 import { readPrefs, writePrefs } from "./prefs";
 import type { NewStepKind } from "./steps";
@@ -95,6 +95,16 @@ export function tone(c: StepColor): Tone | null {
     icon: `color-mix(in oklab, ${v} 80%, var(--foreground))`,
     wash: `color-mix(in oklab, ${v} 9%, var(--card))`,
   };
+}
+
+/** Border colours for a coloured card, Kanbini style: the whole outline in
+ *  the accent (with the card's thicker left edge), not just the edge. With
+ *  `outline` false only the left edge is coloured (a switched-off macro).
+ *  Longhands only, so React never mixes border-color with border-left-color. */
+export function outlineStyle(t: Tone | null, outline = true): CSSProperties {
+  if (!t) return {};
+  const side = outline ? t.bar : undefined;
+  return { borderTopColor: side, borderRightColor: side, borderBottomColor: side, borderLeftColor: t.bar };
 }
 
 export type StepColors = Record<ColorKind, StepColor>;
