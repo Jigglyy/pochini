@@ -44,6 +44,16 @@ pub fn run() {
     let (tx, rx) = std::sync::mpsc::channel();
 
     tauri::Builder::default()
+        // Must be the first plugin. A second copy of Pochini would install a
+        // second keyboard hook and every hotkey would fire twice; instead the
+        // second launch just brings the running window to the front.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.unminimize();
+                let _ = w.show();
+                let _ = w.set_focus();
+            }
+        }))
         .setup(move |app| {
             let dir = app.path().app_config_dir()?;
             // First start after the rename: bring the user's macros along.

@@ -65,14 +65,27 @@ if (!built) {
 }
 const outDir = path.join(root, "release");
 mkdirSync(outDir, { recursive: true });
-for (const f of readdirSync(outDir)) {
-  if (/^Pochini-.*\.exe$/i.test(f)) {
-    rmSync(path.join(outDir, f));
-    console.log(`deleted old build ${f}`);
-  }
-}
 const out = path.join(outDir, `Pochini-${next}.exe`);
+// New build first, so a failure below never leaves release/ empty.
 copyFileSync(built, out);
 
+// Then remove older builds. One that is running cannot be deleted on Windows;
+// say so and carry on (the next release run removes it).
+const stuck = [];
+for (const f of readdirSync(outDir)) {
+  if (/^Pochini-.*\.exe$/i.test(f) && path.join(outDir, f) !== out) {
+    try {
+      rmSync(path.join(outDir, f));
+      console.log(`deleted old build ${f}`);
+    } catch {
+      stuck.push(f);
+    }
+  }
+}
+
 console.log(`\nPochini ${next} built: ${out}`);
+if (stuck.length) {
+  console.log(`Could not delete ${stuck.join(", ")}: it is probably running.`);
+  console.log("Close it and it will be removed by the next release, or delete it yourself.");
+}
 console.log("Remember: add a CHANGELOG.md entry for this version.\n");
