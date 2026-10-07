@@ -83,6 +83,11 @@
   --color-warning: var(--warning);
   --color-success: var(--success);
 
+  /* Windows 11's own face: the Text cut for the UI, the Display cut for
+     titles. Older Windows falls back to Segoe UI. */
+  --font-sans: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-display: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);

@@ -270,9 +270,24 @@ Mostly carried over from Kanbini, whose renderer this UI copies the look of:
   step header only, never over inputs (which keep the native copy/paste menu).
 - **Theme preference** (system / light / dark) is renderer-only, stored in localStorage under
   `pochini.settings`, and applied before first paint by the inline script in `index.html`.
-- **Build screens from the primitives in `components/layout.tsx`**: `Section` (uppercase
-  heading over a bordered `bg-card/40` panel), `Field` (label column + control), `ToggleRow`,
-  `Kbd`/`KeyCombo`, `Notice`. Page bodies are `mx-auto max-w-4xl` (settings `max-w-3xl`).
+- **One column, one left edge.** The header's contents and every page body share
+  `mx-auto max-w-4xl`, and `<main>` reserves its scrollbar gutter on both edges, so the logo,
+  page titles, panels and rows start at the same x on every screen and nothing shifts when a
+  page starts to scroll. Don't give a page its own width.
+- **Build screens from the primitives in `components/layout.tsx`**: `Section` (a sentence-case
+  heading, then one `bg-card/40` panel whose direct children are rows divided by hairlines;
+  `bare` for content with its own cards, like the step list), `Field` (8rem label column +
+  controls), `ToggleRow` (a row, not a box), `Kbd`/`KeyCombo`, `Notice`. Put rows straight
+  into a Section; a wrapper div turns them into one row. No cards inside cards.
+- **Controls in a row are one height**: 36 px (`h-9`, the default Button/Input/Select size).
+  The editor's title row is 40 px (`size="lg"` buttons beside the `h-10` name).
+- **Type**: Segoe UI Variable (`--font-sans`, the Text cut) for the UI and `font-display` (the
+  Display cut) for page titles and the macro name. No all-caps labels; keycaps are sans.
+- **Quiet chrome**: secondary actions that also live in a menu (a step's move / duplicate /
+  delete buttons) show on hover or keyboard focus only. Facts about a macro go on the line
+  under its name, so the right side of every row stays aligned columns.
+- **Screenshots for design work**: `POCHINI_SCREENS=<folder> npx playwright test screens`
+  captures every screen in dark and light from seeded macros (skipped in normal runs).
 - **No `window.confirm` / `alert` / `prompt`.** Use `AlertDialog` (with
   `variant="destructive"` on the action for destructive choices).
 - **Flex children holding user text** (macro names) need `min-w-0` plus `truncate`, or long

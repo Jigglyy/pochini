@@ -1,5 +1,6 @@
 import {
   ArrowUpDown,
+  ChevronDown,
   Crosshair,
   Keyboard,
   MousePointerClick,
@@ -10,7 +11,13 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   accentValue,
   COLOR_CHOICES,
@@ -69,48 +76,54 @@ export function KindChip({ kind, color }: { kind: ColorKind; color: StepColor })
   );
 }
 
-/** Settings > Step colors: every kind with its palette. */
+/** Settings > Step colors: every kind with its current color; the palette
+ *  opens from the color button, like the right-click menu in the editor. */
 export function StepColorSettings() {
   const colors = useStepColors();
   return (
-    <div className="flex flex-col gap-3">
+    <div className="grid grid-cols-1 gap-x-10 gap-y-2 sm:grid-cols-2">
       {KINDS.map((k) => (
-        <div key={k} className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <span className="flex w-40 items-center gap-2.5 text-sm">
-            <KindChip kind={k} color={colors[k]} />
-            {KIND_LABELS[k]}
-          </span>
-          <div className="flex flex-wrap items-center gap-1.5">
-            {COLOR_CHOICES.map((c) => (
-              <button
-                key={c}
-                type="button"
-                onClick={() => setStepColor(k, c)}
-                aria-pressed={colors[k] === c}
-                aria-label={`${KIND_LABELS[k]} steps: ${colorName(c)}`}
-                title={colorName(c)}
-                className="rounded-full p-0.5 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        <div key={k} className="flex items-center gap-3">
+          <KindChip kind={k} color={colors[k]} />
+          <span className="min-w-0 flex-1 truncate text-sm">{KIND_LABELS[k]}</span>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-32 justify-start"
+                aria-label={`${KIND_LABELS[k]} color: ${colorName(colors[k])}`}
               >
-                <Swatch color={c} selected={colors[k] === c} className="ring-offset-card" />
-              </button>
-            ))}
-          </div>
-          {colors[k] !== DEFAULT_COLORS[k] && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="text-muted-foreground"
-                  aria-label={`Reset ${KIND_LABELS[k]} to ${colorName(DEFAULT_COLORS[k])}`}
-                  onClick={() => resetStepColor(k)}
-                >
-                  <RotateCcw />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Reset to {colorName(DEFAULT_COLORS[k]).toLowerCase()}</TooltipContent>
-            </Tooltip>
-          )}
+                <Swatch color={colors[k]} className="size-3.5" />
+                {colorName(colors[k])}
+                <ChevronDown className="ml-auto opacity-60" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <div className="grid grid-cols-5 justify-items-center gap-1 p-1.5">
+                {COLOR_CHOICES.map((c) => (
+                  <DropdownMenuItem
+                    key={c}
+                    onSelect={() => setStepColor(k, c)}
+                    aria-label={colorName(c)}
+                    title={colorName(c)}
+                    className="size-7 justify-center rounded-full p-0 focus:bg-accent"
+                  >
+                    <Swatch color={c} selected={colors[k] === c} />
+                  </DropdownMenuItem>
+                ))}
+              </div>
+              {colors[k] !== DEFAULT_COLORS[k] && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={() => resetStepColor(k)}>
+                    <RotateCcw />
+                    Reset to {colorName(DEFAULT_COLORS[k]).toLowerCase()}
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       ))}
     </div>

@@ -187,7 +187,7 @@ function StepMenu({
   const color = useStepColors()[kind];
   return (
     <ContextMenuContent className="w-60">
-      <ContextMenuLabel className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+      <ContextMenuLabel className="text-xs font-medium text-muted-foreground">
         Color for every {KIND_LABELS[kind]} step
       </ContextMenuLabel>
       <div className="grid grid-cols-5 justify-items-center gap-1 px-1.5 pb-1.5">
@@ -261,7 +261,7 @@ export function StepRow({
       ref={itemRef}
       data-step-id={step.id}
       style={{ ...style, borderLeftColor: tone(color)?.bar }}
-      className="rounded-lg border border-l-[3px] border-border bg-card text-card-foreground"
+      className="group/step rounded-lg border border-l-[3px] border-border bg-card text-card-foreground"
     >
       <ContextMenu>
         <ContextMenuTrigger asChild>
@@ -282,12 +282,16 @@ export function StepRow({
             className="flex items-center gap-3 rounded-lg px-3 py-2.5 outline-none hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-ring"
           >
             {handle && (
-              <GripVertical aria-hidden className="size-4 shrink-0 cursor-grab text-muted-foreground/60" />
+              <GripVertical
+              aria-hidden
+              className="size-4 shrink-0 cursor-grab text-muted-foreground/40 transition-colors group-hover/step:text-muted-foreground"
+            />
             )}
             <span className="w-5 text-right text-xs tabular-nums text-muted-foreground">{index + 1}</span>
             <KindChip kind={kind} color={color} />
             <span className="min-w-0 flex-1 truncate text-sm">{summarize(step)}</span>
-            <div className="flex items-center">
+            {/* On hover or keyboard focus only; right-click has the same. */}
+            <div className="flex items-center opacity-0 transition-opacity group-focus-within/step:opacity-100 group-hover/step:opacity-100">
               <IconAction label="Move up" onClick={() => onMove(-1)}>
                 <ArrowUp className={cn(index === 0 && "opacity-30")} />
               </IconAction>

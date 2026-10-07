@@ -68,12 +68,12 @@ export function KeyCapture({
           <span className="text-sm text-muted-foreground">{emptyLabel}</span>
         )}
       </div>
-      <Button variant="outline" size="sm" onClick={() => setRecording((r) => !r)}>
+      <Button variant="outline" onClick={() => setRecording((r) => !r)}>
         <Keyboard />
         {recording ? "Cancel" : value ? "Change" : "Record"}
       </Button>
       {allowClear && value && !recording && (
-        <Button variant="ghost" size="sm" onClick={() => onChange(null)}>
+        <Button variant="ghost" className="text-muted-foreground" onClick={() => onChange(null)}>
           <X />
           Clear
         </Button>

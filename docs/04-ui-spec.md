@@ -1,8 +1,10 @@
 # UI spec
 
 Three screens behind one header. The look follows the user's Kanbini app: neutral oklch
-greys, an indigo primary, ShadCN components, small uppercase section headings over bordered
-panels. Conventions for building more of it are in [CLAUDE.md](../CLAUDE.md#ui-conventions).
+greys, an indigo primary, ShadCN components. Every screen sits in one 896 px column that the
+header shares, sections are a sentence-case heading over one panel of hairline-divided rows,
+and the type is Windows 11's Segoe UI Variable. Conventions for building more of it are in
+[CLAUDE.md](../CLAUDE.md#ui-conventions).
 
 ---
 
@@ -27,14 +29,16 @@ panels. Conventions for building more of it are in [CLAUDE.md](../CLAUDE.md#ui-c
 Your macros                          Sort [Custom order  v]   [+ New macro]
 
 | :: * Demo                              Space   [o==]  [> Run]  [...] |
-|      3 steps · 480 ms to 705 ms                                           |
+|      3 steps, 480 ms to 705 ms   [] Only in game.exe   Queues ...  |
 
 Panic stop [Esc] stops a running macro at once.
 ```
 
 - When the master switch is off, a muted banner says hotkeys are ignored and how to turn
   them back on (switch or toggle hotkey).
-- Rows show an app badge for App only macros and a "Queue" badge when queueing is on.
+- The line under the name says what the macro is: step count and duration, "Only in
+  <app>" for App only, "Queues presses", and a warning "Hotkey clash". The right side is
+  fixed columns (hotkey, switch, Run, menu) so they line up down the list.
 - **Favorites**: a star before the name (shown on hover until set, then always, filled). Also
   in the row menu.
 - **Sort** (shown with two or more macros, remembered in localStorage): Custom order,
@@ -46,8 +50,8 @@ Panic stop [Esc] stops a running macro at once.
     order. Dragging works inside a group, never across (starring moves a macro between
     groups). Both drag views edit the same stored order.
   - Name and date sorts are automatic, so rows cannot be dragged there.
-- Each row: name and a summary line (step count, estimated duration), a "Hotkey clash" badge
-  if another macro uses the same combo, the hotkey as keycaps, the macro's **own switch**
+- Each row: grip (drag views) and star in a fixed-width lead, name and its facts line, the
+  hotkey as keycaps (or "No hotkey"), the macro's **own switch**
   (hotkey on/off for just this macro; dims the row when off), **Run**, and a menu (Edit,
   Duplicate, Delete).
 - **Run** starts after a 3 second countdown, so you can switch to the target and place the
@@ -93,7 +97,8 @@ STEPS                                              Takes 480 ms to 705 ms
   - **Move mouse back to where it started**: after the run, the cursor returns to the press
     point. Not after Panic or Stop.
 - **Steps**: each step is a card with a number, a type icon and a plain-English summary;
-  reorder by dragging its header (grip icon; 6 px before a drag starts, so clicks still
+  the move / duplicate / delete buttons show on hover or keyboard focus (right-click has them
+  too); reorder by dragging its header (grip icon; 6 px before a drag starts, so clicks still
   expand), by the arrows, or Alt+Up/Down; duplicate, delete, expand. The open body (inputs)
   never starts a drag. Reordering marks the macro unsaved, like any other edit.
   - **Color coding**: each kind of step (Click, Click at mouse, Move, Key, Type text, Wait,
@@ -129,8 +134,9 @@ STEPS                                              Takes 480 ms to 705 ms
 - **Hotkeys**: "Macros on/off" (the toggle hotkey; record, change or clear) and "Panic stop"
   (single key). Changes apply immediately; there is no Save button.
 - **Appearance**: System / Light / Dark as bordered radio cards.
-- **Step colors**: every step kind with its chip and the palette; a reset button per changed
-  kind and "Reset all" in the section header. Stored renderer-only in localStorage
+- **Step colors**: every step kind with its chip and a color button (swatch + name) in two
+  columns; the button opens the palette and "Reset to <default>". "Reset all" in the section
+  header. Stored renderer-only in localStorage
   `pochini.settings` (`stepColors`, only the kinds that differ from the default).
 
 ## Run pill

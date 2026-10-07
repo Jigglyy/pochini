@@ -36,7 +36,7 @@ export function Settings({
     appInfo().then(setInfo).catch(() => {});
   }, []);
 
-  if (!settings) return <p className="mx-auto max-w-3xl text-sm text-muted-foreground">Loading...</p>;
+  if (!settings) return <p className="mx-auto max-w-4xl text-sm text-muted-foreground">Loading...</p>;
 
   // Settings apply as soon as they change; there is no Save button.
   const save = (next: SettingsT) => {
@@ -45,8 +45,8 @@ export function Settings({
   };
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
-      <h2 className="text-xl font-semibold tracking-tight">Settings</h2>
+    <div className="mx-auto flex w-full max-w-4xl flex-col gap-8">
+      <h2 className="font-display text-xl font-semibold tracking-tight">Settings</h2>
 
       <Section title="Hotkeys">
         <Field
@@ -113,10 +113,12 @@ export function Settings({
           )
         }
       >
-        <p className="text-xs text-muted-foreground">
-          Each kind of step has its own color in the editor. You can also right-click a step there to recolor it.
-        </p>
-        <StepColorSettings />
+        <div className="flex flex-col gap-3">
+          <p className="text-xs text-muted-foreground">
+            Each kind of step has its own color in the editor. You can also right-click a step there to recolor it.
+          </p>
+          <StepColorSettings />
+        </div>
       </Section>
 
       {info && (

@@ -14,6 +14,7 @@ import {
   Plus,
   Star,
   Trash2,
+  TriangleAlert,
 } from "lucide-react";
 import {
   AlertDialog,
@@ -25,7 +26,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -169,13 +169,13 @@ export function MacroList({
       )}
 
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-xl font-semibold tracking-tight">Your macros</h2>
+        <h2 className="font-display text-xl font-semibold tracking-tight">Your macros</h2>
         <div className="flex items-center gap-3">
           {rows && rows.length > 1 && (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <span className="hidden sm:inline">Sort</span>
               <Select value={sort} onValueChange={(v) => setSort(v as SortMode)}>
-                <SelectTrigger size="sm" className="w-40" aria-label="Sort macros">
+                <SelectTrigger className="w-44" aria-label="Sort macros">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent align="end">
@@ -386,14 +386,19 @@ function MacroRow({
       data-macro-id={lifted ? undefined : r.id}
       {...handle}
       className={cn(
-        "group flex items-center gap-4 rounded-lg border border-border bg-card px-4 py-3 transition-colors hover:border-primary/40",
-        grip && "pl-2",
+        "group flex items-center gap-3 rounded-lg border border-border bg-card py-2.5 pr-3 pl-2 transition-colors hover:border-primary/40",
         !r.enabled && "bg-card/50",
         lifted && "cursor-grabbing border-primary/40 bg-card shadow-xl",
       )}
     >
-      <div className="-mr-2 flex items-center gap-1">
-        {grip && <GripVertical aria-hidden className="size-4 shrink-0 cursor-grab text-muted-foreground/60" />}
+      {/* Same width with or without the grip, so names line up in every sort. */}
+      <div className="flex w-12 shrink-0 items-center justify-end gap-0.5">
+        {grip && (
+          <GripVertical
+            aria-hidden
+            className="size-4 shrink-0 cursor-grab text-muted-foreground/40 transition-colors group-hover:text-muted-foreground"
+          />
+        )}
         <Tooltip>
           <TooltipTrigger asChild>
             <button
@@ -419,48 +424,42 @@ function MacroRow({
       <button
         type="button"
         onClick={() => actions.onOpen(r.id)}
-        className="flex min-w-0 flex-1 flex-col items-start gap-0.5 text-left outline-none focus-visible:underline"
+        className="flex min-w-0 flex-1 flex-col items-start gap-1 text-left outline-none focus-visible:underline"
       >
         <span className={cn("max-w-full truncate font-medium", !r.enabled && "text-muted-foreground")}>
           {r.name}
         </span>
-        <span className="text-xs text-muted-foreground">
-          {r.step_count} step{r.step_count === 1 ? "" : "s"} · {fmtRange(r.duration_ms)}
+        {/* What the macro is, under its name; the right side stays columns. */}
+        <span className="flex max-w-full flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+          <span className="tabular-nums">
+            {r.step_count} step{r.step_count === 1 ? "" : "s"}, {fmtRange(r.duration_ms)}
+          </span>
+          {r.app && (
+            <span className="inline-flex min-w-0 items-center gap-1">
+              <AppWindow className="size-3.5 shrink-0" />
+              <span className="truncate">Only in {r.app}</span>
+            </span>
+          )}
+          {r.queue && (
+            <span className="inline-flex items-center gap-1">
+              <ListOrdered className="size-3.5 shrink-0" />
+              Queues presses
+            </span>
+          )}
+          {r.conflict && (
+            <span className="inline-flex items-center gap-1 text-warning">
+              <TriangleAlert className="size-3.5 shrink-0" />
+              Hotkey clash
+            </span>
+          )}
         </span>
       </button>
 
-      {r.app && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Badge variant="outline" className="hidden max-w-44 text-muted-foreground md:inline-flex">
-              <AppWindow />
-              <span className="truncate">{r.app}</span>
-            </Badge>
-          </TooltipTrigger>
-          <TooltipContent>Hotkey only works over {r.app}</TooltipContent>
-        </Tooltip>
-      )}
-      {r.queue && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Badge variant="outline" className="hidden text-muted-foreground md:inline-flex">
-              <ListOrdered />
-              Queue
-            </Badge>
-          </TooltipTrigger>
-          <TooltipContent>Presses while running are queued</TooltipContent>
-        </Tooltip>
-      )}
-      {r.conflict && (
-        <Badge variant="outline" className="border-warning/50 text-warning">
-          Hotkey clash
-        </Badge>
-      )}
-      <div className={cn("hidden sm:block", !r.enabled && "opacity-50")}>
+      <div className={cn("hidden min-w-28 justify-end sm:flex", !r.enabled && "opacity-50")}>
         {r.hotkey ? (
           <KeyCombo combo={r.hotkey} />
         ) : (
-          <span className="text-xs italic text-muted-foreground">No hotkey</span>
+          <span className="text-xs text-muted-foreground">No hotkey</span>
         )}
       </div>
 

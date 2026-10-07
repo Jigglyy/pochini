@@ -49,7 +49,7 @@ export function AppPicker({ value, onChange }: { value: Guard | null; onChange: 
           )}
         </SelectContent>
       </Select>
-      <Button variant="ghost" size="sm" onClick={refresh} title="Look for newly opened apps">
+      <Button variant="ghost" onClick={refresh} title="Look for newly opened apps">
         <RefreshCw />
         Refresh
       </Button>

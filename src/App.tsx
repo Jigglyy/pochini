@@ -69,9 +69,12 @@ export default function App() {
 
   return (
     <div className="flex h-screen flex-col bg-background text-foreground">
-      <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-6 py-3">
-        <img src={logo} alt="" aria-hidden draggable={false} className="size-9 shrink-0" />
-        <h1 className="text-lg font-semibold tracking-tight">Pochini</h1>
+      {/* The header shares the pages' column, so the logo, page titles and
+          panels all start at the same x. */}
+      <header className="border-b border-border px-6">
+        <div className="mx-auto flex h-14 w-full max-w-4xl items-center gap-3">
+        <img src={logo} alt="" aria-hidden draggable={false} className="size-8 shrink-0" />
+        <h1 className="font-display text-lg font-semibold tracking-tight">Pochini</h1>
 
         {route.kind !== "home" && (
           <>
@@ -98,7 +101,7 @@ export default function App() {
             <TooltipTrigger asChild>
               <label
                 className={cn(
-                  "flex cursor-pointer items-center gap-2.5 rounded-md border px-3 py-1.5 text-sm transition-colors",
+                  "flex h-9 cursor-pointer items-center gap-2.5 rounded-md border px-3 text-sm transition-colors",
                   enabled ? "border-success/40 bg-success/10" : "border-border bg-muted/50",
                 )}
               >
@@ -134,9 +137,12 @@ export default function App() {
             <TooltipContent>Settings</TooltipContent>
           </Tooltip>
         </div>
+        </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto px-6 py-8">
+      {/* Both-edges gutter keeps the column centred under the header whether
+          or not the page scrolls, so nothing shifts sideways. */}
+      <main className="flex-1 overflow-y-auto px-6 py-8 [scrollbar-gutter:stable_both-edges]">
         {route.kind === "home" && (
           <MacroList
             settings={settings}

@@ -70,13 +70,13 @@ export function CoordPicker({
           aria-label="Y"
         />
       </div>
-      <Button variant="outline" size="sm" onClick={() => setLeft(PICK_SECONDS)} disabled={left !== null}>
+      <Button variant="outline" onClick={() => setLeft(PICK_SECONDS)} disabled={left !== null}>
         <Crosshair />
         {left === null ? "Pick" : `Picking in ${left}...`}
       </Button>
       <Tooltip>
         <TooltipTrigger asChild>
-          <Button variant="ghost" size="icon-sm" onClick={() => previewPoint(x, y)} aria-label="Show me">
+          <Button variant="ghost" size="icon" onClick={() => previewPoint(x, y)} aria-label="Show me">
             <Eye />
           </Button>
         </TooltipTrigger>

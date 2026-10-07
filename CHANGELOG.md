@@ -4,6 +4,22 @@ All notable changes to Pochini. Versions follow [semantic versioning](https://se
 while the major version is 0, a minor bump may change behaviour or the macro file format.
 Each version is built with `npm run release` into `release/Pochini-<version>.exe`.
 
+## 0.6.1 - 2026-10-07
+
+### Changed
+
+- A design pass over every screen:
+  - The header, page titles, panels and rows now line up on one left edge, and pages no
+    longer shift sideways when a scrollbar appears.
+  - Sections are one panel of divided rows instead of boxes inside boxes, with form labels
+    in one column.
+  - Macro rows put the app, queue and hotkey-clash notes under the name, so hotkeys,
+    switches and Run buttons line up as columns.
+  - A step's move, duplicate and delete buttons appear on hover (right-click still has them).
+  - Settings > Step colors is a compact two-column list with a color button per kind.
+  - Text uses Windows 11's Segoe UI Variable; headings are no longer all caps; buttons,
+    fields and menus in a row are the same height.
+
 ## 0.6.0 - 2026-10-07
 
 ### Added
