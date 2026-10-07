@@ -5,8 +5,8 @@
 
 ## Context
 
-This project has a handful of decisions that are expensive to revisit — the stack, the hotkey
-mechanism, the input API — and the reasoning behind them is not visible from the code. A
+This project has a handful of decisions that are expensive to revisit - the stack, the hotkey
+mechanism, the input API - and the reasoning behind them is not visible from the code. A
 future reader (human or Claude) looking at `WH_KEYBOARD_LL` in `hotkey/` has no way to know
 that `RegisterHotKey` was considered and rejected for a specific reason, and will waste time
 re-deriving it or, worse, "simplify" it back.

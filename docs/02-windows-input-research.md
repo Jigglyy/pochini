@@ -15,7 +15,7 @@ Raw Input, and DirectInput.
 
 Two older APIs exist and should not be used: `mouse_event` and `keybd_event` are superseded,
 and `PostMessage`/`SendMessage(WM_LBUTTONDOWN)` only reaches apps that read the classic message
-queue — it does not move the real cursor and is invisible to games, most Electron apps, and
+queue - it does not move the real cursor and is invisible to games, most Electron apps, and
 anything using Raw Input.
 
 **Batch related events into one `SendInput` call.** A call with several `INPUT` structs is
@@ -25,7 +25,7 @@ must not be split, or a modifier + key combination, should be one call.
 ### Absolute mouse positioning is the fiddly part
 
 For `MOUSEEVENTF_ABSOLUTE`, `dx`/`dy` are **not pixels**. They are normalized values in
-`0..=65535`, and by default they normalize against the **primary monitor only** — which makes
+`0..=65535`, and by default they normalize against the **primary monitor only** - which makes
 every other monitor unreachable.
 
 Adding `MOUSEEVENTF_VIRTUALDESK` normalizes against the whole virtual desktop instead. Always
@@ -33,7 +33,7 @@ set it.
 
 The obvious reading of the MSDN wording is that 65535 spans `w - 1`. **Measurement says
 otherwise.** Windows converts a normalized value back to a pixel with `floor(n * w / 65536)`,
-so the correct forward conversion is the smallest `n` that floors to the pixel you want —
+so the correct forward conversion is the smallest `n` that floors to the pixel you want -
 a *ceiling* against 65536:
 
 ```rust
@@ -59,12 +59,12 @@ requested pixel against `GetCursorPos` after a real `SendInput`:
 
 | forward formula | max error | mean error |
 |---|---|---|
-| `round(px * 65535 / (w - 1))` — the MSDN reading | 1 px | 0.03 px |
+| `round(px * 65535 / (w - 1))` - the MSDN reading | 1 px | 0.03 px |
 | `floor(px * 65536 / w)` | **4480 px** | 102 px |
-| `ceil(px * 65536 / w)` — **correct** | **0 px** | 0.00 px |
+| `ceil(px * 65536 / w)` - **correct** | **0 px** | 0.00 px |
 
 The floor variant is not merely imprecise: asking for `(-1920, 156)`, the top-left of the
-leftmost monitor, put the cursor at `(2560, 159)` — on a different monitor entirely. The
+leftmost monitor, put the cursor at `(2560, 159)` - on a different monitor entirely. The
 `65535 / (w - 1)` variant is nearly right, which is worse in a way, because it will pass
 casual testing and then miss a button edge by one pixel in the field.
 
@@ -74,12 +74,12 @@ Always emit `MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK` 
 event *before* the button event, rather than assuming a button event carries a position. Some
 targets latch the cursor position on the move.
 
-### DPI awareness — the single most common silent bug
+### DPI awareness - the single most common silent bug
 
 In a process that is only *system*-DPI-aware, Windows virtualizes the coordinate space:
 `SetCursorPos`, `GetCursorPos`, `SendInput` with absolute coordinates, and
 `GetSystemMetrics(SM_*VIRTUALSCREEN)` all get scaled. On a multi-monitor setup where the
-secondary monitor has a different scale factor, input lands off by exactly the scale ratio —
+secondary monitor has a different scale factor, input lands off by exactly the scale ratio -
 and only on that monitor, which makes it look like a random bug.
 
 Fix, executed before creating any window:
@@ -109,11 +109,11 @@ Three details that bite:
 
 - **Extended keys.** Arrows, Insert/Delete/Home/End/PageUp/PageDown, right Ctrl, right Alt,
   Numpad Enter, and the Windows keys need `KEYEVENTF_EXTENDEDKEY` alongside the scan code.
-  Getting it wrong makes Right Ctrl behave as Left Ctrl — verified: the *same* scan code
+  Getting it wrong makes Right Ctrl behave as Left Ctrl - verified: the *same* scan code
   `0x1D` registers as `VK_RCONTROL` with the flag and `VK_LCONTROL` without it.
 - **Layout independence.** `MapVirtualKeyW(vk, MAPVK_VK_TO_VSC_EX)` converts a VK to a scan
   code using the *current* layout, and returns the `0xE0` prefix in the high byte for extended
-  keys. That means **no hardcoded extended-key table is needed** — derive both the scan code
+  keys. That means **no hardcoded extended-key table is needed** - derive both the scan code
   and the extended bit from one call:
 
   ```rust
@@ -129,7 +129,7 @@ Three details that bite:
 - **Unicode text.** For a "type text" step, `KEYEVENTF_UNICODE` with `wScan` set to the UTF-16
   code unit handles arbitrary characters without layout games. Surrogate pairs go as two
   consecutive events. Note that `KEYEVENTF_UNICODE` is the one case where a game may not see
-  the input — it is the right tool for text fields, not for gameplay keys.
+  the input - it is the right tool for text fields, not for gameplay keys.
 
 ### What sees that our input is synthetic
 
@@ -144,7 +144,7 @@ That is fine. It also means some targets will refuse us; see §5.
 
 User Interface Privilege Isolation blocks a lower-integrity process from injecting input into
 a higher-integrity window. A normal-integrity instance of this app cannot click on Task
-Manager, Registry Editor, or any game launched as administrator — and nothing at any integrity
+Manager, Registry Editor, or any game launched as administrator - and nothing at any integrity
 level can touch a UAC prompt, which lives on the secure desktop.
 
 Design response: detect the failure rather than mystify the user. `SendInput` returns the
@@ -165,7 +165,7 @@ Simple, cheap, no hook, delivered as `WM_HOTKEY` to a window or thread.
 The disqualifying problem for this project: **`RegisterHotKey` consumes the key.** If the user
 binds Space, as in the original example, Space stops working in every other application for as
 long as the app runs. That is unacceptable as a default. It also fails *silently* when another
-process already owns the combination — it returns `FALSE`, and the app just looks broken.
+process already owns the combination - it returns `FALSE`, and the app just looks broken.
 
 ### `WH_KEYBOARD_LL` (chosen)
 
@@ -173,7 +173,7 @@ A low-level keyboard hook sees every key event before it is dispatched, and the 
 decides: return `CallNextHookEx(...)` to pass the key through to the rest of the system, or
 return `1` to swallow it.
 
-That pass-through control is exactly what is needed — binding Space can leave Space working
+That pass-through control is exactly what is needed - binding Space can leave Space working
 everywhere, with "swallow the trigger key" as a per-binding opt-in for the cases where the user
 does want it eaten.
 
@@ -189,12 +189,12 @@ Cost and constraints:
   worker thread. Never allocate, log to disk, or take a mutex the UI thread can hold.
 - **It must ignore our own input.** Every event we inject is stamped with a magic value in
   `dwExtraInfo`, and the hook drops any event carrying it. Checking `LLKHF_INJECTED` alone is
-  too broad — that would also ignore input from other legitimate tools. Without the stamp, a
+  too broad - that would also ignore input from other legitimate tools. Without the stamp, a
   macro that presses its own bound key re-triggers itself forever.
 
   **The stamp must fit in a positive 32-bit value.** `KEYBDINPUT.dwExtraInfo` is written as a
   pointer-sized signed value but read back out of `KBDLLHOOKSTRUCT.dwExtraInfo` as an unsigned
-  one. A stamp with the high bit set — `0xC0DEC11C`, say — sign-extends to
+  one. A stamp with the high bit set - `0xC0DEC11C`, say - sign-extends to
   `0xFFFFFFFF_C0DEC11C` on x64 on the way in and is compared against `0x00000000_C0DEC11C` on
   the way out, so the filter silently never matches and the self-trigger guard is dead code
   that looks fine. This was a real bug in the probe; it is now `0x434C4943`. Verified by
@@ -214,7 +214,7 @@ rules apply. Deferred.
 
 | Mode | Behaviour |
 |---|---|
-| `Once` | Key-down starts one run. Further key-downs while running are ignored (or queued — see [06-open-questions.md](06-open-questions.md)). |
+| `Once` | Key-down starts one run. Further key-downs while running are ignored (or queued - see [06-open-questions.md](06-open-questions.md)). |
 | `HoldRepeat` | Loops while the key is physically held; key-up stops after the current step. Must debounce auto-repeat: the OS sends repeated key-downs with no intervening key-up, so track held state rather than counting downs. |
 | `Toggle` | Key-down starts; next key-down stops. |
 
@@ -240,7 +240,7 @@ moment," that is a real defect.
 
 Options, best first:
 
-1. **High-resolution waitable timer** — `CreateWaitableTimerExW` with
+1. **High-resolution waitable timer** - `CreateWaitableTimerExW` with
    `CREATE_WAITABLE_TIMER_HIGH_RESOLUTION` (Windows 10 1803+). Sub-millisecond scheduling
    without changing global system state. It also gives cancellation for free:
    `WaitForMultipleObjects` on `[timer, cancel_event]` means the panic stop interrupts a long
@@ -254,10 +254,10 @@ Options, best first:
    | 5 ms | 5.17 ms | 5.74 ms | 15.46 ms |
    | 50 ms | 50.30 ms | 50.62 ms | 62.17 ms |
 
-2. `timeBeginPeriod(1)` (winmm) — raises timer resolution process-wide and, on builds before
+2. `timeBeginPeriod(1)` (winmm) - raises timer resolution process-wide and, on builds before
    Windows 10 2004, system-wide, increasing power draw. Fallback only, and pair every call
    with `timeEndPeriod`.
-3. Spin-waiting on `QueryPerformanceCounter` — accurate, burns a core. Acceptable only for the
+3. Spin-waiting on `QueryPerformanceCounter` - accurate, burns a core. Acceptable only for the
    final sub-millisecond tail of a wait, if ever.
 
 Also budget for the cost of `SendInput` itself and for the target app's own processing; a step
@@ -272,7 +272,7 @@ Per the user's spec, each wait has a base and an optional jitter:
 actual = base_ms + uniform(0, jitter_ms)
 ```
 
-Uniform is the right default — it is what the user can reason about ("50 ms, up to 30 ms
+Uniform is the right default - it is what the user can reason about ("50 ms, up to 30 ms
 extra"). A Gaussian option is a possible later refinement, not a v1 requirement.
 
 The same applies optionally to click coordinates (`jitter_px`, sampled in a disc around the
@@ -288,8 +288,8 @@ cosmetics.
 Two mechanisms, both needed:
 
 - **Hotkey capture (primary).** In the editor, "Pick coordinate" arms a temporary hook binding;
-  the user moves the physical cursor over the target anywhere on screen — including over a
-  fullscreen app — and presses the capture key. We read `GetCursorPos` and fill the step. This
+  the user moves the physical cursor over the target anywhere on screen - including over a
+  fullscreen app - and presses the capture key. We read `GetCursorPos` and fill the step. This
   works over targets an overlay window cannot cover.
 - **Magnifier preview.** While armed, show a small zoomed view around the cursor with a
   crosshair and the live coordinate, so single-pixel targets are hittable. Sourced from a
@@ -297,7 +297,7 @@ Two mechanisms, both needed:
 
 Store context alongside the raw point: the monitor's device name, that monitor's rect, and the
 DPI at capture time. None of it is used in v1, but it is what makes a later "your display
-layout changed — remap these macros?" feature possible instead of impossible.
+layout changed - remap these macros?" feature possible instead of impossible.
 
 ---
 
@@ -305,7 +305,7 @@ layout changed — remap these macros?" feature possible instead of impossible.
 
 Anti-cheat systems detect synthetic input, and the escalation ladder is well documented:
 kernel input filter drivers (Interception and similar) suppress the `LLMHF_INJECTED` flag and
-are themselves detected and blocked by current anti-cheat — a known-signature arms race, not a
+are themselves detected and blocked by current anti-cheat - a known-signature arms race, not a
 solution. Beyond that lies hardware HID emulation (an RP2040 or Arduino presenting as a real
 USB keyboard/mouse), undetectable in software precisely because it is not software.
 
@@ -315,22 +315,22 @@ target, and the app should say so rather than escalate.
 
 The hardware-HID route is worth knowing as *context* for why a given game does not work. A
 future "send steps to a serial HID device" output backend would be a legitimate, transparent
-feature for users who own such hardware — it is not on the roadmap.
+feature for users who own such hardware - it is not on the roadmap.
 
 ---
 
 ## Sources
 
-- [LowLevelKeyboardProc — Microsoft Learn](https://learn.microsoft.com/en-us/windows/win32/winmsg/lowlevelkeyboardproc)
-- [mouse_event / MOUSEEVENTF flags — Microsoft Learn](https://learn.microsoft.com/en-us/windows/desktop/api/winuser/nf-winuser-mouse_event)
+- [LowLevelKeyboardProc - Microsoft Learn](https://learn.microsoft.com/en-us/windows/win32/winmsg/lowlevelkeyboardproc)
+- [mouse_event / MOUSEEVENTF flags - Microsoft Learn](https://learn.microsoft.com/en-us/windows/desktop/api/winuser/nf-winuser-mouse_event)
 - [Simulating mouse movement on multi-monitor setups via WinAPI](https://filipvalentin.github.io/blog/2024/08/how-to-simulate-moving-the-mouse-cursor-through-winapi-multimonitor-setup)
 - [Per-monitor DPI awareness fix for input landing on secondary monitors](https://github.com/LanternOps/breeze/pull/5599)
 - [Detecting injected mouse events via LLMHF_INJECTED](https://github.com/errorc0de404/DetectMouseEvents)
 - [Low-level hook not filtering LLKHF_INJECTED / dwExtraInfo](https://github.com/Raaif-Yousuf/Wingman/issues/209)
-- [Low-level keyboard hook in C# — Microsoft archive](https://learn.microsoft.com/en-us/archive/blogs/toub/low-level-keyboard-hook-in-c)
+- [Low-level keyboard hook in C# - Microsoft archive](https://learn.microsoft.com/en-us/archive/blogs/toub/low-level-keyboard-hook-in-c)
 - [Tauri v2 Global Shortcut plugin](https://v2.tauri.app/plugin/global-shortcut/)
 - [tauri-plugin-user-input (enigo-backed input simulation)](https://lib.rs/crates/tauri-plugin-user-input)
 
-The coordinate, timer, extended-key and stamp numbers above are not quoted from any of these —
+The coordinate, timer, extended-key and stamp numbers above are not quoted from any of these -
 they were measured on the dev machine with `tools/m0-probe`. See
 [tools/m0-probe/README.md](../tools/m0-probe/README.md).

@@ -5,7 +5,7 @@ work can proceed; confirm or overturn them and update the relevant doc.
 
 ## 1. What are the real targets?
 
-**Assumed:** ordinary desktop and browser applications — no kernel-level anti-cheat games.
+**Assumed:** ordinary desktop and browser applications - no kernel-level anti-cheat games.
 
 This is the one that can invalidate the architecture. If the intended target is a game running
 EAC/BattlEye/Vanguard, `SendInput` is likely to be blocked or flagged and no amount of work in
@@ -14,7 +14,7 @@ this repo fixes that (see
 Worth answering before M0.
 
 "Should work in any app, not just desktop" was read as *any application on the machine,
-including browsers and web apps* — which OS-level injection gives for free. If it instead
+including browsers and web apps* - which OS-level injection gives for free. If it instead
 meant driving a remote or mobile device, that is a different architecture entirely.
 
 ## 2. Concurrency: what happens when a hotkey fires while a macro is running?
@@ -25,7 +25,7 @@ Alternatives: queue it, or cancel the running macro and start the new one. Ignor
 safest default and the easiest to reason about, but "press the key again to restart" is a
 common expectation. A per-macro setting is possible but adds a knob.
 
-Related: should two *different* macros be allowed to run simultaneously? Assumed **no** —
+Related: should two *different* macros be allowed to run simultaneously? Assumed **no** -
 interleaved cursor movement from two macros produces nonsense.
 
 ## 3. Panic key default
@@ -35,7 +35,7 @@ interleaved cursor movement from two macros produces nonsense.
 `Esc` is the instinctive "stop" key, but it is also pressed constantly during normal use, so a
 macro would abort whenever the user happens to hit it. The alternative is something like
 `Ctrl+Shift+Esc`-adjacent or `Pause/Break`, which is safer but not instinctive in a panic.
-A reasonable compromise: `Esc` aborts, and that is *desirable* — an accidental abort is
+A reasonable compromise: `Esc` aborts, and that is *desirable* - an accidental abort is
 cheap, a runaway macro is not.
 
 ## 4. Auto-start with Windows
@@ -62,6 +62,34 @@ building it later means the mouse hook arrives later too. Worth confirming it is
 
 ## 7. Name
 
-`coordsclickermacro` is the directory name. Assumed to be the working title, not the product
-name. The window title, installer, and `%APPDATA%` folder all bake this in, so changing it
-later is a small chore — cheap to decide now.
+**Decided (2026-10-07): Pochini.** *Pochi* (ぽち) is the Japanese sound of pressing a button;
+"-ini" echoes the user's Kanbini. The app, executable, window title, `%APPDATA%` folder
+(`com.pochini.app`) and GitHub repo (`Jigglyy/pochini`) use it; the local project folder keeps
+the working title `coordsclickermacro`.
+
+## 8. Toggle hotkey default vs the user's screenshot tool keys
+
+**Assumed:** Ctrl+Shift+F12, chosen as unlikely to collide with a game binding.
+
+On the dev machine F12, F13 and F14 are screenshot tool hotkeys. Ctrl+Shift+F12 is a different combo,
+so it should not trigger screenshot tool unless screenshot tool also binds that exact combination, but a key
+outside F12 to F14 would remove the question entirely. The user can rebind it in Settings; the
+open question is whether the shipped default should move.
+
+## 9. Toggle hotkey sometimes ignored while this app has focus (unresolved)
+
+**Observed, cause unknown.** With another window focused (Discord, a game) the toggle hotkey
+worked every time it was tried, and the trace showed hook, logic and worker all firing. With
+this app's own window focused, three experiments gave mixed results: twice the hook logged no
+event at all, not even the Ctrl press (once after bringing the window forward with
+`AttachThreadInput`, once after an ordinary click on it), and once it did see an injected F12. That last result
+rules out "the hook is blind whenever our window has focus" as a simple explanation.
+
+Ruled out so far: tao/wry installing a competing `WH_KEYBOARD_LL` hook (they do not), and
+stale modifier tracking (fixed separately; see CLAUDE.md rule 5).
+
+Practical impact is small, since with the app focused the on-screen switch is right there,
+but it should be understood before shipping. Next step: repeat the experiment many times with
+keys that have no global binding (never F12 to F14), while nobody is typing, logging only
+bound-key outcomes (never key content; CLAUDE.md rule 11), to find what separates the runs
+that fail from the one that worked.

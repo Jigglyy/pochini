@@ -2,8 +2,8 @@
 
 ## The product in one paragraph
 
-A Windows app that lets you record a sequence of screen actions — click here, wait a moment,
-press a key, click there — save it under a name, bind it to a hotkey, and replay it against
+A Windows app that lets you record a sequence of screen actions - click here, wait a moment,
+press a key, click there - save it under a name, bind it to a hotkey, and replay it against
 any application on your screen by pressing that hotkey.
 
 ## Why coordinates
@@ -14,24 +14,24 @@ plus OS-level input synthesis work everywhere the cursor can go: native Win32, W
 Electron, browsers, Java apps, emulators, remote desktop sessions, fullscreen games.
 
 The cost is fragility: coordinates break when a window moves, a resolution changes, or DPI
-scaling changes. The design mitigates this rather than solving it — see
+scaling changes. The design mitigates this rather than solving it - see
 [03-macro-format.md](03-macro-format.md) on anchoring and [05-roadmap.md](05-roadmap.md) on
 window-relative coordinates.
 
 ## The user's mental model
 
-1. **Main screen** — a list of macros, each with a name and its bound hotkey. Buttons: New, Edit,
+1. **Main screen** - a list of macros, each with a name and its bound hotkey. Buttons: New, Edit,
    Delete, Duplicate. A master enable/disable toggle.
-2. **Editor** — name field, hotkey binding field, and an ordered list of steps you can add,
+2. **Editor** - name field, hotkey binding field, and an ordered list of steps you can add,
    reorder, and delete.
-3. **Steps** — the vocabulary:
-   - Click at (X, Y) — left/right/middle, single/double, or down / up separately
+3. **Steps** - the vocabulary:
+   - Click at (X, Y) - left/right/middle, single/double, or down / up separately
    - Move to (X, Y)
    - Scroll
-   - Key press — down, up, or a full press, with modifiers
+   - Key press - down, up, or a full press, with modifiers
    - Type text
-   - Wait — a base duration in ms, with an optional **randomness** checkbox and a jitter amount
-4. **Run** — press the bound hotkey anywhere; the macro executes. Press the panic key to abort.
+   - Wait - a base duration in ms, with an optional **randomness** checkbox and a jitter amount
+4. **Run** - press the bound hotkey anywhere; the macro executes. Press the panic key to abort.
 
 Randomness is a first-class idea, not an afterthought: it applies to wait durations and
 optionally to click coordinates, because perfectly identical timing is both unnatural and

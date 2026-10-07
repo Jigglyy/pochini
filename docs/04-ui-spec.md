@@ -1,118 +1,113 @@
 # UI spec
 
-Two screens. Resist adding a third.
+Three screens behind one header. The look follows the user's Kanbini app: neutral oklch
+greys, an indigo primary, ShadCN components, small uppercase section headings over bordered
+panels. Conventions for building more of it are in [CLAUDE.md](../CLAUDE.md#ui-conventions).
 
 ---
 
-## Screen 1 — Macro list
-
-The app opens here.
+## Header (every screen)
 
 ```
-┌────────────────────────────────────────────────────────────┐
-│  coordsclickermacro                    [●] Enabled   ⚙︎     │
-├────────────────────────────────────────────────────────────┤
-│  [ + New macro ]                          🔍 filter…        │
-│                                                            │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │ ⠿  Harvest loop          Space          ▸  ⋯         │  │
-│  │ ⠿  Buy stack             Ctrl+Shift+B   ▸  ⋯         │  │
-│  │ ⠿  Close popups          F8  (disabled) ▸  ⋯         │  │
-│  └──────────────────────────────────────────────────────┘  │
-│                                                            │
-│  Panic stop: Esc                                           │
-└────────────────────────────────────────────────────────────┘
+[icon] Pochini  |  < Macros / Demo        ( * Macros on  [==o] )  [gear]
 ```
 
-- **Master toggle** in the header. Off = the hook stays installed but every binding is
-  inert. One switch to make the app harmless without quitting it.
-- Each row: drag handle, name, bound hotkey, a **run now** button (▸, for testing without
-  touching the hotkey), and an overflow menu (Edit, Duplicate, Export, Delete).
-- Clicking the row opens the editor.
-- A row whose hotkey conflicts with another macro's shows an inline warning badge.
-- The panic key is always visible in the footer. The user must never have to hunt for it.
+- App mark and name on the left. Off the home screen, a divider, a back link and a
+  breadcrumb ("Macros / <macro name>", or "Settings").
+- **Master switch**, right side: a pill with a status dot, "Macros on" / "Macros off", and a
+  switch. Off means every hotkey is ignored; the toggle hotkey and the panic key still work.
+  Its tooltip names the toggle hotkey. It follows changes made by the toggle hotkey while the
+  window is in the background (the backend emits `settings-changed`).
+- **Gear** opens Settings; Back returns to wherever you came from.
+- Leaving the editor with unsaved changes asks "Discard unsaved changes?" first.
 
-Empty state: a single "Create your first macro" card, not a blank page.
-
----
-
-## Screen 2 — Editor
+## Screen 1: Macros (home)
 
 ```
-┌────────────────────────────────────────────────────────────┐
-│  ← Back        Harvest loop                  [Test] [Save] │
-├────────────────────────────────────────────────────────────┤
-│  Name     [ Harvest loop                              ]    │
-│  Hotkey   [ Space                    ] [ Record ]          │
-│           Mode ( ●Once  ○Hold to repeat  ○Toggle )         │
-│           ☐ Block this key from other apps                 │
-│  Repeat   ( ●Once  ○ [10] times  ○ Until stopped )         │
-├────────────────────────────────────────────────────────────┤
-│  Steps                                     [ + Add step ▾] │
-│                                                            │
-│  ⠿ 1  Click     (1920, 540)  left   [Pick] [◎]        ⋯   │
-│  ⠿ 2  Wait      500 ms  ☑ random + [200] ms           ⋯   │
-│  ⠿ 3  Key       Shift+A                               ⋯   │
-│  ⠿ 4  Click     (400, 220)   left   [Pick] [◎]        ⋯   │
-│                                                            │
-│           Estimated run time: 0.55 – 0.75 s                │
-└────────────────────────────────────────────────────────────┘
+Your macros                                                    [+ New macro]
+
+| Demo                                   Space   [o==]  [> Run]  [...] |
+| 3 steps · 480 ms to 705 ms                                                |
+
+Panic stop [Esc] stops a running macro at once.
 ```
 
-### Hotkey recording
+- When the master switch is off, a muted banner says hotkeys are ignored and how to turn
+  them back on (switch or toggle hotkey).
+- Each row: name and a summary line (step count, estimated duration), a "Hotkey clash" badge
+  if another macro uses the same combo, the hotkey as keycaps, the macro's **own switch**
+  (hotkey on/off for just this macro; dims the row when off), **Run**, and a menu (Edit,
+  Duplicate, Delete).
+- **Run** starts after a 3 second countdown, so you can switch to the target and place the
+  mouse. See "Run pill" below.
+- Delete confirms in an in-app dialog (no `window.confirm`).
+- Empty state: a dashed panel with "Create your first macro".
 
-`Record` arms a capture mode in the hook thread: the next key-down (plus the modifiers held
-with it) becomes the binding. Escape cancels capture rather than binding Escape. While armed,
-the key is swallowed so recording `Space` does not scroll the UI.
+## Screen 2: Editor
 
-Warn inline, at the moment of choice, when the user binds a bare printable key with **Block
-this key from other apps** checked — that is the setting that makes their keyboard feel broken.
+```
+[ Demo                                        ]  [> Test]  [Save]
 
-### Coordinate picking
+TRIGGER
+  Hotkey   [Space] [Change] [x Clear]
+  Mode     [Run once per press        v]
+  Repeat   [Once v]
+  | Hotkey on                                                   [o==] |
+  | Block the key from other apps                               [==o] |
 
-`[Pick]` arms global capture: the editor window dims, a floating HUD shows the live cursor
-position and a magnified view around it, and pressing the capture key (default `F2`, never the
-mouse — clicking would activate whatever is underneath) writes the coordinate into the step.
-Escape cancels.
+STEPS                                              Takes 480 ms to 705 ms
+  | 1 [icon] Click at (1623, 592) ±3px           ^ v [copy] [bin]  > |
+  | 4 [icon] Click where the mouse started       ^ v [copy] [bin]  v |
+  |   Target   [Fixed position | Where the mouse is at activation]  |
+  |   Jitter / Travel / Button / Hold / Settle ...                   |
+  [+ Click] [+ Click at mouse] [+ Move] [+ Key] [+ Type text] [+ Wait] [+ Scroll]
+```
 
-`[◎]` is *show me*: moves the real cursor to the stored coordinate and flashes a marker there,
-so the user can confirm a saved point still lands where they think.
+- **Name** is a large inline input. **Test** runs the current, unsaved steps after the same
+  3 second countdown. **Save** (or Ctrl+S) is enabled only when there are changes.
+- **Trigger** section:
+  - Hotkey: press Record, then the key combo. Escape cancels rather than binding Escape.
+  - Mode: run once per press / repeat while held / press to start, press again to stop.
+  - Repeat: once / a set number of times / until stopped.
+  - "Hotkey on" mirrors the row switch on the home screen.
+  - "Block the key from other apps" is off by default. Turning it on for a bare key you type
+    all the time (Space, letters, digits, Enter...) shows an amber warning.
+- **Steps**: each step is a card with a number, a type icon and a plain-English summary;
+  reorder (arrows or Alt+Up/Down), duplicate, delete, expand. A newly added step opens
+  expanded.
+  - Click / Move: **Target** switch (fixed position, or where the mouse was at activation).
+    Fixed shows X/Y inputs, **Pick** (3 second countdown, then reads the real cursor
+    position, works over fullscreen apps) and **Show me** (moves the cursor to the point).
+    Then Jitter (px), Travel (ms).
+  - Click also has Button, Action (click / double / press and hold / release), Hold, and
+    **Settle** (pause before the press and after the release; raise it if clicks get
+    dropped).
+  - Key: record the key, action, modifier switches, Hold.
+  - Type text: the text and a per-character delay (Unicode; games usually ignore it).
+  - Wait: a duration.
+  - Every duration is a number plus a "Random extra" switch that reveals the maximum added,
+    with the resulting range spelled out underneath.
+- The Steps heading shows the estimated run time (and "N times" for a counted repeat).
 
-### Step rows
+## Screen 3: Settings
 
-- Drag to reorder; the row is collapsed by default and expands to show all fields.
-- The collapsed summary is a plain-English sentence, not a field dump — "Wait 500 ms (±200)",
-  "Double-click (1920, 540)".
-- **Add step** is a dropdown with the six types from [03-macro-format.md](03-macro-format.md).
-- Duplicating a step is one click. Building these lists is repetitive by nature.
+- **Hotkeys**: "Macros on/off" (the toggle hotkey; record, change or clear) and "Panic stop"
+  (single key). Changes apply immediately; there is no Save button.
+- **Appearance**: System / Light / Dark as bordered radio cards.
 
-### Randomness UI
+## Run pill
 
-Exactly as the user described it: a number field for the base, a checkbox labelled
-**random extra**, and, when ticked, a second number field for the maximum added amount. The
-row summary shows the resulting range so the meaning of "adds" is never ambiguous.
+A floating pill at the bottom centre whenever something is running or counting down:
 
-### Test
+- "Starting in 3: switch to your target and place the mouse" with **Cancel** during the
+  countdown. The countdown runs in the backend, so it keeps time while the window is hidden.
+- "Running <name>" with **Stop** while running. Runs started by a hotkey show "Running a
+  macro".
 
-`[Test]` runs the macro immediately with a 3-second countdown overlay, so the user can focus
-the target window first. The overlay also shows which step is executing and offers Stop. The
-countdown is cancellable.
+The user must always be able to tell that something is driving their mouse, and stop it.
 
----
+## Not built yet
 
-## Global behaviours
-
-- **Tray icon.** Closing the window minimizes to tray; the app must keep running for hotkeys
-  to work, and users will otherwise close it and think it broke. Tray menu: Enabled toggle,
-  open, quit.
-- **Running indicator.** While a macro runs, the tray icon changes and an always-on-top,
-  click-through toast shows the macro name and a Stop hint. The user must always be able to
-  tell that something is driving their mouse.
-- **First-run notice.** One-time explanation that the app uses a global keyboard hook, why
-  antivirus may flag it, and that it never stores keystrokes. Honest and once.
-
-## Accessibility and theming
-
-Follow the system dark/light preference. Full keyboard navigation through the editor,
-including step reordering (Alt+Up/Down), since this is a keyboard-centric tool. Never rely on
-color alone for the conflict/disabled states.
+Tray icon (closing the window currently quits the app and its hotkeys), drag-to-reorder for
+macros and steps, the hook-armed F2 coordinate capture with a magnifier, first-run notice
+about the keyboard hook, import/export of a single macro.

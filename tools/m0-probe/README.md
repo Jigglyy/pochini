@@ -4,7 +4,7 @@ A throwaway harness that validates the Win32 claims in
 [../../docs/02-windows-input-research.md](../../docs/02-windows-input-research.md) before any
 Rust is written.
 
-It is PowerShell + inline C# specifically so it needs **no toolchain** — no Rust, no MSVC
+It is PowerShell + inline C# specifically so it needs **no toolchain** - no Rust, no MSVC
 build tools, no npm. It calls exactly the same Win32 APIs with exactly the same flags the Rust
 implementation will, so what it proves carries over. Once `src-tauri/` exists, these become
 Rust tests and this directory can be deleted.
@@ -52,7 +52,7 @@ the run.
 ## Results on the dev machine (2026-09-17)
 
 Windows 11 IoT Enterprise LTSC 2024, three monitors, **mixed DPI**, **negative virtual-desktop
-origin** — the layout that breaks naive implementations:
+origin** - the layout that breaks naive implementations:
 
 ```
 virtual desktop: origin (-1920, 0)  size 6400 x 1440
@@ -63,14 +63,14 @@ virtual desktop: origin (-1920, 0)  size 6400 x 1440
 
 **All seven tests pass.** What they established:
 
-### Coordinates — the documented formula was wrong
+### Coordinates - the documented formula was wrong
 
 Comparing the requested pixel against `GetCursorPos` after a real `SendInput`, 90 points
 spread across all three monitors:
 
 | forward formula | max error | mean |
 |---|---|---|
-| `round(px * 65535 / (w - 1))` — the MSDN reading | 1 px | 0.03 px |
+| `round(px * 65535 / (w - 1))` - the MSDN reading | 1 px | 0.03 px |
 | `floor(px * 65536 / w)` | **4480 px** | 102 px |
 | `ceil(px * 65536 / w)` | **0 px** | 0.00 px |
 
@@ -79,7 +79,7 @@ against 65536. The `floor` variant sent a click aimed at the top-left of the lef
 to a completely different monitor. The `65535 / (w - 1)` variant is the dangerous one: it is
 right 97 % of the time and will pass casual testing.
 
-### Timing — the 15.6 ms claim, confirmed exactly
+### Timing - the 15.6 ms claim, confirmed exactly
 
 | requested | waitable timer p50 | p99 | `Thread.Sleep` p50 |
 |---|---|---|---|
@@ -113,18 +113,18 @@ right 97 % of the time and will pass casual testing.
 
 ## Bugs this harness caught before they reached Rust
 
-Worth reading — each one would have been much harder to find later:
+Worth reading - each one would have been much harder to find later:
 
 1. **The coordinate formula in the design doc was wrong.** Fixed in
    [../../docs/02-windows-input-research.md](../../docs/02-windows-input-research.md).
 2. **`dwExtraInfo` stamp sign extension.** The original stamp `0xC0DEC11C` has the high bit
    set, so `IntPtr` sign-extended it to `0xFFFFFFFFC0DEC11C` on write and the hook compared it
    against a zero-extended `0x00000000C0DEC11C` on read. The self-injection filter silently
-   never matched — the guard existed and did nothing. Stamps must stay below `int.MaxValue`;
+   never matched - the guard existed and did nothing. Stamps must stay below `int.MaxValue`;
    it is now `0x434C4943`.
 3. **Running the macro inside the hook callback loses events.** The first version called the
    handler from the callback. The handler threw, the `catch` swallowed it, and the event never
-   even made it into the log — the symptom was "21 triggers fired, 0 trigger key-downs
+   even made it into the log - the symptom was "21 triggers fired, 0 trigger key-downs
    observed." This is exactly why the architecture says the callback enqueues and a worker
    executes.
 4. **A 4 ms settle before reading the cursor back is too short**, producing a phantom 24 px
@@ -133,5 +133,5 @@ Worth reading — each one would have been much harder to find later:
 ## Known quirk worth remembering
 
 PowerShell's comma operator binds **tighter** than `+`/`-`, so `@($a, $a + 1)` silently
-evaluates to `@($a, $a, 1)` — an array, not two numbers. Every arithmetic element inside an
+evaluates to `@($a, $a, 1)` - an array, not two numbers. Every arithmetic element inside an
 array literal in `probe.ps1` is parenthesized for this reason. Do not "clean up" those parens.

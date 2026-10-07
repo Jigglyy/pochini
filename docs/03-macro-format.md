@@ -67,8 +67,10 @@ and reorder without re-rendering the world.
   "x": 1920, "y": 540,           // virtual-desktop pixels; may be negative
   "button": "left",              // left | right | middle | x1 | x2
   "action": "click",             // click | double | down | up
+  "anchor": "fixed",             // fixed | activation (see below)
   "coord_jitter_px": 0,          // radius of a uniform disc around (x,y)
   "hold_ms": { "base": 25, "jitter": 15 },   // gap between down and up
+  "settle_ms": { "base": 50, "jitter": 25 }, // pause before the press AND after the release
   "move_duration_ms": 0,         // 0 = teleport; >0 = interpolated move, see below
   "capture": {                   // metadata from when the coordinate was picked
     "monitor": "\\\\.\\DISPLAY2",
@@ -82,13 +84,32 @@ and reorder without re-rendering the world.
 operations). The engine tracks these and releases anything still held when the macro ends or
 is cancelled.
 
+`settle_ms` is paused twice: after the cursor arrives, before the press; and after the
+release, before the next step moves the cursor away. It exists because of a real failure:
+without it the cursor left the target **0.05 ms** after the button came up (measured with
+`cargo run --example trace_macro`), so any target that samples input once per frame saw the
+release happen over the *next* target and dropped the click - it looked like the button was
+held and abandoned. The 50–75 ms default spans at least two frames at 60 fps. Files written
+before this field existed pick up the default on load; no schema bump, since it is an
+additive field with a serde default.
+
 `move_duration_ms > 0` interpolates the cursor over that many milliseconds instead of jumping.
 Some targets only register hover state on real movement, and some reject a click that arrives
 in the same frame the cursor appeared. Curve: ease-in-out, with a small per-point jitter.
 
+`anchor` picks what the step aims at. `"fixed"` (the default) uses the step's own `x`/`y`.
+`"activation"` ignores `x`/`y` and aims at wherever the mouse was when the macro was
+activated: where the cursor sat when the hotkey was pressed, or when the Run/Test countdown
+ended. The engine captures that point once, at the start of the run, so a later step can
+still return to it after earlier steps moved the cursor, and every pass of a repeating macro
+reuses the same point. `coord_jitter_px` is applied around it as usual. In the editor this is
+the "Click at mouse" step and the Target switch ("Fixed position" / "Where the mouse is at
+activation").
+
 ### `move`
 
-Same shape as `click` minus `button` / `action` / `hold_ms`.
+Same shape as `click` minus `button` / `action` / `hold_ms` / `settle_ms`, including
+`anchor`.
 
 ### `scroll`
 
@@ -120,7 +141,7 @@ buttons, `down` without a matching `up` is tracked and force-released at macro e
 { "id": "…", "type": "text", "value": "hello world", "per_char_ms": { "base": 20, "jitter": 15 } }
 ```
 
-Uses `KEYEVENTF_UNICODE`. Not suitable for game input — the UI should say so inline.
+Uses `KEYEVENTF_UNICODE`. Not suitable for game input - the UI should say so inline.
 
 ### `wait`
 
@@ -137,6 +158,29 @@ A `Jitter` is `{ "base": <u32 ms>, "jitter": <u32 ms> }` and appears anywhere a 
 Sampling is `base + rng.gen_range(0..=jitter)`, uniform. The UI renders it as a number field
 plus a checkbox that reveals a second number field, matching the user's description.
 
+## Settings
+
+`settings.json`, separate from the macro file so a corrupt one cannot take down the other.
+
+```jsonc
+{
+  "panic_key": { "vk": 27, "scancode": 1, "extended": false, "label": "Esc" },
+  "enabled": true,               // master switch: false = every hotkey ignored
+  "rng_seed": null,              // set to make runs reproducible while debugging
+  "toggle_hotkey": {             // flips `enabled` from anywhere; null = none
+    "key": { "vk": 123, "scancode": 88, "extended": false, "label": "F12" },
+    "modifiers": ["ctrl", "shift"]
+  }
+}
+```
+
+The toggle hotkey and the panic key both work while `enabled` is false; that is how macros get
+turned back on, or stopped, from inside a fullscreen game. A file written before
+`toggle_hotkey` existed gets the Ctrl+Shift+F12 default; an explicit `null` means the user
+cleared it and stays cleared.
+
+Theme (system / light / dark) is a renderer-only preference kept in localStorage, not here.
+
 ## Guard (post-v1, reserved)
 
 ```jsonc
@@ -144,7 +188,7 @@ plus a checkbox that reveals a second number field, matching the user's descript
 ```
 
 Refuses to run unless the foreground window belongs to a matching process. The single best
-safety feature for coordinate macros — it stops a macro meant for one game from clicking
+safety feature for coordinate macros - it stops a macro meant for one game from clicking
 through your email client. Reserved in the schema now so adding it later is not a migration.
 
 ## Design notes
