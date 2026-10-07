@@ -4,6 +4,34 @@ All notable changes to Pochini. Versions follow [semantic versioning](https://se
 while the major version is 0, a minor bump may change behaviour or the macro file format.
 Each version is built with `npm run release` into `release/Pochini-<version>.exe`.
 
+## 0.2.1 - 2026-10-07
+
+### Fixed
+
+- The on/off hotkey (Ctrl+Shift+F12) could do nothing. It is now also registered with Windows,
+  which delivers it whichever window has focus, even if the keyboard hook misses it. While
+  Windows owns it, the keyboard hook leaves it alone, so one press cannot toggle twice.
+- The keyboard hook is reinstalled every 30 seconds. Windows silently removes a hook it
+  considers too slow (for example while the PC is under heavy load) and never says so; this
+  brings it back, and keeps Pochini ahead of other programs' hooks that might swallow keys.
+- Starting Pochini while it is already running now brings the open window to the front instead
+  of starting a second copy, which made every hotkey fire twice.
+- The release script no longer fails when the previous build is still running: it writes the
+  new exe first and reports any old one it could not delete.
+
+### Added
+
+- Settings > **Hotkey check**: shows whether the keyboard hook is running, whether Windows
+  accepted the on/off hotkey (and warns if another program already owns it), and a live list of
+  what happened each time you pressed one of your hotkeys ("Ran Demo", "Ignored: the mouse
+  was not over game.exe", "No hotkey uses this combination"...). Only your own hotkeys
+  are listed, never other typing.
+
+### Changed
+
+- Bigger icon: the artwork now fills the tile, so it reads at taskbar and title-bar sizes. The
+  header logo is larger too.
+
 ## 0.2.0 - 2026-10-07
 
 ### Added
