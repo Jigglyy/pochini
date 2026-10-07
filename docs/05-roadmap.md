@@ -80,6 +80,8 @@ Rebuilt on ShadCN + Tailwind v4 in Kanbini's style.
 - [x] Per-macro **App only** with a running-apps picker
 - [x] Drag-to-reorder for macros and steps (dnd-kit, as in Kanbini)
 - [x] Favorites and macro list sorting (custom, favorites first, name, newest, recently edited)
+- [x] Step color coding by kind, recolorable (right-click a step, or Settings)
+- [x] GitHub Releases: a `v*` tag builds the .exe on GitHub Actions and attaches it
 - [ ] Coordinate picking via a hook-armed key, with a magnifier
 - [ ] Tray icon (closing the window currently quits the app and its hotkeys)
 - [ ] First-run notice about the keyboard hook

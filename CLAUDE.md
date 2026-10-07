@@ -98,9 +98,11 @@ src/                      React UI
   components/layout.tsx   Section, Field, ToggleRow, Kbd, KeyCombo, Notice primitives
   components/             StepRow, JitterField, CoordPicker, KeyCapture, RunIndicator
   components/sortable.tsx shared dnd-kit setup (Kanbini's drag feel) for steps and macros
+  components/StepColors.tsx step-kind icons, colour chips, swatches, Settings > Step colors
   lib/ipc.ts              typed wrappers over the Tauri commands
   lib/steps.ts            step construction, plain-English summaries, duration estimates
   lib/order.ts            macro list sort modes and drag-group ordering
+  lib/colors.ts           step colour palette (Kanbini accents), defaults, the colour store
   lib/prefs.ts            renderer-only prefs (localStorage "pochini.settings")
   lib/theme.ts            system/light/dark preference
   index.css               theme tokens: ShadCN names, Kanbini oklch values
@@ -235,6 +237,11 @@ Mostly carried over from Kanbini, whose renderer this UI copies the look of:
   `:root[data-theme='light']`, plus `--warning` and `--success`. Anything that varies by
   theme must use a token (`bg-card`, `text-muted-foreground`, `border-warning/50`...), never
   a hardcoded colour or fixed Tailwind shade.
+- **User-picked colours are data, not theme.** Step colours come from the accent palette in
+  `lib/colors.ts` (Kanbini's), stored by name. Surfaces built from them mix toward a token
+  (`color-mix(in oklab, <accent> 24%, var(--card))`) so they read in both themes; see `tone()`.
+- **Right-click menus** use the ShadCN `ContextMenu` (`components/ui/context-menu.tsx`), on the
+  step header only, never over inputs (which keep the native copy/paste menu).
 - **Theme preference** (system / light / dark) is renderer-only, stored in localStorage under
   `pochini.settings`, and applied before first paint by the inline script in `index.html`.
 - **Build screens from the primitives in `components/layout.tsx`**: `Section` (uppercase

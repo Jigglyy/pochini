@@ -1,24 +1,29 @@
 import { useState, type CSSProperties, type ReactNode, type Ref } from "react";
-import {
-  ArrowDown,
-  ArrowUp,
-  ArrowUpDown,
-  ChevronRight,
-  Copy,
-  Crosshair,
-  GripVertical,
-  Keyboard,
-  MousePointerClick,
-  Move,
-  Timer,
-  Trash2,
-  Type,
-} from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronRight, Copy, GripVertical, RotateCcw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuLabel,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  COLOR_CHOICES,
+  colorKind,
+  DEFAULT_COLORS,
+  KIND_LABELS,
+  resetStepColor,
+  setStepColor,
+  tone,
+  useStepColors,
+  type ColorKind,
+} from "@/lib/colors";
 import { cn } from "@/lib/utils";
 import { summarize } from "@/lib/steps";
 import type { Anchor, Modifier, Step } from "@/types";
@@ -27,24 +32,12 @@ import { JitterField } from "./JitterField";
 import { KeyCapture } from "./KeyCapture";
 import { Field } from "./layout";
 import { useSortableItem, type DragHandle } from "./sortable";
+import { colorName, KIND_ICONS, KindChip, Swatch } from "./StepColors";
 
 const MODS: Modifier[] = ["ctrl", "alt", "shift", "win"];
 
 export function stepIcon(s: Step) {
-  switch (s.type) {
-    case "click":
-      return s.anchor === "activation" ? Crosshair : MousePointerClick;
-    case "move":
-      return Move;
-    case "key":
-      return Keyboard;
-    case "text":
-      return Type;
-    case "wait":
-      return Timer;
-    case "scroll":
-      return ArrowUpDown;
-  }
+  return KIND_ICONS[colorKind(s)];
 }
 
 function IconAction({ label, onClick, children, danger }: {
@@ -121,16 +114,82 @@ export function SortableStepRow(props: StepRowProps) {
 /** The lifted copy of a step while it is being dragged. Same layout as the
  *  StepRow header. */
 export function StepFace({ step, index }: { step: Step; index: number }) {
-  const Icon = stepIcon(step);
+  const kind = colorKind(step);
+  const color = useStepColors()[kind];
   return (
-    <div className="flex cursor-grabbing items-center gap-3 rounded-lg border border-primary/40 bg-card px-3 py-2.5 text-card-foreground shadow-xl">
+    <div
+      className="flex cursor-grabbing items-center gap-3 rounded-lg border border-l-[3px] border-primary/40 bg-card px-3 py-2.5 text-card-foreground shadow-xl"
+      style={{ borderLeftColor: tone(color)?.bar }}
+    >
       <GripVertical className="size-4 shrink-0 text-muted-foreground" />
       <span className="w-5 text-right text-xs tabular-nums text-muted-foreground">{index + 1}</span>
-      <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-        <Icon className="size-4" />
-      </span>
+      <KindChip kind={kind} color={color} />
       <span className="min-w-0 flex-1 truncate py-1.5 text-sm">{summarize(step)}</span>
     </div>
+  );
+}
+
+/** Right-click on a step header (Kanbini's card menu): recolor this kind of
+ *  step, then the same actions as the header buttons. */
+function StepMenu({
+  kind,
+  first,
+  last,
+  onMove,
+  onDuplicate,
+  onDelete,
+}: {
+  kind: ColorKind;
+  first: boolean;
+  last: boolean;
+  onMove: (delta: number) => void;
+  onDuplicate: () => void;
+  onDelete: () => void;
+}) {
+  const color = useStepColors()[kind];
+  return (
+    <ContextMenuContent className="w-60">
+      <ContextMenuLabel className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        Color for every {KIND_LABELS[kind]} step
+      </ContextMenuLabel>
+      <div className="grid grid-cols-5 justify-items-center gap-1 px-1.5 pb-1.5">
+        {COLOR_CHOICES.map((c) => (
+          <ContextMenuItem
+            key={c}
+            onSelect={() => setStepColor(kind, c)}
+            aria-label={colorName(c)}
+            title={colorName(c)}
+            className="size-7 justify-center rounded-full p-0 focus:bg-accent"
+          >
+            <Swatch color={c} selected={color === c} />
+          </ContextMenuItem>
+        ))}
+      </div>
+      {color !== DEFAULT_COLORS[kind] && (
+        <ContextMenuItem onSelect={() => resetStepColor(kind)}>
+          <RotateCcw />
+          Reset to {colorName(DEFAULT_COLORS[kind]).toLowerCase()}
+        </ContextMenuItem>
+      )}
+      <ContextMenuSeparator />
+      <ContextMenuItem disabled={first} onSelect={() => onMove(-1)}>
+        <ArrowUp />
+        Move up
+      </ContextMenuItem>
+      <ContextMenuItem disabled={last} onSelect={() => onMove(1)}>
+        <ArrowDown />
+        Move down
+      </ContextMenuItem>
+      <ContextMenuItem onSelect={onDuplicate}>
+        <Copy />
+        Duplicate
+      </ContextMenuItem>
+      <ContextMenuSeparator />
+      <ContextMenuItem variant="destructive" onSelect={onDelete}>
+        <Trash2 />
+        Delete
+      </ContextMenuItem>
+    </ContextMenuContent>
   );
 }
 
@@ -154,52 +213,67 @@ export function StepRow({
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const set = (patch: Partial<Step>) => onChange({ ...step, ...patch } as Step);
-  const Icon = stepIcon(step);
+  const kind = colorKind(step);
+  const color = useStepColors()[kind];
 
   return (
-    <div ref={itemRef} style={style} className="rounded-lg border border-border bg-card text-card-foreground">
-      <div
-        {...handle}
-        role="button"
-        tabIndex={0}
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            setOpen((o) => !o);
-          }
-          if (e.altKey && e.key === "ArrowUp") onMove(-1);
-          if (e.altKey && e.key === "ArrowDown") onMove(1);
-        }}
-        className="flex items-center gap-3 rounded-lg px-3 py-2.5 outline-none hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        {handle && (
-          <GripVertical aria-hidden className="size-4 shrink-0 cursor-grab text-muted-foreground/60" />
-        )}
-        <span className="w-5 text-right text-xs tabular-nums text-muted-foreground">{index + 1}</span>
-        <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-          <Icon className="size-4" />
-        </span>
-        <span className="min-w-0 flex-1 truncate text-sm">{summarize(step)}</span>
-        <div className="flex items-center">
-          <IconAction label="Move up" onClick={() => onMove(-1)}>
-            <ArrowUp className={cn(index === 0 && "opacity-30")} />
-          </IconAction>
-          <IconAction label="Move down" onClick={() => onMove(1)}>
-            <ArrowDown className={cn(index === count - 1 && "opacity-30")} />
-          </IconAction>
-          <IconAction label="Duplicate" onClick={onDuplicate}>
-            <Copy />
-          </IconAction>
-          <IconAction label="Delete" onClick={onDelete} danger>
-            <Trash2 />
-          </IconAction>
-        </div>
-        <ChevronRight
-          className={cn("size-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-90")}
+    <div
+      ref={itemRef}
+      style={{ ...style, borderLeftColor: tone(color)?.bar }}
+      className="rounded-lg border border-l-[3px] border-border bg-card text-card-foreground"
+    >
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div
+            {...handle}
+            role="button"
+            tabIndex={0}
+            aria-expanded={open}
+            onClick={() => setOpen((o) => !o)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setOpen((o) => !o);
+              }
+              if (e.altKey && e.key === "ArrowUp") onMove(-1);
+              if (e.altKey && e.key === "ArrowDown") onMove(1);
+            }}
+            className="flex items-center gap-3 rounded-lg px-3 py-2.5 outline-none hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {handle && (
+              <GripVertical aria-hidden className="size-4 shrink-0 cursor-grab text-muted-foreground/60" />
+            )}
+            <span className="w-5 text-right text-xs tabular-nums text-muted-foreground">{index + 1}</span>
+            <KindChip kind={kind} color={color} />
+            <span className="min-w-0 flex-1 truncate text-sm">{summarize(step)}</span>
+            <div className="flex items-center">
+              <IconAction label="Move up" onClick={() => onMove(-1)}>
+                <ArrowUp className={cn(index === 0 && "opacity-30")} />
+              </IconAction>
+              <IconAction label="Move down" onClick={() => onMove(1)}>
+                <ArrowDown className={cn(index === count - 1 && "opacity-30")} />
+              </IconAction>
+              <IconAction label="Duplicate" onClick={onDuplicate}>
+                <Copy />
+              </IconAction>
+              <IconAction label="Delete" onClick={onDelete} danger>
+                <Trash2 />
+              </IconAction>
+            </div>
+            <ChevronRight
+              className={cn("size-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-90")}
+            />
+          </div>
+        </ContextMenuTrigger>
+        <StepMenu
+          kind={kind}
+          first={index === 0}
+          last={index === count - 1}
+          onMove={onMove}
+          onDuplicate={onDuplicate}
+          onDelete={onDelete}
         />
-      </div>
+      </ContextMenu>
 
       {open && (
         <div className="flex flex-col gap-4 border-t border-border px-4 py-4">

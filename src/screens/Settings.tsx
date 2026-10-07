@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
 import { Monitor, Moon, Sun } from "lucide-react";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Button } from "@/components/ui/button";
 import { HotkeyCheck } from "@/components/HotkeyCheck";
+import { StepColorSettings } from "@/components/StepColors";
 import { KeyCapture, comboLabel } from "@/components/KeyCapture";
 import { Field, Section } from "@/components/layout";
+import { DEFAULT_COLORS, KINDS, resetStepColors, useStepColors } from "@/lib/colors";
 import { appInfo, saveSettings, type AppInfo } from "@/lib/ipc";
 import type { ThemePref } from "@/lib/theme";
 import { cn } from "@/lib/utils";
@@ -27,6 +30,8 @@ export function Settings({
   onTheme: (t: ThemePref) => void;
 }) {
   const [info, setInfo] = useState<AppInfo | null>(null);
+  const colors = useStepColors();
+  const customColors = KINDS.some((k) => colors[k] !== DEFAULT_COLORS[k]);
   useEffect(() => {
     appInfo().then(setInfo).catch(() => {});
   }, []);
@@ -96,6 +101,22 @@ export function Settings({
             </label>
           ))}
         </RadioGroup>
+      </Section>
+
+      <Section
+        title="Step colors"
+        action={
+          customColors && (
+            <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={resetStepColors}>
+              Reset all
+            </Button>
+          )
+        }
+      >
+        <p className="text-xs text-muted-foreground">
+          Each kind of step has its own color in the editor. You can also right-click a step there to recolor it.
+        </p>
+        <StepColorSettings />
       </Section>
 
       {info && (

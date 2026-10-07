@@ -6,7 +6,12 @@ import type { SortMode } from "./order";
 
 export type ThemePref = "system" | "light" | "dark";
 
-export type UiPrefs = { theme?: ThemePref; macroSort?: SortMode };
+export type UiPrefs = {
+  theme?: ThemePref;
+  macroSort?: SortMode;
+  /** Step kind -> colour name, only the kinds changed from the default (lib/colors.ts). */
+  stepColors?: Record<string, string>;
+};
 
 const KEY = "pochini.settings";
 

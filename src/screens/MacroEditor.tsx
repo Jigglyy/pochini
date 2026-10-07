@@ -22,6 +22,7 @@ import { SortableStepRow, StepFace } from "@/components/StepRow";
 import { DROP_ANIMATION, useDragSensors } from "@/components/sortable";
 import { Field, Notice, Section, ToggleRow } from "@/components/layout";
 import { getMacro, saveMacro, testSteps } from "@/lib/ipc";
+import { tone, useStepColors } from "@/lib/colors";
 import { blankStep, fmtRange, newId, stepRange, type NewStepKind } from "@/lib/steps";
 import type { Macro, Repeat, Step, TriggerMode } from "@/types";
 
@@ -61,6 +62,7 @@ export function MacroEditor({
   const [justAdded, setJustAdded] = useState<string | null>(null);
   const [draggingStep, setDraggingStep] = useState<string | null>(null);
   const sensors = useDragSensors();
+  const colors = useStepColors();
 
   useEffect(() => {
     getMacro(id)
@@ -367,7 +369,7 @@ export function MacroEditor({
         <div className="flex flex-wrap gap-2 border-t border-border pt-4">
           {ADD.map(({ kind, label, Icon, hint }) => (
             <Button key={kind} variant="outline" size="sm" onClick={() => add(kind)} title={hint}>
-              <Icon />
+              <Icon style={{ color: tone(colors[kind])?.icon }} />
               {label}
             </Button>
           ))}

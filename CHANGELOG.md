@@ -4,6 +4,18 @@ All notable changes to Pochini. Versions follow [semantic versioning](https://se
 while the major version is 0, a minor bump may change behaviour or the macro file format.
 Each version is built with `npm run release` into `release/Pochini-<version>.exe`.
 
+## 0.5.0 - 2026-10-07
+
+### Added
+
+- **Color-coded steps**: every kind of step (Click, Click at mouse, Move, Key, Type text, Wait,
+  Scroll) has its own color on its card and on the Add buttons.
+- **Right-click a step** for a menu like Kanbini's: recolor that kind of step, reset it to the
+  default, move, duplicate or delete.
+- **Settings > Step colors** to set or reset every kind's color in one place.
+- **GitHub Releases**: each version is built on GitHub and published as a release with
+  `Pochini-<version>.exe` attached.
+
 ## 0.4.0 - 2026-10-07
 
 ### Added
