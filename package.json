@@ -8,7 +8,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "release": "node scripts/release.mjs"
+    "release": "node scripts/release.mjs",
+    "icons": "tauri icon assets/pochini-icon.svg && node -e \"for (const d of ['android','ios']) require('node:fs').rmSync('src-tauri/icons/'+d,{recursive:true,force:true})\""
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

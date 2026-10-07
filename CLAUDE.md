@@ -52,6 +52,7 @@ what was rejected (Electron, C#/WPF, Python, AutoHotkey).
 npm install
 npm run tauri dev                                  # run the app
 npm run release -- patch                           # versioned .exe, see Releases below
+npm run icons                                      # regenerate all icons from assets/pochini-icon.svg
 npm run build                                      # type-check + build the frontend alone
 cargo test  --manifest-path src-tauri/Cargo.toml
 cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets
@@ -115,6 +116,7 @@ src-tauri/src/
   hotkey/bindings.rs      binding table + matching        (pure, tested)
   hotkey/logic.rs         per-key decision state machine  (pure, tested)
   hotkey/hook.rs          WH_KEYBOARD_LL thread           (unsafe, thin)
+assets/pochini-icon.svg   app icon source of truth (also the header logo and favicon)
 src-tauri/examples/       trace_macro diagnostic
 tools/m0-probe/           standalone Win32 validation harness
 docs/                     design docs; docs/adr/ for decisions
