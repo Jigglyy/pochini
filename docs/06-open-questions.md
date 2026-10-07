@@ -67,18 +67,15 @@ building it later means the mouse hook arrives later too. Worth confirming it is
 (`com.pochini.app`) and GitHub repo (`Jigglyy/pochini`) use it; the local project folder keeps
 the working title `coordsclickermacro`.
 
-## 8. Toggle hotkey default vs the user's screenshot tool keys
+## 8. Toggle hotkey default
 
-**Assumed:** Ctrl+Shift+F12, chosen as unlikely to collide with a game binding.
-
-On the dev machine F12, F13 and F14 are screenshot tool hotkeys. Ctrl+Shift+F12 is a different combo,
-so it should not trigger screenshot tool unless screenshot tool also binds that exact combination, but a key
-outside F12 to F14 would remove the question entirely. The user can rebind it in Settings; the
-open question is whether the shipped default should move.
+**Decided (2026-10-07): keep Ctrl+Shift+F12.** It was chosen as unlikely to collide with a game
+binding. The user's screenshot tool owns the bare F12 to F14 keys, which Ctrl+Shift+F12 does not
+trigger; the user preferred to keep the default. It can be rebound in Settings.
 
 ## 9. Toggle hotkey sometimes ignored while this app has focus (unresolved)
 
-**Observed, cause unknown.** With another window focused (Discord, a game) the toggle hotkey
+**Observed, cause unknown.** With another window focused (a chat app, a game) the toggle hotkey
 worked every time it was tried, and the trace showed hook, logic and worker all firing. With
 this app's own window focused, three experiments gave mixed results: twice the hook logged no
 event at all, not even the Ctrl press (once after bringing the window forward with
