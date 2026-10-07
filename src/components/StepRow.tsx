@@ -25,7 +25,7 @@ import {
   type ColorKind,
 } from "@/lib/colors";
 import { cn } from "@/lib/utils";
-import { summarize } from "@/lib/steps";
+import { fmtAim, summarize, type Aim } from "@/lib/steps";
 import type { Anchor, Modifier, Step } from "@/types";
 import { CoordPicker } from "./CoordPicker";
 import { JitterField } from "./JitterField";
@@ -70,10 +70,11 @@ function IconAction({ label, onClick, children, danger }: {
 function TargetPicker({ anchor, onChange }: { anchor: Anchor; onChange: (a: Anchor) => void }) {
   const opts: { value: Anchor; label: string }[] = [
     { value: "fixed", label: "Fixed position" },
-    { value: "activation", label: "Where the mouse is at activation" },
+    { value: "activation", label: "Mouse start + offset" },
+    { value: "previous", label: "Previous point + offset" },
   ];
   return (
-    <div className="inline-flex rounded-md border border-input p-0.5">
+    <div role="group" aria-label="Target" className="inline-flex flex-wrap rounded-md border border-input p-0.5">
       {opts.map((o) => (
         <button
           key={o.value}
@@ -94,6 +95,39 @@ function TargetPicker({ anchor, onChange }: { anchor: Anchor; onChange: (a: Anch
   );
 }
 
+const TARGET_HINT: Record<Anchor, string | undefined> = {
+  fixed: undefined,
+  activation:
+    "Aims at where the mouse was when the macro started (where you pressed the hotkey, or where it sat when the Run countdown ended), moved by the offset.",
+  previous:
+    "Aims at the point the previous click or move aimed at, moved by the offset. Random jitter is never carried along. With Repeat, a chain that starts with this keeps going on the next pass.",
+};
+
+function OffsetField({ dx, dy, onChange }: { dx: number; dy: number; onChange: (dx: number, dy: number) => void }) {
+  const num = (v: string) => Math.trunc(+v || 0);
+  return (
+    <>
+      <span className="text-sm text-muted-foreground">X</span>
+      <Input
+        type="number"
+        aria-label="Offset X"
+        className="w-24 tabular-nums"
+        value={dx}
+        onChange={(e) => onChange(num(e.target.value), dy)}
+      />
+      <span className="text-sm text-muted-foreground">Y</span>
+      <Input
+        type="number"
+        aria-label="Offset Y"
+        className="w-24 tabular-nums"
+        value={dy}
+        onChange={(e) => onChange(dx, num(e.target.value))}
+      />
+      <span className="text-xs text-muted-foreground">px</span>
+    </>
+  );
+}
+
 type StepRowProps = {
   step: Step;
   index: number;
@@ -103,6 +137,10 @@ type StepRowProps = {
   onDuplicate: () => void;
   onMove: (delta: number) => void;
   defaultOpen?: boolean;
+  /** Where this step aims on the first pass (click and move steps). */
+  aim?: Aim | null;
+  /** Some earlier step has a point, so "previous point" means that one. */
+  hasEarlierPoint?: boolean;
 };
 
 /** A StepRow inside the editor's sortable list: drag its header to reorder. */
@@ -202,6 +240,8 @@ export function StepRow({
   onDuplicate,
   onMove,
   defaultOpen = false,
+  aim,
+  hasEarlierPoint = false,
   itemRef,
   style,
   handle,
@@ -219,6 +259,7 @@ export function StepRow({
   return (
     <div
       ref={itemRef}
+      data-step-id={step.id}
       style={{ ...style, borderLeftColor: tone(color)?.bar }}
       className="rounded-lg border border-l-[3px] border-border bg-card text-card-foreground"
     >
@@ -279,19 +320,25 @@ export function StepRow({
         <div className="flex flex-col gap-4 border-t border-border px-4 py-4">
           {(step.type === "click" || step.type === "move") && (
             <>
-              <Field
-                label="Target"
-                hint={
-                  step.anchor === "activation"
-                    ? "Aims wherever the mouse was when the macro started: where you pressed the hotkey, or where it sat when the Run countdown ended."
-                    : undefined
-                }
-              >
+              <Field label="Target" hint={TARGET_HINT[step.anchor]}>
                 <TargetPicker anchor={step.anchor} onChange={(anchor) => set({ anchor })} />
               </Field>
-              {step.anchor === "fixed" && (
+              {step.anchor === "fixed" ? (
                 <Field label="Position">
                   <CoordPicker x={step.x} y={step.y} onChange={(x, y) => set({ x, y })} />
+                </Field>
+              ) : (
+                <Field
+                  label="Offset"
+                  hint={
+                    <span data-testid="lands-at">
+                      Right and down are positive.
+                      {step.anchor === "previous" && !hasEarlierPoint && " No earlier click or move, so this counts from where the mouse started."}
+                      {aim && ` Lands at ${fmtAim(aim)}.`}
+                    </span>
+                  }
+                >
+                  <OffsetField dx={step.dx} dy={step.dy} onChange={(dx, dy) => set({ dx, dy })} />
                 </Field>
               )}
               <Field label="Jitter" hint="Random offset within this many pixels of the target.">

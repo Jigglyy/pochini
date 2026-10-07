@@ -113,10 +113,17 @@ pub enum Anchor {
     #[default]
     Fixed,
     /// Wherever the mouse was when the macro was activated (hotkey pressed,
-    /// or the end of the Run countdown). Captured once per run, so a later
-    /// step can still return to it after earlier steps moved the cursor.
-    /// `x`/`y` are ignored.
+    /// or the end of the Run countdown), plus the step's `dx`/`dy`. Captured
+    /// once per run, so a later step can still return to it after earlier
+    /// steps moved the cursor. `x`/`y` are ignored.
     Activation,
+    /// The point the previous click or move step aimed at, plus `dx`/`dy`.
+    /// "Aimed at" is before jitter, so random offsets never pile up along a
+    /// chain. Before any click or move in the run, that is the activation
+    /// point. It carries over between repeats: a chain whose first step is
+    /// `Previous` keeps going on the next pass, one that starts from
+    /// `Activation` starts over. `x`/`y` are ignored.
+    Previous,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -130,6 +137,12 @@ pub enum Step {
         action: ClickAction,
         #[serde(default)]
         anchor: Anchor,
+        /// Offset in pixels for an `Activation` or `Previous` anchor: right
+        /// and down are positive. Ignored for `Fixed`.
+        #[serde(default)]
+        dx: i32,
+        #[serde(default)]
+        dy: i32,
         #[serde(default)]
         coord_jitter_px: u32,
         #[serde(default = "default_hold")]
@@ -151,6 +164,11 @@ pub enum Step {
         y: i32,
         #[serde(default)]
         anchor: Anchor,
+        /// See `Step::Click::dx`.
+        #[serde(default)]
+        dx: i32,
+        #[serde(default)]
+        dy: i32,
         #[serde(default)]
         coord_jitter_px: u32,
         #[serde(default)]
@@ -564,7 +582,7 @@ mod tests {
             r#"{"type":"click","id":"a","x":0,"y":0,"button":"left","action":"click","anchor":"activation"}"#,
         )
         .unwrap();
-        assert!(matches!(s, Step::Click { anchor: Anchor::Activation, .. }));
+        assert!(matches!(s, Step::Click { anchor: Anchor::Activation, dx: 0, dy: 0, .. }));
         assert!(serde_json::to_string(&s).unwrap().contains(r#""anchor":"activation""#));
     }
 
@@ -588,6 +606,25 @@ mod tests {
         )
         .unwrap();
         assert_eq!(cleared.toggle_hotkey, None);
+    }
+
+    #[test]
+    fn offset_anchors_roundtrip_and_offsets_default_to_zero() {
+        let s: Step = serde_json::from_str(
+            r#"{"type":"move","id":"m","x":5,"y":6,"anchor":"previous","dx":20,"dy":-4}"#,
+        )
+        .unwrap();
+        assert!(matches!(s, Step::Move { anchor: Anchor::Previous, dx: 20, dy: -4, .. }));
+        let back = serde_json::to_string(&s).unwrap();
+        assert!(back.contains(r#""anchor":"previous""#) && back.contains(r#""dx":20"#), "{back}");
+
+        // A file from before offsets existed: an activation click stays exactly
+        // on the activation point.
+        let old: Step = serde_json::from_str(
+            r#"{"type":"click","id":"c","x":900,"y":900,"button":"left","action":"click","anchor":"activation"}"#,
+        )
+        .unwrap();
+        assert!(matches!(old, Step::Click { anchor: Anchor::Activation, dx: 0, dy: 0, .. }));
     }
 
     fn file_of(ids: &[&str]) -> MacroFile {
@@ -667,6 +704,8 @@ mod tests {
             button: MouseButton::Left,
             action: ClickAction::Double,
             anchor: Anchor::Fixed,
+            dx: 0,
+            dy: 0,
             coord_jitter_px: 0,
             hold_ms: Jitter { base: 10, jitter: 5 },
             settle_ms: Jitter { base: 3, jitter: 1 },

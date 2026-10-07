@@ -61,8 +61,10 @@ export const DEFAULT_COLORS: Record<ColorKind, StepColor> = {
   scroll: "pink",
 };
 
+/** A click aimed relative to the mouse (start or previous point) counts as
+ *  "Click at mouse". */
 export function colorKind(s: Step): ColorKind {
-  return s.type === "click" && s.anchor === "activation" ? "click_here" : s.type;
+  return s.type === "click" && s.anchor !== "fixed" ? "click_here" : s.type;
 }
 
 export function accentValue(c: StepColor): string | null {

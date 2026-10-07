@@ -77,7 +77,8 @@ and reorder without re-rendering the world.
   "x": 1920, "y": 540,           // virtual-desktop pixels; may be negative
   "button": "left",              // left | right | middle | x1 | x2
   "action": "click",             // click | double | down | up
-  "anchor": "fixed",             // fixed | activation (see below)
+  "anchor": "fixed",             // fixed | activation | previous (see below)
+  "dx": 0, "dy": 0,              // offset for activation / previous; right and down are positive
   "coord_jitter_px": 0,          // radius of a uniform disc around (x,y)
   "hold_ms": { "base": 25, "jitter": 15 },   // gap between down and up
   "settle_ms": { "base": 50, "jitter": 25 }, // pause before the press AND after the release
@@ -107,19 +108,34 @@ additive field with a serde default.
 Some targets only register hover state on real movement, and some reject a click that arrives
 in the same frame the cursor appeared. Curve: ease-in-out, with a small per-point jitter.
 
-`anchor` picks what the step aims at. `"fixed"` (the default) uses the step's own `x`/`y`.
-`"activation"` ignores `x`/`y` and aims at wherever the mouse was when the macro was
-activated: where the cursor sat when the hotkey was pressed, or when the Run/Test countdown
-ended. The engine captures that point once, at the start of the run, so a later step can
-still return to it after earlier steps moved the cursor, and every pass of a repeating macro
-reuses the same point. `coord_jitter_px` is applied around it as usual. In the editor this is
-the "Click at mouse" step and the Target switch ("Fixed position" / "Where the mouse is at
-activation").
+`anchor` picks what the step aims at. `"fixed"` (the default) uses the step's own `x`/`y`
+and ignores `dx`/`dy`.
+
+`"activation"` ignores `x`/`y` and aims `dx`/`dy` away from wherever the mouse was when the
+macro was activated: where the cursor sat when the hotkey was pressed, or when the Run/Test
+countdown ended. The engine captures that point once, at the start of the run, so a later
+step can still return to it after earlier steps moved the cursor, and every pass of a
+repeating macro reuses the same point. With `dx`/`dy` at 0 (the default, and every file
+written before offsets existed) it is the point itself.
+
+`"previous"` aims `dx`/`dy` away from the point the previous click or move step **aimed at**
+(before jitter and clamping, so random offsets never pile up along a chain). Steps without a
+point (key, text, wait, scroll) do not count. Before the first click or move of a run, the
+previous point is the activation point. It carries over between passes of a repeating macro:
+a chain whose first pointer step is `"previous"` keeps going on the next pass (step across
+inventory slots), one that starts with `"activation"` starts over each pass. Each run (and
+each queued run) starts its chain from its own activation point.
+
+`coord_jitter_px` is applied around the aimed point in every case. In the editor this is the
+Target switch: "Fixed position" / "Mouse start + offset" / "Previous point + offset", with an
+Offset field and a "Lands at" readout that follows the chain for the first pass
+(`aimPoints` in `src/lib/steps.ts`, mirroring `Engine::resolve_point`). "Click at mouse" adds
+a click aimed at the activation point.
 
 ### `move`
 
 Same shape as `click` minus `button` / `action` / `hold_ms` / `settle_ms`, including
-`anchor`.
+`anchor`, `dx` and `dy`.
 
 ### `scroll`
 

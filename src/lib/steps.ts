@@ -1,4 +1,4 @@
-import type { Jitter, Modifier, Step } from "../types";
+import type { Anchor, Jitter, Modifier, Step } from "../types";
 
 export const newId = () =>
   `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
@@ -23,6 +23,8 @@ export function blankStep(kind: NewStepKind): Step {
         button: "left",
         action: "click",
         anchor: kind === "click_here" ? "activation" : "fixed",
+        dx: 0,
+        dy: 0,
         coord_jitter_px: 0,
         hold_ms: hold(),
         settle_ms: settle(),
@@ -36,6 +38,8 @@ export function blankStep(kind: NewStepKind): Step {
         x: 0,
         y: 0,
         anchor: "fixed",
+        dx: 0,
+        dy: 0,
         coord_jitter_px: 0,
         move_duration_ms: 0,
         capture: null,
@@ -62,6 +66,46 @@ const ms = (j: Jitter) => (j.jitter > 0 ? `${j.base}-${j.base + j.jitter} ms` : 
 
 export const modLabel = (m: Modifier) => m[0].toUpperCase() + m.slice(1);
 
+/** "where the mouse started", "20 px right of the previous point",
+ *  "20 px right and 5 px up from where the mouse started". */
+export function aimPhrase(anchor: Anchor, dx: number, dy: number): string {
+  const place = anchor === "previous" ? "the previous point" : "where the mouse started";
+  if (dx === 0 && dy === 0) return anchor === "previous" ? `at ${place}` : place;
+  if (dy === 0) return dx > 0 ? `${dx} px right of ${place}` : `${-dx} px left of ${place}`;
+  if (dx === 0) return dy > 0 ? `${dy} px below ${place}` : `${-dy} px above ${place}`;
+  const h = dx > 0 ? `${dx} px right` : `${-dx} px left`;
+  const v = dy > 0 ? `${dy} px down` : `${-dy} px up`;
+  return `${h} and ${v} from ${place}`;
+}
+
+/** Where a click or move step aims on the first pass: a fixed screen point,
+ *  or an offset from where the mouse started. Mirrors Engine::resolve_point
+ *  (before jitter). */
+export type Aim = { from: "screen" | "start"; x: number; y: number };
+
+/** The aim of every step (null for steps without a point), following
+ *  "previous point" chains. Later passes of a repeat can differ: a chain that
+ *  begins with "previous" carries on from where the last pass ended. */
+export function aimPoints(steps: Step[]): (Aim | null)[] {
+  let prev: Aim = { from: "start", x: 0, y: 0 };
+  return steps.map((s) => {
+    if (s.type !== "click" && s.type !== "move") return null;
+    const aim: Aim =
+      s.anchor === "fixed"
+        ? { from: "screen", x: s.x, y: s.y }
+        : s.anchor === "activation"
+          ? { from: "start", x: s.dx, y: s.dy }
+          : { from: prev.from, x: prev.x + s.dx, y: prev.y + s.dy };
+    prev = aim;
+    return aim;
+  });
+}
+
+export function fmtAim(a: Aim): string {
+  if (a.from === "screen") return `(${a.x}, ${a.y})`;
+  return a.x === 0 && a.y === 0 ? "where the mouse started" : `mouse start + (${a.x}, ${a.y})`;
+}
+
 /** A plain-English one-liner for the collapsed row. Never a field dump. */
 export function summarize(s: Step): string {
   switch (s.type) {
@@ -75,12 +119,13 @@ export function summarize(s: Step): string {
               ? "Release"
               : "Click";
       const btn = s.button === "left" ? "" : ` ${s.button}`;
-      const where = s.anchor === "activation" ? "where the mouse started" : `at (${s.x}, ${s.y})`;
+      const where = s.anchor === "fixed" ? `at (${s.x}, ${s.y})` : aimPhrase(s.anchor, s.dx, s.dy);
       const jit = s.coord_jitter_px ? ` ±${s.coord_jitter_px}px` : "";
       return `${verb}${btn} ${where}${jit}`;
     }
     case "move": {
-      const where = s.anchor === "activation" ? "where the mouse started" : `(${s.x}, ${s.y})`;
+      const where =
+        s.anchor === "fixed" ? `(${s.x}, ${s.y})` : aimPhrase(s.anchor, s.dx, s.dy).replace(/^at /, "");
       return `Move to ${where}${s.move_duration_ms ? ` over ${s.move_duration_ms} ms` : ""}`;
     }
     case "scroll":

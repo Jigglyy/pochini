@@ -80,6 +80,9 @@ pub struct Engine {
     rng: StdRng,
     /// Cursor position when the current run started. See `Anchor::Activation`.
     activation: (i32, i32),
+    /// Where the last click or move step aimed, before jitter. See
+    /// `Anchor::Previous`.
+    previous: (i32, i32),
 }
 
 impl Engine {
@@ -91,6 +94,7 @@ impl Engine {
                 None => StdRng::from_entropy(),
             },
             activation: (0, 0),
+            previous: (0, 0),
         }
     }
 
@@ -118,6 +122,7 @@ impl Engine {
             Some(p) => p,
             None => self.input.cursor_pos().unwrap_or((0, 0)),
         };
+        self.previous = self.activation;
         let mut held = HeldState::default();
         let result = self.run_inner(m, cancel, &mut held);
         // The release pass runs on success, on error and on cancellation.
@@ -174,11 +179,16 @@ impl Engine {
         }
     }
 
-    fn resolve_point(&mut self, anchor: Anchor, x: i32, y: i32, jitter_px: u32) -> (i32, i32) {
+    fn resolve_point(&mut self, anchor: Anchor, (x, y): (i32, i32), (dx, dy): (i32, i32), jitter_px: u32) -> (i32, i32) {
+        let shift = |(px, py): (i32, i32)| (px.saturating_add(dx), py.saturating_add(dy));
         let (x, y) = match anchor {
             Anchor::Fixed => (x, y),
-            Anchor::Activation => self.activation,
+            Anchor::Activation => shift(self.activation),
+            Anchor::Previous => shift(self.previous),
         };
+        // The aimed point, not the jittered or clamped one: a chain of
+        // "previous + offset" steps must not drift by its own randomness.
+        self.previous = (x, y);
         let (jx, jy) = if jitter_px == 0 {
             (x, y)
         } else {
@@ -226,8 +236,8 @@ impl Engine {
                 self.wait(d, cancel)?;
             }
 
-            Step::Move { x, y, anchor, coord_jitter_px, move_duration_ms, .. } => {
-                let p = self.resolve_point(*anchor, *x, *y, *coord_jitter_px);
+            Step::Move { x, y, anchor, dx, dy, coord_jitter_px, move_duration_ms, .. } => {
+                let p = self.resolve_point(*anchor, (*x, *y), (*dx, *dy), *coord_jitter_px);
                 self.glide(p, *move_duration_ms, cancel)?;
             }
 
@@ -237,13 +247,15 @@ impl Engine {
                 button,
                 action,
                 anchor,
+                dx,
+                dy,
                 coord_jitter_px,
                 hold_ms,
                 settle_ms,
                 move_duration_ms,
                 ..
             } => {
-                let p = self.resolve_point(*anchor, *x, *y, *coord_jitter_px);
+                let p = self.resolve_point(*anchor, (*x, *y), (*dx, *dy), *coord_jitter_px);
                 self.glide(p, *move_duration_ms, cancel)?;
                 // Let the target see the cursor at rest before the press...
                 let s = self.sample(*settle_ms);
@@ -400,6 +412,8 @@ mod tests {
             button: MouseButton::Left,
             action: ClickAction::Click,
             anchor: Anchor::Fixed,
+            dx: 0,
+            dy: 0,
             coord_jitter_px: 0,
             hold_ms: Jitter::exact(1),
             settle_ms: Jitter::exact(0),
@@ -433,6 +447,8 @@ mod tests {
             button: MouseButton::Left,
             action: ClickAction::Click,
             anchor: Anchor::Fixed,
+            dx: 0,
+            dy: 0,
             coord_jitter_px: 0,
             hold_ms: Jitter::exact(1),
             settle_ms: Jitter::exact(40),
@@ -472,6 +488,8 @@ mod tests {
                 button: MouseButton::Left,
                 action: ClickAction::Click,
                 anchor: Anchor::Fixed,
+                dx: 0,
+                dy: 0,
                 coord_jitter_px: 0,
                 hold_ms: Jitter::exact(0),
                 settle_ms: Jitter::exact(0),
@@ -485,6 +503,8 @@ mod tests {
                 button: MouseButton::Left,
                 action: ClickAction::Click,
                 anchor: Anchor::Activation,
+                dx: 0,
+                dy: 0,
                 coord_jitter_px: 0,
                 hold_ms: Jitter::exact(0),
                 settle_ms: Jitter::exact(0),
@@ -510,6 +530,8 @@ mod tests {
             x: 0,
             y: 0,
             anchor: Anchor::Activation,
+            dx: 0,
+            dy: 0,
             coord_jitter_px: 0,
             move_duration_ms: 0,
             capture: None,
@@ -524,6 +546,8 @@ mod tests {
             x,
             y,
             anchor: Anchor::Fixed,
+            dx: 0,
+            dy: 0,
             coord_jitter_px: 0,
             move_duration_ms: 0,
             capture: None,
@@ -573,6 +597,8 @@ mod tests {
             button: MouseButton::Left,
             action: ClickAction::Down,
             anchor: Anchor::Fixed,
+            dx: 0,
+            dy: 0,
             coord_jitter_px: 0,
             hold_ms: Jitter::exact(0),
             settle_ms: Jitter::exact(0),
@@ -614,6 +640,119 @@ mod tests {
         assert!(stopped_after_40ms(false).is_empty());
     }
 
+    fn aim(anchor: Anchor, x: i32, y: i32, dx: i32, dy: i32) -> Step {
+        Step::Move {
+            id: "aim".into(),
+            x,
+            y,
+            anchor,
+            dx,
+            dy,
+            coord_jitter_px: 0,
+            move_duration_ms: 0,
+            capture: None,
+        }
+    }
+
+    fn landed(m: &Macro, start: (i32, i32)) -> Vec<Event> {
+        let f = Arc::new(FakeInput::new());
+        let mut e = Engine::new(f.clone(), Some(3));
+        e.run_at(m, &CancelToken::new(), Some(start)).unwrap();
+        f.events()
+    }
+
+    #[test]
+    fn an_activation_offset_aims_beside_the_start_point() {
+        let m = mac(vec![aim(Anchor::Activation, 0, 0, 20, -5)]);
+        assert_eq!(landed(&m, (500, 300)), vec![Event::Move(520, 295)]);
+    }
+
+    #[test]
+    fn previous_chains_each_step_from_the_one_before() {
+        let m = mac(vec![
+            aim(Anchor::Activation, 0, 0, 20, 0),
+            aim(Anchor::Previous, 0, 0, 20, 0),
+            aim(Anchor::Previous, 0, 0, 0, 15),
+        ]);
+        assert_eq!(
+            landed(&m, (100, 100)),
+            vec![Event::Move(120, 100), Event::Move(140, 100), Event::Move(140, 115)]
+        );
+    }
+
+    #[test]
+    fn previous_without_an_earlier_point_counts_from_the_start() {
+        let m = mac(vec![aim(Anchor::Previous, 0, 0, 7, 8)]);
+        assert_eq!(landed(&m, (10, 10)), vec![Event::Move(17, 18)]);
+    }
+
+    #[test]
+    fn previous_follows_a_fixed_step_and_ignores_steps_without_a_point() {
+        let m = mac(vec![
+            aim(Anchor::Fixed, 1000, 400, 99, 99), // offsets ignored when fixed
+            Step::Wait { id: "w".into(), ms: Jitter::exact(0) },
+            aim(Anchor::Previous, 0, 0, -10, 0),
+        ]);
+        assert_eq!(landed(&m, (0, 0)), vec![Event::Move(1000, 400), Event::Move(990, 400)]);
+    }
+
+    #[test]
+    fn a_previous_chain_carries_over_between_repeats() {
+        let mut m = mac(vec![aim(Anchor::Previous, 0, 0, 50, 0)]);
+        m.repeat = Repeat::Count { n: 3 };
+        assert_eq!(
+            landed(&m, (0, 0)),
+            vec![Event::Move(50, 0), Event::Move(100, 0), Event::Move(150, 0)]
+        );
+    }
+
+    #[test]
+    fn a_chain_that_starts_from_the_activation_point_starts_over_each_repeat() {
+        let mut m = mac(vec![aim(Anchor::Activation, 0, 0, 10, 0), aim(Anchor::Previous, 0, 0, 10, 0)]);
+        m.repeat = Repeat::Count { n: 2 };
+        assert_eq!(
+            landed(&m, (0, 0)),
+            vec![Event::Move(10, 0), Event::Move(20, 0), Event::Move(10, 0), Event::Move(20, 0)]
+        );
+    }
+
+    #[test]
+    fn jitter_never_accumulates_along_a_chain() {
+        // The first step jitters by up to 30 px; the second has none, so it
+        // must land exactly 100 px right of where the first one AIMED.
+        for seed in 0..50 {
+            let f = Arc::new(FakeInput::new());
+            let mut e = Engine::new(f.clone(), Some(seed));
+            let mut first = aim(Anchor::Activation, 0, 0, 0, 0);
+            if let Step::Move { coord_jitter_px, .. } = &mut first {
+                *coord_jitter_px = 30;
+            }
+            let m = mac(vec![first, aim(Anchor::Previous, 0, 0, 100, 0)]);
+            e.run_at(&m, &CancelToken::new(), Some((500, 500))).unwrap();
+            assert_eq!(f.events()[1], Event::Move(600, 500), "seed {seed}");
+        }
+    }
+
+    #[test]
+    fn each_run_starts_its_chain_from_its_own_activation_point() {
+        let f = Arc::new(FakeInput::new());
+        let mut e = Engine::new(f.clone(), Some(1));
+        let m = mac(vec![aim(Anchor::Previous, 0, 0, 5, 0)]);
+        e.run_at(&m, &CancelToken::new(), Some((100, 0))).unwrap();
+        e.run_at(&m, &CancelToken::new(), Some((300, 0))).unwrap();
+        assert_eq!(f.events(), vec![Event::Move(105, 0), Event::Move(305, 0)]);
+    }
+
+    #[test]
+    fn an_offset_off_the_desktop_is_clamped_like_any_other_point() {
+        let f = Arc::new(FakeInput::new());
+        let rect = f.virtual_rect();
+        let mut e = Engine::new(f.clone(), Some(1));
+        let m = mac(vec![aim(Anchor::Activation, 0, 0, i32::MAX, i32::MAX)]);
+        e.run_at(&m, &CancelToken::new(), Some((10, 10))).unwrap();
+        assert_eq!(f.events(), vec![Event::Move(rect.clamp(i32::MAX, i32::MAX).0, rect.clamp(i32::MAX, i32::MAX).1)]);
+    }
+
     #[test]
     fn activation_jitter_is_centred_on_the_activation_point() {
         for seed in 0..32u64 {
@@ -624,6 +763,8 @@ mod tests {
                 x: 0,
                 y: 0,
                 anchor: Anchor::Activation,
+                dx: 0,
+                dy: 0,
                 coord_jitter_px: 8,
                 move_duration_ms: 0,
                 capture: None,
@@ -649,6 +790,8 @@ mod tests {
                 x: 900,
                 y: 900,
                 anchor: Anchor::Fixed,
+                dx: 0,
+                dy: 0,
                 coord_jitter_px: 0,
                 move_duration_ms: 0,
                 capture: None,
@@ -658,6 +801,8 @@ mod tests {
                 x: 0,
                 y: 0,
                 anchor: Anchor::Activation,
+                dx: 0,
+                dy: 0,
                 coord_jitter_px: 0,
                 move_duration_ms: 0,
                 capture: None,
@@ -686,6 +831,8 @@ mod tests {
             button: MouseButton::Left,
             action: ClickAction::Double,
             anchor: Anchor::Fixed,
+            dx: 0,
+            dy: 0,
             coord_jitter_px: 0,
             hold_ms: Jitter::exact(1),
             settle_ms: Jitter::exact(0),
@@ -741,6 +888,8 @@ mod tests {
                 button: MouseButton::Left,
                 action: ClickAction::Down,
                 anchor: Anchor::Fixed,
+                dx: 0,
+                dy: 0,
                 coord_jitter_px: 0,
                 hold_ms: Jitter::exact(0),
                 settle_ms: Jitter::exact(0),
@@ -849,6 +998,8 @@ mod tests {
                 x: 1000,
                 y: 700,
                 anchor: Anchor::Fixed,
+                dx: 0,
+                dy: 0,
                 coord_jitter_px: 12,
                 move_duration_ms: 0,
                 capture: None,
@@ -889,6 +1040,8 @@ mod tests {
                 x: 500,
                 y: 500,
                 anchor: Anchor::Fixed,
+                dx: 0,
+                dy: 0,
                 coord_jitter_px: 20,
                 move_duration_ms: 0,
                 capture: None,
@@ -907,6 +1060,8 @@ mod tests {
             x: 999_999,
             y: -999_999,
             anchor: Anchor::Fixed,
+            dx: 0,
+            dy: 0,
             coord_jitter_px: 0,
             move_duration_ms: 0,
             capture: None,
@@ -924,6 +1079,8 @@ mod tests {
             x: 300,
             y: 400,
             anchor: Anchor::Fixed,
+            dx: 0,
+            dy: 0,
             coord_jitter_px: 0,
             move_duration_ms: 40,
             capture: None,

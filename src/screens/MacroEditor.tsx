@@ -23,7 +23,7 @@ import { DROP_ANIMATION, useDragSensors } from "@/components/sortable";
 import { Field, Notice, Section, ToggleRow } from "@/components/layout";
 import { getMacro, saveMacro, testSteps } from "@/lib/ipc";
 import { tone, useStepColors } from "@/lib/colors";
-import { blankStep, fmtRange, newId, stepRange, type NewStepKind } from "@/lib/steps";
+import { aimPoints, blankStep, fmtRange, newId, stepRange, type NewStepKind } from "@/lib/steps";
 import type { Macro, Repeat, Step, TriggerMode } from "@/types";
 
 const ADD: { kind: NewStepKind; label: string; Icon: typeof Play; hint: string }[] = [
@@ -127,6 +127,7 @@ export function MacroEditor({
   };
 
   const draggingIndex = m.steps.findIndex((s) => s.id === draggingStep);
+  const aims = aimPoints(m.steps);
   const dropStep = ({ active, over }: DragEndEvent) => {
     setDraggingStep(null);
     if (!over || active.id === over.id) return;
@@ -347,6 +348,8 @@ export function MacroEditor({
                     step={s}
                     index={i}
                     count={m.steps.length}
+                    aim={aims[i]}
+                    hasEarlierPoint={aims.slice(0, i).some((a) => a !== null)}
                     defaultOpen={s.id === justAdded}
                     onChange={(ns) => setStep(i, ns)}
                     onDelete={() => edit({ steps: m.steps.filter((_, j) => j !== i) })}

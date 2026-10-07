@@ -70,7 +70,7 @@ TRIGGER
 STEPS                                              Takes 480 ms to 705 ms
   | 1 [icon] Click at (1623, 592) ±3px           ^ v [copy] [bin]  > |
   | 4 [icon] Click where the mouse started       ^ v [copy] [bin]  v |
-  |   Target   [Fixed position | Where the mouse is at activation]  |
+  |   Target   [Fixed position | Mouse start + offset | Previous..]  |
   |   Jitter / Travel / Button / Hold / Settle ...                   |
   [+ Click] [+ Click at mouse] [+ Move] [+ Key] [+ Type text] [+ Wait] [+ Scroll]
 ```
@@ -101,12 +101,19 @@ STEPS                                              Takes 480 ms to 705 ms
     show the same colors. Defaults: blue, purple, teal, orange, amber, green, pink.
   - **Right-click a step header** (Kanbini's card menu): "Color for every <kind> step" with the
     14 Kanbini accents plus "No color", "Reset to <default>" when changed, then Move up / Move
-    down / Duplicate / Delete. The color applies to that kind everywhere, not one step. A newly added step opens
-  expanded.
-  - Click / Move: **Target** switch (fixed position, or where the mouse was at activation).
-    Fixed shows X/Y inputs, **Pick** (3 second countdown, then reads the real cursor
-    position, works over fullscreen apps) and **Show me** (moves the cursor to the point).
-    Then Jitter (px), Travel (ms).
+    down / Duplicate / Delete. The color applies to that kind everywhere, not one step.
+  - A newly added step opens expanded.
+  - Click / Move: **Target** switch: Fixed position / Mouse start + offset / Previous point +
+    offset.
+    - Fixed shows X/Y inputs, **Pick** (3 second countdown, then reads the real cursor
+      position, works over fullscreen apps) and **Show me** (moves the cursor to the point).
+    - The two offset targets show **Offset** X/Y (px, right and down positive) and a "Lands
+      at" readout for the first pass, following the chain: "mouse start + (40, -5)", or
+      screen coordinates when the chain starts at a fixed step. A "previous point" step with
+      nothing before it says it counts from where the mouse started.
+    - Summaries read "Click 20 px right of where the mouse started", "Click 20 px right and
+      5 px up from the previous point".
+    - Then Jitter (px), Travel (ms).
   - Click also has Button, Action (click / double / press and hold / release), Hold, and
     **Settle** (pause before the press and after the release; raise it if clicks get
     dropped).
