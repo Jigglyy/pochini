@@ -28,3 +28,7 @@ src-tauri/gen/schemas
 
 # Built executables (npm run release)
 /release/
+
+# Playwright (npm run e2e)
+/test-results/
+/playwright-report/

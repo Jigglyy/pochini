@@ -9,6 +9,10 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "release": "node scripts/release.mjs",
+    "pree2e": "tauri build --debug --no-bundle",
+    "e2e": "playwright test",
+    "pree2e:headed": "tauri build --debug --no-bundle",
+    "e2e:headed": "playwright test --headed",
     "icons": "tauri icon assets/pochini-icon.svg && node -e \"for (const d of ['android','ios']) require('node:fs').rmSync('src-tauri/icons/'+d,{recursive:true,force:true})\""
   },
   "dependencies": {
@@ -25,6 +29,7 @@
     "tailwind-merge": "^3.7.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/vite": "^4.3.3",
     "@tauri-apps/cli": "~2.12",
     "@types/node": "^26.6.4",

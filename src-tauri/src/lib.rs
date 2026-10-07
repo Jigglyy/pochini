@@ -11,6 +11,8 @@
 
 pub mod app;
 pub mod commands;
+#[cfg(debug_assertions)]
+mod e2e;
 pub mod engine;
 pub mod hotkey;
 pub mod input;
@@ -43,29 +45,58 @@ pub fn run() {
 
     let (tx, rx) = std::sync::mpsc::channel();
 
-    tauri::Builder::default()
+    // The Playwright test mode (debug builds only), see e2e.rs.
+    #[cfg(debug_assertions)]
+    let e2e = match e2e::from_env() {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("error: {e}");
+            std::process::exit(2);
+        }
+    };
+    #[cfg(debug_assertions)]
+    let testing = e2e.is_some();
+    #[cfg(not(debug_assertions))]
+    let testing = false;
+
+    let mut builder = tauri::Builder::default();
+    if !testing {
         // Must be the first plugin. A second copy of Pochini would install a
         // second keyboard hook and every hotkey would fire twice; instead the
         // second launch just brings the running window to the front.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.unminimize();
                 let _ = w.show();
                 let _ = w.set_focus();
             }
-        }))
+        }));
+    }
+
+    builder
         .setup(move |app| {
-            let dir = app.path().app_config_dir()?;
-            // First start after the rename: bring the user's macros along.
-            if let Some(parent) = dir.parent() {
-                match storage::migrate_legacy_dir(&dir, &parent.join(storage::LEGACY_DIR_NAME)) {
-                    Ok(copied) if !copied.is_empty() => {
-                        eprintln!("migrated {copied:?} from {}", storage::LEGACY_DIR_NAME)
+            #[cfg(debug_assertions)]
+            let test_dir = e2e.as_ref().map(|t| t.data_dir.clone());
+            #[cfg(not(debug_assertions))]
+            let test_dir: Option<std::path::PathBuf> = None;
+
+            let dir = match test_dir {
+                Some(d) => d,
+                None => {
+                    let dir = app.path().app_config_dir()?;
+                    // First start after the rename: bring the user's macros along.
+                    if let Some(parent) = dir.parent() {
+                        match storage::migrate_legacy_dir(&dir, &parent.join(storage::LEGACY_DIR_NAME)) {
+                            Ok(copied) if !copied.is_empty() => {
+                                eprintln!("migrated {copied:?} from {}", storage::LEGACY_DIR_NAME)
+                            }
+                            Ok(_) => {}
+                            Err(e) => eprintln!("warning: could not migrate old settings: {e}"),
+                        }
                     }
-                    Ok(_) => {}
-                    Err(e) => eprintln!("warning: could not migrate old settings: {e}"),
+                    dir
                 }
-            }
+            };
             std::fs::create_dir_all(&dir)?;
             let store = storage::Store::new(dir);
 
@@ -75,7 +106,13 @@ pub fn run() {
             });
             let settings = store.load_settings().unwrap_or_default();
 
-            #[cfg(windows)]
+            #[cfg(all(windows, debug_assertions))]
+            let backend: Arc<dyn input::InputBackend> = if testing {
+                Arc::new(input::fake::FakeInput::new())
+            } else {
+                Arc::new(input::win::WinInput::new())
+            };
+            #[cfg(all(windows, not(debug_assertions)))]
             let backend: Arc<dyn input::InputBackend> = Arc::new(input::win::WinInput::new());
             #[cfg(not(windows))]
             let backend: Arc<dyn input::InputBackend> =
@@ -96,16 +133,37 @@ pub fn run() {
             app::spawn_worker(state.clone(), rx);
 
             #[cfg(windows)]
-            match hotkey::HookThread::start(state.binding_table(), tx.clone()) {
-                Ok(h) => {
-                    // Kept alive for the process lifetime; dropping it uninstalls
-                    // the hook.
-                    app.manage(Mutex::new(h));
+            if !testing {
+                match hotkey::HookThread::start(state.binding_table(), tx.clone()) {
+                    Ok(h) => {
+                        // Kept alive for the process lifetime; dropping it
+                        // uninstalls the hook.
+                        app.manage(Mutex::new(h));
+                    }
+                    Err(e) => eprintln!("warning: global hotkeys unavailable: {e}"),
                 }
-                Err(e) => eprintln!("warning: global hotkeys unavailable: {e}"),
             }
 
             app.manage(state);
+
+            // The window is built here rather than by Tauri ("create": false in
+            // tauri.conf.json) so test mode can move it off-screen and give
+            // WebView2 a DevTools port.
+            let config = app
+                .config()
+                .app
+                .windows
+                .iter()
+                .find(|w| w.label == "main")
+                .cloned()
+                .ok_or("tauri.conf.json has no \"main\" window")?;
+            let window = tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?;
+            #[cfg(debug_assertions)]
+            let window = match &e2e {
+                Some(t) => t.window(window),
+                None => window,
+            };
+            window.build()?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

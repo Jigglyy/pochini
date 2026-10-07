@@ -65,5 +65,6 @@ pub trait InputBackend: Send + Sync {
     fn unicode(&self, unit: u16, down: bool) -> Result<()>;
 }
 
-#[cfg(test)]
+/// Unit tests, and the e2e test mode of debug builds (see `crate::e2e`).
+#[cfg(any(test, debug_assertions))]
 pub mod fake;

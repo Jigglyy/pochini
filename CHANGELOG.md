@@ -4,6 +4,21 @@ All notable changes to Pochini. Versions follow [semantic versioning](https://se
 while the major version is 0, a minor bump may change behaviour or the macro file format.
 Each version is built with `npm run release` into `release/Pochini-<version>.exe`.
 
+## 0.6.0 - 2026-10-07
+
+### Added
+
+- **Offset targets** for Click and Move steps. Next to "Fixed position" there is now
+  **Mouse start + offset** (e.g. 20 px right of where you pressed the hotkey) and **Previous
+  point + offset** (e.g. 20 px right of where the step before aimed), so a few steps can walk
+  along a row. The editor shows where each step lands ("mouse start + (40, 0)"). Random
+  jitter never adds up along a chain. With Repeat, a chain that starts with "previous point"
+  keeps going on the next pass; one that starts from the mouse start begins again. Existing
+  "Click at mouse" steps behave exactly as before.
+- **End-to-end tests** (Playwright, like Kanbini's): each test starts the real app, headless
+  and in a throwaway data folder, with a fake mouse and keyboard and no hotkey hook. Run them
+  with `npm run e2e`.
+
 ## 0.5.0 - 2026-10-07
 
 ### Added

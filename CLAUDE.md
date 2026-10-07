@@ -23,8 +23,9 @@ this app owns.
 ## Status
 
 Implemented and building. `src-tauri/` has the full Rust core (model, storage, input,
-hotkey, engine, IPC) with **114 passing unit tests**; `src/` is a ShadCN + Tailwind v4 UI
-styled after Kanbini (macro list, step editor, settings). `npm run tauri dev` opens the app.
+hotkey, engine, IPC) with **124 passing unit tests**; `src/` is a ShadCN + Tailwind v4 UI
+styled after Kanbini (macro list, step editor, settings), covered by **24 Playwright e2e
+tests** against the real app. `npm run tauri dev` opens the app.
 
 The M0/M1 Win32 assumptions were measured before being ported; see
 [tools/m0-probe/README.md](tools/m0-probe/README.md). That harness found three errors in the
@@ -56,6 +57,8 @@ npm run tauri dev                                  # run the app
 npm run release -- patch                           # versioned .exe + GitHub Release, see Releases
 npm run icons                                      # regenerate all icons from assets/pochini-icon.svg
 npm run build                                      # type-check + build the frontend alone
+npm run e2e                                        # Playwright suite, headless (builds a debug app first)
+npm run e2e:headed                                 # same, with the windows on screen, one at a time
 cargo test  --manifest-path src-tauri/Cargo.toml
 cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets
 cargo run --manifest-path src-tauri/Cargo.toml --example trace_macro -- "<macro name>"
@@ -96,9 +99,16 @@ behaviour or the macro file format.
 4. `.github/workflows/release.yml` (Kanbini's pattern) runs on the tag: it fails if the tag,
    `package.json` and `Cargo.toml` disagree, runs `cargo test`, builds with
    `tauri build --no-bundle`, and publishes "Pochini vX.Y.Z" with `Pochini-X.Y.Z.exe`
-   attached. Watch it with `gh run watch`, then check `gh release view vX.Y.Z`.
-   A manual run from the Actions tab is a dry run: it builds and keeps the exe as a run
-   artifact, with no Release.
+   attached. It takes about 20 minutes. Watch it with `gh run watch`, then check
+   `gh release view vX.Y.Z`.
+   A manual run from `main` (Actions tab) is a dry run: it builds and keeps the exe as a run
+   artifact, with no Release. A manual run on a tag publishes:
+   `gh workflow run release.yml --ref vX.Y.Z`. Use that if a tag push starts no run (v0.5.0
+   did not, because the tag went up in the same push that added the workflow file).
+
+Before tagging, run `npm run e2e` locally; the user wants the e2e suite run here, not on
+GitHub. Pushing changes under `.github/workflows/` needs the `workflow` scope on the gh login
+(`gh auth refresh -h github.com -s workflow`, granted 2026-10-07).
 
 Report both the local exe path and the GitHub release link.
 
@@ -140,6 +150,8 @@ src-tauri/src/
 assets/pochini-icon.svg   app icon source of truth (also the header logo and favicon)
 src-tauri/examples/       trace_macro diagnostic
 tools/m0-probe/           standalone Win32 validation harness
+e2e/                      Playwright specs; _launch.ts starts the app per test
+src-tauri/src/e2e.rs      the test mode those specs launch (debug builds only)
 docs/                     design docs; docs/adr/ for decisions
 ```
 
@@ -270,7 +282,8 @@ Mostly carried over from Kanbini, whose renderer this UI copies the look of:
 
 ## Testing
 
-`cargo test` is the gate: 114 tests, no Windows APIs required for most of them.
+`cargo test` is the gate: 124 tests, no Windows APIs required for most of them. The UI has
+`npm run e2e` (24 Playwright tests), run locally before every release.
 
 - `input/coords.rs` walks **every pixel** of six virtual-desktop layouts (including negative
   origins and odd sizes) through the round trip, and has an explicit regression test that
@@ -283,6 +296,21 @@ Mostly carried over from Kanbini, whose renderer this UI copies the look of:
 - `app.rs` drives the real worker against a fake backend: panic mid-run, hold-repeat release,
   toggle-mode second press, countdown cancel, master switch off stops the run, and the queue
   (order, no overlap, per-press positions, cap, clearing).
+- `e2e/` works like Kanbini's desktop-e2e: `_launch.ts` starts the **real app** per test with
+  `POCHINI_E2E=1` and a throwaway `POCHINI_DATA_DIR` (seeded via `test.use({ seed })`), then
+  attaches Playwright to WebView2 through a DevTools port. Test mode (`src-tauri/src/e2e.rs`,
+  debug builds only, a release exe ignores it) uses `FakeInput`, installs no keyboard hook
+  and no toggle hotkey, skips the single-instance check, and runs headless. Specs check
+  persistence by reading the data folder's `macros.json`. Lessons learned:
+  - Headless means **off-screen, not hidden**: a hidden WebView2 draws no frames, and Chromium
+    delivers pointer moves and `requestAnimationFrame` on frames, so drags and the run
+    countdown silently do nothing.
+  - Raw `page.mouse` moves do not scroll: `drag()` scrolls the source into view first, and
+    grabs it a third of the way across (the star and buttons never start a drag).
+  - dnd-kit swallows clicks for 50 ms after a drop; Radix leaves `pointer-events: none` on the
+    body for a moment after a Select closes. The helpers wait for both.
+  - Locate rows and steps by `data-macro-id` / `data-step-id`; a step header's accessible
+    name contains its buttons' names, so use `exact: true` for "Move up" and friends.
 - Anything that needs a real desktop session belongs in `tools/m0-probe` or the
   `trace_macro` example, not in CI: a CI runner has no interactive session and `SendInput`
   in Session 0 is meaningless.

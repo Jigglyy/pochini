@@ -82,6 +82,8 @@ Rebuilt on ShadCN + Tailwind v4 in Kanbini's style.
 - [x] Favorites and macro list sorting (custom, favorites first, name, newest, recently edited)
 - [x] Step color coding by kind, recolorable (right-click a step, or Settings)
 - [x] GitHub Releases: a `v*` tag builds the .exe on GitHub Actions and attaches it
+- [x] Offset targets: mouse start + offset, previous point + offset (chains)
+- [x] Playwright e2e suite against the real app in a headless test mode (`npm run e2e`)
 - [ ] Coordinate picking via a hook-armed key, with a magnifier
 - [ ] Tray icon (closing the window currently quits the app and its hotkeys)
 - [ ] First-run notice about the keyboard hook

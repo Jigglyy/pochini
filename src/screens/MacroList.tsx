@@ -383,6 +383,7 @@ function MacroRow({
     <li
       ref={itemRef}
       style={style}
+      data-macro-id={lifted ? undefined : r.id}
       {...handle}
       className={cn(
         "group flex items-center gap-4 rounded-lg border border-border bg-card px-4 py-3 transition-colors hover:border-primary/40",
