@@ -37,6 +37,9 @@ pub enum Match {
     Panic,
     Toggle,
     Trigger { macro_id: String, swallow: bool, mode: TriggerMode },
+    /// An app-only binding exists for this key, but the mouse is elsewhere.
+    /// Behaves like `None` (passes through); reported by the hotkey check.
+    OutsideApp { macro_id: String },
 }
 
 impl BindingTable {
@@ -103,6 +106,7 @@ impl BindingTable {
         // the mouse is over its app; elsewhere the unrestricted one applies.
         let mut here: Option<Option<String>> = None;
         let mut fallback: Option<&Binding> = None;
+        let mut outside: Option<&Binding> = None;
         for b in &self.bindings {
             // Exact modifier match: Ctrl+A must not fire on Ctrl+Shift+A.
             if b.vk != vk || !same_modifiers(&b.modifiers, held) {
@@ -119,10 +123,30 @@ impl BindingTable {
                     if here.as_deref() == Some(app.as_str()) {
                         return trigger(b);
                     }
+                    if outside.is_none() {
+                        outside = Some(b);
+                    }
                 }
             }
         }
-        fallback.map(trigger).unwrap_or(Match::None)
+        match (fallback, outside) {
+            (Some(b), _) => trigger(b),
+            (None, Some(b)) => Match::OutsideApp { macro_id: b.macro_id.clone() },
+            (None, None) => Match::None,
+        }
+    }
+
+    /// Is this key one the user has set up (panic, toggle, or any macro)?
+    /// Only these are ever reported by the hotkey check; other keys are not.
+    pub fn is_watched(&self, vk: u16) -> bool {
+        vk == self.panic_vk
+            || self.toggle.as_ref().is_some_and(|(t, _)| *t == vk)
+            || self.bindings.iter().any(|b| b.vk == vk)
+    }
+
+    /// Would some macro have matched this key if macros were on?
+    pub fn binding_exists(&self, vk: u16, held: &[Modifier]) -> bool {
+        self.bindings.iter().any(|b| b.vk == vk && same_modifiers(&b.modifiers, held))
     }
 
     /// Macro ids whose hotkey collides with an earlier one. Surfaced as a
@@ -282,8 +306,11 @@ mod tests {
             t.match_key_with(0x20, &[], &mut over("game.exe")),
             Match::Trigger { .. }
         ), "case-insensitive match");
-        assert_eq!(t.match_key_with(0x20, &[], &mut over("Discord.exe")), Match::None);
-        assert_eq!(t.match_key_with(0x20, &[], &mut || None), Match::None);
+        assert_eq!(
+            t.match_key_with(0x20, &[], &mut over("Discord.exe")),
+            Match::OutsideApp { macro_id: "g".into() }
+        );
+        assert_eq!(t.match_key_with(0x20, &[], &mut || None), Match::OutsideApp { macro_id: "g".into() });
     }
 
     #[test]
@@ -315,6 +342,18 @@ mod tests {
             None
         });
         assert_eq!(calls, 1);
+    }
+
+    #[test]
+    fn only_keys_the_user_set_up_are_watched() {
+        let t = BindingTable::build(&[m("a", 0x20, vec![], false)], 0x1B, true)
+            .with_toggle(0x7B, vec![Modifier::Ctrl, Modifier::Shift]);
+        for vk in [0x20, 0x1B, 0x7B] {
+            assert!(t.is_watched(vk), "0x{vk:02X}");
+        }
+        for vk in [0x41, 0x0D, 0x7A] {
+            assert!(!t.is_watched(vk), "0x{vk:02X} must not be watched");
+        }
     }
 
     #[test]

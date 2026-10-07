@@ -1,6 +1,16 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { AppWindow, KeyRef, Macro, MacroSummary, Monitor, RunStatus, Settings, Step } from "../types";
+import type {
+  AppWindow,
+  HotkeyDiagnostics,
+  KeyRef,
+  Macro,
+  MacroSummary,
+  Monitor,
+  RunStatus,
+  Settings,
+  Step,
+} from "../types";
 
 /** The Run / Test countdown: time to switch to the target and place the mouse.
  *  It runs in the backend, so it keeps time even while this window is hidden. */
@@ -40,3 +50,4 @@ export const testSteps = (steps: Step[], delayMs = RUN_COUNTDOWN_MS) =>
 export const stopMacro = () => invoke<void>("stop_macro");
 export const runStatus = () => invoke<RunStatus>("run_status");
 export const listApps = () => invoke<AppWindow[]>("list_apps");
+export const hotkeyDiagnostics = () => invoke<HotkeyDiagnostics>("hotkey_diagnostics");

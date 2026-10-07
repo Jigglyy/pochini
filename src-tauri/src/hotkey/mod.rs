@@ -29,7 +29,29 @@ pub enum TriggerEvent {
     Panic,
     /// The toggle hotkey. Flips the master switch.
     ToggleEnabled,
+    /// A watched key was pressed; for the Settings "Hotkey check".
+    Seen(logic::Seen),
+}
+
+/// Health of the keyboard layer, for the Settings "Hotkey check".
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
+pub struct HookStatus {
+    pub installed: bool,
+    /// The on/off hotkey is registered with Windows (RegisterHotKey), so it
+    /// works even if the keyboard hook misses it.
+    pub toggle_registered: bool,
+    /// Windows refused to register it: another program already owns it.
+    pub toggle_taken: bool,
+    /// Key events the hook has seen since start (a count, never their content).
+    pub key_events: u64,
+    /// Times the hook has been reinstalled by the 30 s watchdog.
+    pub reinstalls: u64,
 }
 
 #[cfg(windows)]
-pub use hook::HookThread;
+pub use hook::{status as hook_status, HookThread};
+
+#[cfg(not(windows))]
+pub fn hook_status() -> HookStatus {
+    HookStatus::default()
+}

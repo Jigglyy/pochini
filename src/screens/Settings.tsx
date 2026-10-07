@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Monitor, Moon, Sun } from "lucide-react";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { KeyCapture } from "@/components/KeyCapture";
+import { HotkeyCheck } from "@/components/HotkeyCheck";
+import { KeyCapture, comboLabel } from "@/components/KeyCapture";
 import { Field, Section } from "@/components/layout";
 import { appInfo, saveSettings, type AppInfo } from "@/lib/ipc";
 import type { ThemePref } from "@/lib/theme";
@@ -64,6 +65,10 @@ export function Settings({
             allowClear={false}
           />
         </Field>
+      </Section>
+
+      <Section title="Hotkey check">
+        <HotkeyCheck toggleCombo={settings.toggle_hotkey ? comboLabel(settings.toggle_hotkey) : null} />
       </Section>
 
       <Section title="Appearance">

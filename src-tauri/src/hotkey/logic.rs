@@ -31,12 +31,64 @@ impl KeyContext for NoContext {
     }
 }
 
+/// What happened to a press of a key the user has set up. Reported to the
+/// Settings "Hotkey check" so a hotkey that "does nothing" can be explained.
+/// Only produced for watched keys (panic, toggle, bound macros), never for
+/// ordinary typing.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SeenResult {
+    Panic,
+    Toggle,
+    Run { macro_id: String },
+    /// App-only macro, mouse over a different app.
+    OutsideApp { macro_id: String },
+    /// A macro would have run, but the master switch is off.
+    MacrosOff,
+    /// A watched key, but with modifiers that match nothing.
+    WrongModifiers,
+}
+
+/// Which mechanism reported the press.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Via {
+    /// Our low-level keyboard hook.
+    Hook,
+    /// A hotkey registered with Windows (RegisterHotKey).
+    Windows,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Seen {
+    pub vk: u16,
+    /// Modifier bits, see `mod_bits`.
+    pub mods: u8,
+    pub result: SeenResult,
+    pub via: Via,
+}
+
+/// Ctrl = 1, Alt = 2, Shift = 4, Win = 8. A bitmask keeps the hook callback
+/// allocation-free.
+pub fn mod_bits(mods: &[Modifier]) -> u8 {
+    mods.iter().fold(0, |acc, m| {
+        acc | match m {
+            Modifier::Ctrl => 1,
+            Modifier::Alt => 2,
+            Modifier::Shift => 4,
+            Modifier::Win => 8,
+        }
+    })
+}
+
 /// What the callback should do with the event it just saw.
 #[derive(Debug, Default, PartialEq)]
 pub struct Outcome {
     pub event: Option<TriggerEvent>,
     /// Return 1 from the hook so the focused app never sees the key.
     pub swallow: bool,
+    /// For the hotkey check: what this press of a watched key did.
+    pub seen: Option<Seen>,
 }
 
 #[derive(Debug)]
@@ -54,6 +106,9 @@ pub struct KeyLogic {
     /// its press.
     held: Vec<HeldTrigger>,
     toggle_held: bool,
+    /// The watched key whose press was last reported, so holding it down
+    /// (auto-repeat) is reported once.
+    reported: Option<u16>,
 }
 
 impl KeyLogic {
@@ -76,28 +131,63 @@ impl KeyLogic {
         }
 
         if !down {
+            if self.reported == Some(vk) {
+                self.reported = None;
+            }
             return self.on_release(table, vk);
         }
 
+        // Report each press of a watched key once (not its auto-repeats).
+        let report = table.is_watched(vk) && self.reported != Some(vk);
+        if report {
+            self.reported = Some(vk);
+        }
+        let seen = |result: SeenResult| {
+            report.then(|| Seen { vk, mods: mod_bits(mods), result, via: Via::Hook })
+        };
+
         match table.match_key_with(vk, mods, &mut || ctx.app_under_cursor()) {
-            Match::None => Outcome::default(),
+            Match::None => {
+                if !report {
+                    return Outcome::default();
+                }
+                let why = if !table.enabled && table.binding_exists(vk, mods) {
+                    SeenResult::MacrosOff
+                } else {
+                    SeenResult::WrongModifiers
+                };
+                Outcome { seen: seen(why), ..Outcome::default() }
+            }
+            // Not ours here: passes through untouched.
+            Match::OutsideApp { macro_id } => {
+                Outcome { seen: seen(SeenResult::OutsideApp { macro_id }), ..Outcome::default() }
+            }
             // The panic key is never swallowed: you may be pressing Esc for the
             // app underneath as well.
-            Match::Panic => Outcome { event: Some(TriggerEvent::Panic), swallow: false },
+            Match::Panic => Outcome {
+                event: Some(TriggerEvent::Panic),
+                swallow: false,
+                seen: seen(SeenResult::Panic),
+            },
             Match::Toggle => {
                 if self.toggle_held {
                     return Outcome::default(); // auto-repeat
                 }
                 self.toggle_held = true;
-                Outcome { event: Some(TriggerEvent::ToggleEnabled), swallow: false }
+                Outcome {
+                    event: Some(TriggerEvent::ToggleEnabled),
+                    swallow: false,
+                    seen: seen(SeenResult::Toggle),
+                }
             }
             Match::Trigger { macro_id, swallow, mode } => {
                 if self.held.iter().any(|h| h.vk == vk) {
                     // Auto-repeat: keep swallowing if the press was swallowed.
-                    return Outcome { event: None, swallow };
+                    return Outcome { event: None, swallow, seen: None };
                 }
                 self.held.push(HeldTrigger { vk, macro_id: macro_id.clone(), mode, swallowed: swallow });
                 Outcome {
+                    seen: seen(SeenResult::Run { macro_id: macro_id.clone() }),
                     event: Some(TriggerEvent::Start { macro_id, delay_ms: 0, at: ctx.cursor() }),
                     swallow,
                 }
@@ -122,6 +212,7 @@ impl KeyLogic {
             // A swallowed press must have its release swallowed too, or the
             // app sees an orphan key-up.
             swallow: h.swallowed,
+            seen: None,
         }
     }
 }
@@ -274,12 +365,71 @@ mod tests {
         let mut k = KeyLogic::default();
 
         let elsewhere = k.on_key(&t, A, true, NONE, &mut Over(Some("Discord.exe"), (0, 0)));
-        assert_eq!(elsewhere, Outcome::default(), "no event, not swallowed");
+        assert_eq!((elsewhere.event, elsewhere.swallow), (None, false), "no event, not swallowed");
+        assert_eq!(elsewhere.seen.map(|s| s.result), Some(SeenResult::OutsideApp { macro_id: "g".into() }));
         assert_eq!(k.on_key(&t, A, false, NONE, &mut Over(Some("Discord.exe"), (0, 0))), Outcome::default());
 
         let inside = k.on_key(&t, A, true, NONE, &mut Over(Some("game.exe"), (5, 6)));
         assert!(inside.swallow);
         assert!(matches!(inside.event, Some(TriggerEvent::Start { .. })));
+    }
+
+    fn seen(o: Outcome) -> Option<SeenResult> {
+        o.seen.map(|s| s.result)
+    }
+
+    /// The hotkey check: every press of a key the user set up says what it did.
+    #[test]
+    fn presses_of_watched_keys_explain_what_happened() {
+        let t = BindingTable::build(&[mac("a", A, vec![Modifier::Ctrl], TriggerMode::Once, false)], ESC, true)
+            .with_toggle(F12, CS.to_vec());
+        let mut k = KeyLogic::default();
+
+        assert_eq!(seen(k.on_key(&t, F12, true, CS, &mut NoContext)), Some(SeenResult::Toggle));
+        k.on_key(&t, F12, false, NONE, &mut NoContext);
+        // F12 without Ctrl+Shift: a watched key, wrong modifiers
+        assert_eq!(seen(k.on_key(&t, F12, true, NONE, &mut NoContext)), Some(SeenResult::WrongModifiers));
+        k.on_key(&t, F12, false, NONE, &mut NoContext);
+        assert_eq!(
+            seen(k.on_key(&t, A, true, C, &mut NoContext)),
+            Some(SeenResult::Run { macro_id: "a".into() })
+        );
+    }
+
+    #[test]
+    fn a_bound_key_while_macros_are_off_says_so() {
+        let t = BindingTable::build(&[mac("a", A, vec![], TriggerMode::Once, false)], ESC, false);
+        let mut k = KeyLogic::default();
+        let o = k.on_key(&t, A, true, NONE, &mut NoContext);
+        assert_eq!(o.event, None);
+        assert_eq!(seen(o), Some(SeenResult::MacrosOff));
+    }
+
+    /// Rule 11: ordinary typing is never reported.
+    #[test]
+    fn unwatched_keys_are_never_reported() {
+        let t = BindingTable::build(&[mac("a", A, vec![], TriggerMode::Once, false)], ESC, true);
+        let mut k = KeyLogic::default();
+        for vk in [0x42u16, 0x43, 0x0D, 0x20] {
+            assert_eq!(k.on_key(&t, vk, true, NONE, &mut NoContext), Outcome::default());
+        }
+    }
+
+    #[test]
+    fn holding_a_watched_key_reports_it_once() {
+        let t = BindingTable::build(&[], ESC, true).with_toggle(F12, CS.to_vec());
+        let mut k = KeyLogic::default();
+        assert!(k.on_key(&t, F12, true, NONE, &mut NoContext).seen.is_some());
+        assert!(k.on_key(&t, F12, true, NONE, &mut NoContext).seen.is_none(), "auto-repeat");
+        k.on_key(&t, F12, false, NONE, &mut NoContext);
+        assert!(k.on_key(&t, F12, true, NONE, &mut NoContext).seen.is_some(), "next press");
+    }
+
+    #[test]
+    fn modifier_bits_are_stable() {
+        assert_eq!(mod_bits(&[]), 0);
+        assert_eq!(mod_bits(CS), 5);
+        assert_eq!(mod_bits(&[Modifier::Win, Modifier::Alt]), 10);
     }
 
     #[test]
@@ -289,6 +439,7 @@ mod tests {
         let o = k.on_key(&t, ESC, true, NONE, &mut NoContext);
         assert_eq!(o.event, Some(TriggerEvent::Panic));
         assert!(!o.swallow);
+        assert_eq!(o.seen.map(|s| s.result), Some(SeenResult::Panic));
         assert_eq!(k.on_key(&t, ESC, false, NONE, &mut NoContext), Outcome::default());
     }
 

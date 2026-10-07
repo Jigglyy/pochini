@@ -69,20 +69,26 @@ the working title `coordsclickermacro`.
 binding. The user's screenshot tool owns the bare F12 to F14 keys, which Ctrl+Shift+F12 does not
 trigger; the user preferred to keep the default. It can be rebound in Settings.
 
-## 9. Toggle hotkey sometimes ignored while this app has focus (unresolved)
+## 9. Toggle hotkey ignored (mitigated in 0.2.1, root cause unconfirmed)
 
-**Observed, cause unknown.** With another window focused (a chat app, a game) the toggle hotkey
-worked every time it was tried, and the trace showed hook, logic and worker all firing. With
-this app's own window focused, three experiments gave mixed results: twice the hook logged no
-event at all, not even the Ctrl press (once after bringing the window forward with
-`AttachThreadInput`, once after an ordinary click on it), and once it did see an injected F12. That last result
-rules out "the hook is blind whenever our window has focus" as a simple explanation.
+**History.** In injected-key tests the toggle worked every time with another window focused.
+With Pochini focused, results were mixed: twice the hook logged nothing at all (not even the
+Ctrl press), once it did see an injected F12. The user then reported that a real Ctrl+Shift+F12
+"doesn't do anything".
 
-Ruled out so far: tao/wry installing a competing `WH_KEYBOARD_LL` hook (they do not), and
-stale modifier tracking (fixed separately; see CLAUDE.md rule 5).
+**Candidate causes**, none confirmed:
 
-Practical impact is small, since with the app focused the on-screen switch is right there,
-but it should be understood before shipping. Next step: repeat the experiment many times with
-keys that have no global binding (never F12 to F14), while nobody is typing, logging only
-bound-key outcomes (never key content; CLAUDE.md rule 11), to find what separates the runs
-that fail from the one that worked.
+- Windows silently and permanently removed the hook after one slow callback (it does this
+  without notice; heavy CPU load during release builds is a plausible trigger).
+- Another program's low-level hook, installed after ours, swallowed the key first. Hooks run
+  newest first.
+- The app was not running (closing the window quits it; there is no tray icon yet).
+- Physical keyboard specifics (an Fn layer on F12).
+
+**Mitigations in 0.2.1:** the toggle is also registered with `RegisterHotKey`, so Windows
+delivers it regardless of focus or hook state; the hook is reinstalled every 30 s (revives a
+removed hook and keeps ours first in the chain); and Settings > Hotkey check shows hook
+health, whether Windows accepted the combo, and what each press of a bound key did.
+
+**Next step:** ask the user to press Ctrl+Shift+F12 with Settings > Hotkey check open, and read
+what it reports.

@@ -6,6 +6,7 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
 use crate::engine::{timer, CancelToken, Engine};
+use crate::hotkey::logic::{Seen, SeenResult, Via};
 use crate::hotkey::{BindingTable, TriggerEvent};
 use crate::input::InputBackend;
 use crate::model::{Macro, MacroFile, Repeat, Settings, TriggerMode};
@@ -34,6 +35,8 @@ pub struct AppState {
     pub running: Mutex<Option<RunHandle>>,
     /// Presses of queue-enabled macros that arrived while something ran.
     pub queue: Mutex<VecDeque<Pending>>,
+    /// Newest first; the Settings "Hotkey check".
+    pub recent_keys: Mutex<VecDeque<RecentKey>>,
     pub notify: Option<Box<dyn Notify>>,
 }
 
@@ -52,6 +55,24 @@ pub struct Pending {
     pub delay_ms: u64,
     /// Where the mouse was at the press that queued it.
     pub at: Option<(i32, i32)>,
+}
+
+/// How many recent hotkey reports the Settings "Hotkey check" keeps.
+pub const RECENT_KEYS: usize = 8;
+
+/// One press of a watched key, ready to show in the Settings "Hotkey check".
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct RecentKey {
+    /// e.g. "Ctrl+Shift+F12".
+    pub combo: String,
+    pub result: SeenResult,
+    pub via: Via,
+    /// Name of the macro involved, if any.
+    pub macro_name: Option<String>,
+    /// For an app-only miss: the app the macro is restricted to.
+    pub app: Option<String>,
+    /// Unix milliseconds.
+    pub at_ms: u64,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
@@ -151,6 +172,38 @@ impl AppState {
         self.apply_settings(s)
     }
 
+    /// Turn a hook report into something readable and keep the last few.
+    pub fn record_seen(&self, seen: Seen) {
+        let mut parts: Vec<&str> = Vec::new();
+        for (bit, name) in [(1u8, "Ctrl"), (2, "Alt"), (4, "Shift"), (8, "Win")] {
+            if seen.mods & bit != 0 {
+                parts.push(name);
+            }
+        }
+        let key = crate::input::keys::label_for_vk(seen.vk);
+        parts.push(&key);
+        let combo = parts.join("+");
+
+        let (macro_name, app) = match &seen.result {
+            SeenResult::Run { macro_id } | SeenResult::OutsideApp { macro_id } => match self.find(macro_id) {
+                Some(m) => (Some(m.name), m.guard.map(|g| g.process)),
+                None => (None, None),
+            },
+            _ => (None, None),
+        };
+        let at_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let mut r = self.recent_keys.lock().unwrap();
+        r.push_front(RecentKey { combo, result: seen.result, via: seen.via, macro_name, app, at_ms });
+        r.truncate(RECENT_KEYS);
+    }
+
+    pub fn recent_keys(&self) -> Vec<RecentKey> {
+        self.recent_keys.lock().unwrap().iter().cloned().collect()
+    }
+
     pub fn refresh_bindings(&self) {
         #[cfg(windows)]
         crate::hotkey::HookThread::update(self.binding_table());
@@ -218,6 +271,7 @@ fn handle(state: &Arc<AppState>, ev: TriggerEvent) {
         TriggerEvent::RunAdhoc { mac, delay_ms } => {
             launch(state, Pending { mac: *mac, delay_ms, at: None }, false)
         }
+        TriggerEvent::Seen(seen) => state.record_seen(seen),
     }
 }
 
@@ -320,6 +374,7 @@ mod tests {
             tx,
             running: Mutex::new(None),
             queue: Mutex::new(VecDeque::new()),
+            recent_keys: Mutex::new(VecDeque::new()),
             notify: Some(Box::new(rec.clone())),
         });
         (st, input, rec)
@@ -598,6 +653,35 @@ mod tests {
         handle(&st, TriggerEvent::ToggleEnabled); // on -> off
         assert!(wait_until(|| st.running_id().is_none(), 500), "off must mean off");
         assert_eq!(st.run_status().queued, 0);
+    }
+
+    #[test]
+    fn hotkey_reports_become_readable_and_are_capped() {
+        let mut m = long_wait("m");
+        m.name = "Demo".into();
+        m.guard = Some(crate::model::Guard { process: "game.exe".into(), label: String::new() });
+        let (st, _, _) = state_with(vec![m]);
+        handle(&st, TriggerEvent::Seen(Seen { vk: 0x7B, mods: 5, result: SeenResult::Toggle, via: Via::Windows }));
+        handle(
+            &st,
+            TriggerEvent::Seen(Seen {
+                vk: 0x20,
+                mods: 0,
+                result: SeenResult::OutsideApp { macro_id: "m".into() },
+                via: Via::Hook,
+            }),
+        );
+        let r = st.recent_keys();
+        assert_eq!(r[0].combo, "Space");
+        assert_eq!(r[0].macro_name.as_deref(), Some("Demo"));
+        assert_eq!(r[0].app.as_deref(), Some("game.exe"));
+        assert_eq!(r[1].combo, "Ctrl+Shift+F12");
+        assert_eq!(r[1].via, Via::Windows);
+
+        for _ in 0..20 {
+            handle(&st, TriggerEvent::Seen(Seen { vk: 0x1B, mods: 0, result: SeenResult::Panic, via: Via::Hook }));
+        }
+        assert_eq!(st.recent_keys().len(), RECENT_KEYS);
     }
 
     #[test]

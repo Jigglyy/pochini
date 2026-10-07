@@ -22,7 +22,7 @@ this app owns.
 ## Status
 
 Implemented and building. `src-tauri/` has the full Rust core (model, storage, input,
-hotkey, engine, IPC) with **94 passing unit tests**; `src/` is a ShadCN + Tailwind v4 UI
+hotkey, engine, IPC) with **101 passing unit tests**; `src/` is a ShadCN + Tailwind v4 UI
 styled after Kanbini (macro list, step editor, settings). `npm run tauri dev` opens the app.
 
 The M0/M1 Win32 assumptions were measured before being ported; see
@@ -31,8 +31,9 @@ original design docs; the numbered rules below are the corrected versions and ea
 regression test. Read [docs/README.md](docs/README.md) before changing behaviour.
 
 Not yet done: tray icon, drag-to-reorder, ts-rs type generation, code signing, installer.
-Open issue: the toggle hotkey has failed to fire in some runs while this app's own window
-had focus, cause not found yet ([docs/06-open-questions.md](docs/06-open-questions.md)).
+Open issue: the toggle hotkey was reported doing nothing; 0.2.1 adds RegisterHotKey, a hook
+watchdog and a Hotkey check panel, root cause still unconfirmed
+([docs/06-open-questions.md](docs/06-open-questions.md)).
 See [docs/05-roadmap.md](docs/05-roadmap.md).
 
 ## Stack
@@ -151,6 +152,10 @@ These are the things that silently break this category of app. Full reasoning in
    `KeyContext` it may read the cursor position, and, only when an "App only" binding is a
    candidate, the executable under the cursor (a few user32 calls; the process query is cached
    per pid in a thread-local, no locks).
+   The on/off toggle is additionally registered with `RegisterHotKey` on the hook thread;
+   while that holds, the hook does not send the toggle itself (no double flip). A 30 s thread
+   timer reinstalls the hook (new before old is removed), because Windows removes a slow hook
+   silently and permanently.
 
 5. **Ask Windows for the modifier state; never track it from the event stream.** The hook
    reads `GetAsyncKeyState` for Ctrl/Alt/Shift/Win on every key. A tracker built from
@@ -184,8 +189,8 @@ These are the things that silently break this category of app. Full reasoning in
 
 11. **Never log keystroke content, not even temporarily while debugging.** The README promises
     the hook discards keys after matching. A debug `eprintln!` in the hook once wrote the
-    user's real typing to a log file. To debug the hook, log only bound keys and outcomes, or
-    reproduce with `KeyLogic` unit tests.
+    user's real typing to a log file. To debug hotkeys, use Settings > Hotkey check (it reports
+    only keys the user has bound, via `BindingTable::is_watched`) or `KeyLogic` unit tests.
 
 ## Scope boundary
 
@@ -241,7 +246,7 @@ Mostly carried over from Kanbini, whose renderer this UI copies the look of:
 
 ## Testing
 
-`cargo test` is the gate: 94 tests, no Windows APIs required for most of them.
+`cargo test` is the gate: 101 tests, no Windows APIs required for most of them.
 
 - `input/coords.rs` walks **every pixel** of six virtual-desktop layouts (including negative
   origins and odd sizes) through the round trip, and has an explicit regression test that

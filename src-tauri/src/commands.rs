@@ -259,6 +259,19 @@ pub fn run_status(state: State<'_, Arc<AppState>>) -> R<crate::app::RunStatus> {
     Ok(state.run_status())
 }
 
+#[derive(serde::Serialize)]
+pub struct HotkeyDiagnostics {
+    pub hook: crate::hotkey::HookStatus,
+    pub recent: Vec<crate::app::RecentKey>,
+}
+
+/// For the Settings "Hotkey check": is the hook alive, does Windows own the
+/// toggle, and what happened on the last presses of the user's hotkeys.
+#[tauri::command]
+pub fn hotkey_diagnostics(state: State<'_, Arc<AppState>>) -> R<HotkeyDiagnostics> {
+    Ok(HotkeyDiagnostics { hook: crate::hotkey::hook_status(), recent: state.recent_keys() })
+}
+
 /// Running applications for the "App only" picker.
 #[tauri::command]
 pub fn list_apps() -> R<Vec<crate::input::win::AppWindow>> {

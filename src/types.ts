@@ -127,6 +127,33 @@ export type Settings = {
 
 export type AppWindow = { process: string; title: string };
 
+export type SeenResult =
+  | { kind: "panic" }
+  | { kind: "toggle" }
+  | { kind: "run"; macro_id: string }
+  | { kind: "outside_app"; macro_id: string }
+  | { kind: "macros_off" }
+  | { kind: "wrong_modifiers" };
+
+export type RecentKey = {
+  combo: string;
+  result: SeenResult;
+  via: "hook" | "windows";
+  macro_name: string | null;
+  app: string | null;
+  at_ms: number;
+};
+
+export type HookStatus = {
+  installed: boolean;
+  toggle_registered: boolean;
+  toggle_taken: boolean;
+  key_events: number;
+  reinstalls: number;
+};
+
+export type HotkeyDiagnostics = { hook: HookStatus; recent: RecentKey[] };
+
 export type RunStatus = { macro_id: string | null; name: string | null; queued: number };
 
 export type Monitor = {
