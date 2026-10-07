@@ -76,6 +76,8 @@ Rebuilt on ShadCN + Tailwind v4 in Kanbini's style.
 - [x] Run and Test with a backend 3 second countdown and a Stop pill
 - [x] Master on/off switch in the header plus a global toggle hotkey (default Ctrl+Shift+F12)
 - [x] Settings screen: toggle hotkey, panic key, theme (system / light / dark)
+- [x] Per-macro **Queue presses** (FIFO, cap 50, each run keeps its own press position)
+- [x] Per-macro **App only** with a running-apps picker
 - [ ] Drag-to-reorder for macros and steps
 - [ ] Coordinate picking via a hook-armed key, with a magnifier
 - [ ] Tray icon (closing the window currently quits the app and its hotkeys)
@@ -92,7 +94,7 @@ Rebuilt on ShadCN + Tailwind v4 in Kanbini's style.
 
 ## Later - in rough priority order
 
-1. **Guards** (`foreground_process`) - reserved in the schema already. Biggest safety win.
+1. ~~**Guards**~~ Done in 0.2.0 as **App only** (by window under the mouse).
 2. **Record mode** - capture real mouse/keyboard activity into a step list instead of building
    it by hand. Needs `WH_MOUSE_LL`. Probably the single most-requested feature once v1 lands.
 3. **Window-relative coordinates** - anchor a point to a window's client rect so a moved or

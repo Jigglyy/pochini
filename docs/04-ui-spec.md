@@ -34,6 +34,7 @@ Panic stop [Esc] stops a running macro at once.
 
 - When the master switch is off, a muted banner says hotkeys are ignored and how to turn
   them back on (switch or toggle hotkey).
+- Rows show an app badge for App only macros and a "Queue" badge when queueing is on.
 - Each row: name and a summary line (step count, estimated duration), a "Hotkey clash" badge
   if another macro uses the same combo, the hotkey as keycaps, the macro's **own switch**
   (hotkey on/off for just this macro; dims the row when off), **Run**, and a menu (Edit,
@@ -70,6 +71,11 @@ STEPS                                              Takes 480 ms to 705 ms
   - Mode: run once per press / repeat while held / press to start, press again to stop.
   - Repeat: once / a set number of times / until stopped.
   - "Hotkey on" mirrors the row switch on the home screen.
+  - **Queue presses**: presses while this macro runs are queued instead of ignored. Disabled
+    (with a note) unless the mode is "Run once per press".
+  - **App only**: when on, a picker lists apps that have a window open (executable and window
+    title, with Refresh); the hotkey then only fires while the mouse is over that app. A saved
+    app that is not running stays selectable, marked "not running".
   - "Block the key from other apps" is off by default. Turning it on for a bare key you type
     all the time (Space, letters, digits, Enter...) shows an amber warning.
 - **Steps**: each step is a card with a number, a type icon and a plain-English summary;
@@ -101,8 +107,8 @@ A floating pill at the bottom centre whenever something is running or counting d
 
 - "Starting in 3: switch to your target and place the mouse" with **Cancel** during the
   countdown. The countdown runs in the backend, so it keeps time while the window is hidden.
-- "Running <name>" with **Stop** while running. Runs started by a hotkey show "Running a
-  macro".
+- "Running <name>" with **Stop** while running, for hotkey runs too. When presses are queued
+  it shows "· N queued" and the button becomes **Stop all** (it also clears the queue).
 
 The user must always be able to tell that something is driving their mouse, and stop it.
 

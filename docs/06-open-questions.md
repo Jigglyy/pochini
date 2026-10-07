@@ -19,14 +19,10 @@ meant driving a remote or mobile device, that is a different architecture entire
 
 ## 2. Concurrency: what happens when a hotkey fires while a macro is running?
 
-**Assumed:** the second trigger is ignored, and the running macro is left alone.
-
-Alternatives: queue it, or cancel the running macro and start the new one. Ignoring is the
-safest default and the easiest to reason about, but "press the key again to restart" is a
-common expectation. A per-macro setting is possible but adds a knob.
-
-Related: should two *different* macros be allowed to run simultaneously? Assumed **no** -
-interleaved cursor movement from two macros produces nonsense.
+**Decided (2026-10-07):** one macro runs at a time. A press that arrives while something is
+running is ignored, unless that macro has **Queue presses** on, in which case it waits in a
+FIFO queue (cap 50) and runs right after. Panic stop and the master switch clear the queue.
+Two macros never run simultaneously: interleaved cursor movement produces nonsense.
 
 ## 3. Panic key default
 

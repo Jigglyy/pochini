@@ -57,20 +57,35 @@ export function ToggleRow({
   hint,
   checked,
   onChange,
+  disabled,
+  children,
 }: {
   label: string;
   hint?: ReactNode;
   checked: boolean;
   onChange: (next: boolean) => void;
+  disabled?: boolean;
+  /** Extra controls shown under the row while it is on. */
+  children?: ReactNode;
 }) {
   return (
-    <label className="flex cursor-pointer items-start justify-between gap-4 rounded-md border border-border p-3 text-sm transition-colors hover:bg-accent">
+    <div className="rounded-md border border-border">
+    <label
+      className={cn(
+        "flex items-start justify-between gap-4 rounded-md p-3 text-sm transition-colors",
+        disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-accent",
+      )}
+    >
       <span className="flex min-w-0 flex-col gap-0.5">
         <span className="font-medium text-foreground">{label}</span>
         {hint && <span className="text-xs leading-snug text-muted-foreground">{hint}</span>}
       </span>
-      <Switch checked={checked} onCheckedChange={onChange} className="mt-0.5" />
+      <Switch checked={checked && !disabled} onCheckedChange={onChange} disabled={disabled} className="mt-0.5" />
     </label>
+    {checked && !disabled && children && (
+      <div className="border-t border-border px-3 py-3">{children}</div>
+    )}
+    </div>
   );
 }
 

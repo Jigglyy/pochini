@@ -17,8 +17,10 @@ use crate::model::Macro;
 /// What the hook thread (and the UI) send to the engine worker.
 #[derive(Debug, Clone, PartialEq)]
 pub enum TriggerEvent {
-    /// Run a saved macro, optionally after a countdown.
-    Start { macro_id: String, delay_ms: u64 },
+    /// Run a saved macro, optionally after a countdown. `at` is where the
+    /// mouse was when the hotkey was pressed (the activation point); `None`
+    /// means "read it when the run starts", which is what a countdown wants.
+    Start { macro_id: String, delay_ms: u64, at: Option<(i32, i32)> },
     /// Run an unsaved step list (the editor's Test button).
     RunAdhoc { mac: Box<Macro>, delay_ms: u64 },
     /// A `HoldRepeat` binding's key came up.

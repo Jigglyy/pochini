@@ -14,6 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { AppPicker } from "@/components/AppPicker";
 import { KeyCapture } from "@/components/KeyCapture";
 import { StepRow } from "@/components/StepRow";
 import { Field, Notice, Section, ToggleRow } from "@/components/layout";
@@ -262,6 +263,28 @@ export function MacroEditor({
               other app while macros are on.
             </Notice>
           )}
+          <ToggleRow
+            label="Queue presses"
+            hint={
+              t && t.mode !== "once"
+                ? 'Only for "Run once per press" mode.'
+                : "Pressing the hotkey while this macro runs queues another run instead of ignoring the press. Queued runs follow one after another, each using the mouse position from its own press. Panic stop clears the queue."
+            }
+            checked={m.queue}
+            disabled={!!t && t.mode !== "once"}
+            onChange={(queue) => edit({ queue })}
+          />
+          <ToggleRow
+            label="App only"
+            hint="The hotkey only works while the mouse is over the chosen app. Anywhere else the key behaves normally and is never blocked."
+            checked={m.guard !== null}
+            onChange={(on) => edit({ guard: on ? (m.guard ?? { process: "", label: "" }) : null })}
+          >
+            <AppPicker value={m.guard?.process ? m.guard : null} onChange={(guard) => edit({ guard })} />
+            {m.guard && !m.guard.process && (
+              <p className="mt-2 text-xs text-warning">Choose an app, or this hotkey will never fire.</p>
+            )}
+          </ToggleRow>
         </div>
       </Section>
 

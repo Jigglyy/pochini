@@ -263,3 +263,138 @@ unsafe extern "system" fn enum_proc(
     }
     TRUE
 }
+
+// ---------------------------------------------------------------- apps
+
+/// A running application, as offered by the "App only" picker.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct AppWindow {
+    /// Executable file name, e.g. "game.exe".
+    pub process: String,
+    /// Title of one of its visible top-level windows.
+    pub title: String,
+}
+
+/// Executable file name for a process id, or None if we may not look.
+pub fn process_name(pid: u32) -> Option<String> {
+    use windows::core::PWSTR;
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    // SAFETY: the handle is checked, used for one query, and closed.
+    unsafe {
+        let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
+        let mut buf = [0u16; 512];
+        let mut len = buf.len() as u32;
+        let ok = QueryFullProcessImageNameW(h, PROCESS_NAME_WIN32, PWSTR(buf.as_mut_ptr()), &mut len).is_ok();
+        let _ = CloseHandle(h);
+        if !ok {
+            return None;
+        }
+        let full = String::from_utf16_lossy(&buf[..len as usize]);
+        Some(full.rsplit('\\').next().unwrap_or(&full).to_string())
+    }
+}
+
+thread_local! {
+    /// pid -> (exe name, when looked up). Process ids are reused, so entries
+    /// expire. Thread-local because the hook thread is the hot caller and must
+    /// not take a lock.
+    static NAME_CACHE: std::cell::RefCell<std::collections::HashMap<u32, (String, std::time::Instant)>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+/// Executable name of the app whose top-level window is at (x, y). Cheap
+/// enough for the hook callback: a few user32 calls, and the process query is
+/// cached per pid for a few seconds.
+pub fn app_at(x: i32, y: i32) -> Option<String> {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::UI::WindowsAndMessaging::{GetAncestor, GetWindowThreadProcessId, WindowFromPoint, GA_ROOT};
+    // SAFETY: plain window queries on handles the system just gave us.
+    let pid = unsafe {
+        let hwnd = WindowFromPoint(POINT { x, y });
+        if hwnd.0.is_null() {
+            return None;
+        }
+        let root = GetAncestor(hwnd, GA_ROOT);
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(root, Some(&mut pid));
+        pid
+    };
+    if pid == 0 {
+        return None;
+    }
+    NAME_CACHE.with(|c| {
+        let mut c = c.borrow_mut();
+        if let Some((name, at)) = c.get(&pid) {
+            if at.elapsed() < std::time::Duration::from_secs(5) {
+                return Some(name.clone());
+            }
+        }
+        let name = process_name(pid)?;
+        c.insert(pid, (name.clone(), std::time::Instant::now()));
+        Some(name)
+    })
+}
+
+/// Visible, titled, top-level application windows, one entry per executable.
+/// Skips tool windows, owned popups, cloaked (hidden UWP) windows, and this
+/// app itself.
+pub fn list_apps() -> Vec<AppWindow> {
+    use windows::Win32::Foundation::{BOOL, HWND, LPARAM, TRUE};
+    use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        EnumWindows, GetWindow, GetWindowLongW, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId,
+        IsWindowVisible, GWL_EXSTYLE, GW_OWNER, WS_EX_TOOLWINDOW,
+    };
+
+    struct Acc {
+        me: u32,
+        out: Vec<AppWindow>,
+    }
+
+    unsafe extern "system" fn each(hwnd: HWND, lp: LPARAM) -> BOOL {
+        let acc = &mut *(lp.0 as *mut Acc);
+        if !IsWindowVisible(hwnd).as_bool() {
+            return TRUE;
+        }
+        if GetWindow(hwnd, GW_OWNER).map(|o| !o.0.is_null()).unwrap_or(false) {
+            return TRUE;
+        }
+        if (GetWindowLongW(hwnd, GWL_EXSTYLE) as u32) & WS_EX_TOOLWINDOW.0 != 0 {
+            return TRUE;
+        }
+        let mut cloaked = 0u32;
+        if DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, &mut cloaked as *mut _ as *mut _, 4).is_ok() && cloaked != 0 {
+            return TRUE;
+        }
+        let n = GetWindowTextLengthW(hwnd);
+        if n <= 0 {
+            return TRUE;
+        }
+        let mut buf = vec![0u16; n as usize + 1];
+        let got = GetWindowTextW(hwnd, &mut buf);
+        let title = String::from_utf16_lossy(&buf[..got.max(0) as usize]);
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        if pid == acc.me || title.trim().is_empty() {
+            return TRUE;
+        }
+        if let Some(process) = process_name(pid) {
+            if !acc.out.iter().any(|a| a.process.eq_ignore_ascii_case(&process)) {
+                acc.out.push(AppWindow { process, title });
+            }
+        }
+        TRUE
+    }
+
+    let mut acc = Acc { me: std::process::id(), out: Vec::new() };
+    // SAFETY: the callback only touches `acc` through the pointer we pass,
+    // and `acc` outlives the enumeration.
+    unsafe {
+        let _ = EnumWindows(Some(each), LPARAM(&mut acc as *mut Acc as isize));
+    }
+    acc.out.sort_by_key(|a| a.process.to_lowercase());
+    acc.out
+}

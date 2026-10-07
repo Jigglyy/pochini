@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { isRunning, RUN_COUNTDOWN_MS, stopMacro } from "@/lib/ipc";
+import { RUN_COUNTDOWN_MS, runStatus, stopMacro } from "@/lib/ipc";
+import type { RunStatus } from "@/types";
 
 export type PendingRun = { label: string; at: number; token: number };
 
-/** Bottom pill: the countdown after Run/Test, then "Running", with Stop.
- *  Also shows runs started by a hotkey. The user must always be able to tell
- *  that something is driving their mouse, and stop it. */
+/** Bottom pill: the countdown after Run/Test, then "Running <name>" with how
+ *  many presses are queued, and a Stop that also clears the queue. Shows runs
+ *  started by a hotkey too. The user must always be able to tell that
+ *  something is driving their mouse, and stop it. */
 export function RunIndicator({ pending, onDone }: { pending: PendingRun | null; onDone: () => void }) {
-  const [running, setRunning] = useState<string | null>(null);
+  const [status, setStatus] = useState<RunStatus | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const seenRunning = useRef(false);
 
@@ -21,9 +23,9 @@ export function RunIndicator({ pending, onDone }: { pending: PendingRun | null; 
     const t = window.setInterval(async () => {
       setNow(Date.now());
       try {
-        const r = await isRunning();
-        setRunning(r);
-        if (r) {
+        const s = await runStatus();
+        setStatus(s);
+        if (s.macro_id) {
           seenRunning.current = true;
         } else if (pending && (seenRunning.current || Date.now() - pending.at > RUN_COUNTDOWN_MS + 2000)) {
           onDone();
@@ -35,10 +37,12 @@ export function RunIndicator({ pending, onDone }: { pending: PendingRun | null; 
     return () => window.clearInterval(t);
   }, [pending, onDone]);
 
+  const running = status?.macro_id ?? null;
   if (!running && !pending) return null;
 
   const left = pending ? RUN_COUNTDOWN_MS - (now - pending.at) : 0;
   const counting = pending !== null && left > 0;
+  const queued = status?.queued ?? 0;
 
   return (
     <div
@@ -57,7 +61,8 @@ export function RunIndicator({ pending, onDone }: { pending: PendingRun | null; 
       ) : (
         <span>
           <span className="text-muted-foreground">Running </span>
-          <span className="font-medium">{pending?.label ?? "a macro"}</span>
+          <span className="font-medium">{status?.name || pending?.label || "a macro"}</span>
+          {queued > 0 && <span className="tabular-nums text-muted-foreground"> · {queued} queued</span>}
         </span>
       )}
       <Button
@@ -70,7 +75,7 @@ export function RunIndicator({ pending, onDone }: { pending: PendingRun | null; 
         }}
       >
         <Square className="fill-current" />
-        {counting ? "Cancel" : "Stop"}
+        {counting ? "Cancel" : queued > 0 ? "Stop all" : "Stop"}
       </Button>
     </div>
   );

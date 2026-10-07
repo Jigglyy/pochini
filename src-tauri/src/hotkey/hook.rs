@@ -26,7 +26,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
 
 use super::bindings::BindingTable;
-use super::logic::KeyLogic;
+use super::logic::{KeyContext, KeyLogic};
 use super::TriggerEvent;
 use crate::input::INJECT_STAMP;
 use crate::model::Modifier;
@@ -36,6 +36,24 @@ use crate::model::Modifier;
 /// first time a key-up is hidden from the hook (UIPI, secure desktop) or a
 /// modifier was already down when the app started. No allocation: it runs
 /// inside the hook callback.
+/// What the hook can learn about the moment of a press. Each answer is only
+/// computed if a binding needs it.
+struct LiveContext;
+
+impl KeyContext for LiveContext {
+    fn cursor(&mut self) -> Option<(i32, i32)> {
+        let mut p = windows::Win32::Foundation::POINT::default();
+        // SAFETY: `p` is a valid, owned POINT.
+        unsafe { windows::Win32::UI::WindowsAndMessaging::GetCursorPos(&mut p) }.ok()?;
+        Some((p.x, p.y))
+    }
+
+    fn app_under_cursor(&mut self) -> Option<String> {
+        let (x, y) = self.cursor()?;
+        crate::input::win::app_at(x, y)
+    }
+}
+
 fn held_modifiers(buf: &mut [Modifier; 4]) -> &[Modifier] {
     // SAFETY: GetAsyncKeyState takes a virtual key code and returns a state word.
     let down = |vk: i32| (unsafe { GetAsyncKeyState(vk) } as u16) & 0x8000 != 0;
@@ -193,7 +211,7 @@ unsafe extern "system" fn callback(code: i32, wparam: WPARAM, lparam: LPARAM) ->
     let mut buf = [Modifier::Ctrl; 4];
     let mods = held_modifiers(&mut buf);
     let outcome = match state.logic.try_lock() {
-        Ok(mut logic) => logic.on_key(&table, vk, down, mods),
+        Ok(mut logic) => logic.on_key(&table, vk, down, mods, &mut LiveContext),
         Err(_) => return CallNextHookEx(None, code, wparam, lparam),
     };
     if let Some(ev) = outcome.event {

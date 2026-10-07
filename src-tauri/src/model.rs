@@ -298,12 +298,16 @@ pub enum Repeat {
     Forever,
 }
 
-/// Reserved in the schema now so adding it later is not a migration.
-/// See docs/03-macro-format.md.
+/// "App only": the macro's hotkey fires only while the mouse is over a window
+/// that belongs to this process. Anywhere else the key behaves as if unbound
+/// (it passes through, even if the trigger would normally block it).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Guard {
-    pub foreground_process: String,
-    pub on_mismatch: String,
+    /// Executable file name, e.g. "game.exe". Compared ignoring case.
+    pub process: String,
+    /// What the user picked it from (a window title), for display only.
+    #[serde(default)]
+    pub label: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -315,6 +319,10 @@ pub struct Macro {
     pub trigger: Option<Trigger>,
     #[serde(default)]
     pub repeat: Repeat,
+    /// Pressing the hotkey while this macro is already running queues another
+    /// run instead of ignoring the press. Only meaningful for `TriggerMode::Once`.
+    #[serde(default)]
+    pub queue: bool,
     #[serde(default)]
     pub steps: Vec<Step>,
     #[serde(default)]
@@ -338,6 +346,7 @@ impl Macro {
             enabled: true,
             trigger: None,
             repeat: Repeat::Once,
+            queue: false,
             steps: Vec::new(),
             guard: None,
             created_at: now.clone(),
@@ -536,6 +545,20 @@ mod tests {
         )
         .unwrap();
         assert_eq!(cleared.toggle_hotkey, None);
+    }
+
+    #[test]
+    fn queue_defaults_off_and_guard_roundtrips() {
+        let m: Macro = serde_json::from_str(r#"{"id":"a","name":"n","trigger":null}"#).unwrap();
+        assert!(!m.queue);
+        assert!(m.guard.is_none());
+
+        let mut m = Macro::new("x");
+        m.queue = true;
+        m.guard = Some(Guard { process: "game.exe".into(), label: "Game".into() });
+        let back: Macro = serde_json::from_str(&serde_json::to_string(&m).unwrap()).unwrap();
+        assert!(back.queue);
+        assert_eq!(back.guard, m.guard);
     }
 
     #[test]

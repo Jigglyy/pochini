@@ -1,5 +1,7 @@
 //! Application state and the engine worker.
 
+use std::collections::VecDeque;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
@@ -8,6 +10,11 @@ use crate::hotkey::{BindingTable, TriggerEvent};
 use crate::input::InputBackend;
 use crate::model::{Macro, MacroFile, Repeat, Settings, TriggerMode};
 use crate::storage::Store;
+
+/// How many presses can wait behind a running macro. A cap rather than
+/// unlimited, so a held-down or repeatedly mashed key cannot line up an hour
+/// of clicking.
+pub const MAX_QUEUE: usize = 50;
 
 /// Lets the worker tell the UI something changed (the toggle hotkey flipped
 /// the master switch while the window was in the background). A trait rather
@@ -23,14 +30,38 @@ pub struct AppState {
     pub input: Arc<dyn InputBackend>,
     pub tx: Sender<TriggerEvent>,
     /// Whatever is running now (or counting down to run). At most one.
+    /// Lock order: `running` before `queue`, everywhere.
     pub running: Mutex<Option<RunHandle>>,
+    /// Presses of queue-enabled macros that arrived while something ran.
+    pub queue: Mutex<VecDeque<Pending>>,
     pub notify: Option<Box<dyn Notify>>,
 }
 
 pub struct RunHandle {
+    /// Unique per run. The same macro can be running and queued at once, so
+    /// the macro id alone cannot tell this run from the next one.
+    pub run_id: u64,
     pub macro_id: String,
+    pub name: String,
     pub cancel: CancelToken,
 }
+
+/// A run waiting to start.
+pub struct Pending {
+    pub mac: Macro,
+    pub delay_ms: u64,
+    /// Where the mouse was at the press that queued it.
+    pub at: Option<(i32, i32)>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
+pub struct RunStatus {
+    pub macro_id: Option<String>,
+    pub name: Option<String>,
+    pub queued: usize,
+}
+
+static NEXT_RUN: AtomicU64 = AtomicU64::new(1);
 
 impl AppState {
     pub fn binding_table(&self) -> Arc<BindingTable> {
@@ -58,16 +89,20 @@ impl AppState {
             .cloned()
     }
 
-    /// Abort whatever is running or counting down.
+    /// Stop whatever is running or counting down, and drop everything queued.
     pub fn abort(&self) {
-        if let Some(h) = self.running.lock().unwrap().take() {
+        let mut g = self.running.lock().unwrap();
+        self.queue.lock().unwrap().clear();
+        if let Some(h) = g.take() {
             h.cancel.cancel();
         }
     }
 
-    /// Abort only if `macro_id` is the one running.
+    /// Stop `macro_id` if it is the one running, and drop its queued runs.
+    /// Other macros' queued runs still go ahead.
     pub fn abort_if(&self, macro_id: &str) {
         let mut g = self.running.lock().unwrap();
+        self.queue.lock().unwrap().retain(|p| p.mac.id != macro_id);
         if g.as_ref().is_some_and(|h| h.macro_id == macro_id) {
             if let Some(h) = g.take() {
                 h.cancel.cancel();
@@ -79,9 +114,19 @@ impl AppState {
         self.running.lock().unwrap().as_ref().map(|h| h.macro_id.clone())
     }
 
+    pub fn run_status(&self) -> RunStatus {
+        let g = self.running.lock().unwrap();
+        let queued = self.queue.lock().unwrap().len();
+        RunStatus {
+            macro_id: g.as_ref().map(|h| h.macro_id.clone()),
+            name: g.as_ref().map(|h| h.name.clone()),
+            queued,
+        }
+    }
+
     /// Replace the settings, persist them, re-arm the hook, and tell the UI.
-    /// Turning the master switch off also stops whatever is running: "off"
-    /// has to mean off.
+    /// Turning the master switch off also stops whatever is running and clears
+    /// the queue: "off" has to mean off.
     pub fn apply_settings(&self, next: Settings) -> Result<(), String> {
         let was_enabled = {
             let mut s = self.settings.lock().unwrap();
@@ -112,14 +157,15 @@ impl AppState {
     }
 }
 
-/// Drains `TriggerEvent`s. The loop itself never blocks on a macro: each run
-/// gets its own thread, so a Panic or Stop arriving mid-run is handled at once.
-/// (The first version ran macros inline here, which meant the panic key and
-/// the release of a "repeat while held" key both waited behind the very macro
-/// they were meant to stop.)
+/// Drains `TriggerEvent`s. The loop itself never blocks on a macro: runs
+/// happen on their own thread, so a Panic or Stop arriving mid-run is handled
+/// at once. (The first version ran macros inline here, which meant the panic
+/// key and the release of a "repeat while held" key both waited behind the
+/// very macro they were meant to stop.)
 ///
-/// Concurrency policy (docs/06-open-questions.md #2): one macro at a time; a
-/// trigger arriving while something runs is ignored rather than queued.
+/// One macro runs at a time. A press that arrives while something runs is
+/// queued if that macro has `queue` on (docs/06-open-questions.md #2), and
+/// ignored otherwise.
 pub fn spawn_worker(state: Arc<AppState>, rx: Receiver<TriggerEvent>) -> std::thread::JoinHandle<()> {
     std::thread::Builder::new()
         .name("macro-worker".into())
@@ -134,12 +180,20 @@ pub fn spawn_worker(state: Arc<AppState>, rx: Receiver<TriggerEvent>) -> std::th
 fn handle(state: &Arc<AppState>, ev: TriggerEvent) {
     match ev {
         TriggerEvent::Panic => state.abort(),
-        TriggerEvent::Stop { macro_id } => state.abort_if(&macro_id),
+        TriggerEvent::Stop { macro_id } => {
+            // Only the running instance: a hold-repeat run is never queued.
+            let mut g = state.running.lock().unwrap();
+            if g.as_ref().is_some_and(|h| h.macro_id == macro_id) {
+                if let Some(h) = g.take() {
+                    h.cancel.cancel();
+                }
+            }
+        }
         TriggerEvent::ToggleEnabled => {
             let now = !state.settings.lock().unwrap().enabled;
             let _ = state.set_enabled(now);
         }
-        TriggerEvent::Start { macro_id, delay_ms } => {
+        TriggerEvent::Start { macro_id, delay_ms, at } => {
             let Some(mut m) = state.find(&macro_id) else {
                 return;
             };
@@ -157,38 +211,80 @@ fn handle(state: &Arc<AppState>, ev: TriggerEvent) {
             if mode == Some(TriggerMode::HoldRepeat) && delay_ms == 0 {
                 m.repeat = Repeat::Forever;
             }
-            launch(state, m, delay_ms);
+            // Queueing only makes sense for one run per press.
+            let queueable = m.queue && matches!(mode, None | Some(TriggerMode::Once));
+            launch(state, Pending { mac: m, delay_ms, at }, queueable);
         }
-        TriggerEvent::RunAdhoc { mac, delay_ms } => launch(state, *mac, delay_ms),
+        TriggerEvent::RunAdhoc { mac, delay_ms } => {
+            launch(state, Pending { mac: *mac, delay_ms, at: None }, false)
+        }
     }
 }
 
-/// Start `m` on its own thread unless something is already running. The
-/// running slot is claimed under the lock before the thread starts, so two
-/// triggers in quick succession cannot both get through.
-fn launch(state: &Arc<AppState>, m: Macro, delay_ms: u64) {
+fn claim(slot: &mut Option<RunHandle>, mac: &Macro) -> (u64, CancelToken) {
+    let run_id = NEXT_RUN.fetch_add(1, Ordering::Relaxed);
     let cancel = CancelToken::new();
-    {
+    *slot = Some(RunHandle {
+        run_id,
+        macro_id: mac.id.clone(),
+        name: mac.name.clone(),
+        cancel: cancel.clone(),
+    });
+    (run_id, cancel)
+}
+
+/// Start `first` on a run thread, or queue it (if `queueable`) when something
+/// is already running. The run thread drains the queue before it exits, so
+/// queued runs follow each other back to back.
+fn launch(state: &Arc<AppState>, first: Pending, queueable: bool) {
+    let (run_id, cancel) = {
         let mut g = state.running.lock().unwrap();
         if g.is_some() {
+            if queueable {
+                let mut q = state.queue.lock().unwrap();
+                if q.len() < MAX_QUEUE {
+                    q.push_back(first);
+                }
+            }
             return;
         }
-        *g = Some(RunHandle { macro_id: m.id.clone(), cancel: cancel.clone() });
-    }
+        claim(&mut g, &first.mac)
+    };
+
     let st = state.clone();
     let spawned = std::thread::Builder::new().name("macro-run".into()).spawn(move || {
-        // The countdown lives here rather than in the UI: a webview timer gets
-        // throttled the moment the user switches to the game, which is exactly
-        // what the countdown is for. It is cancellable like any other wait.
-        let go = delay_ms == 0 || timer::wait(delay_ms, &cancel);
-        if go {
-            let seed = st.settings.lock().unwrap().rng_seed;
-            let mut engine = Engine::new(st.input.clone(), seed);
-            let _ = engine.run(&m, &cancel);
-        }
-        let mut g = st.running.lock().unwrap();
-        if g.as_ref().is_some_and(|h| h.macro_id == m.id) {
-            *g = None;
+        let mut job = Some((first, run_id, cancel));
+        while let Some((p, run_id, cancel)) = job.take() {
+            // The countdown lives here rather than in the UI: a webview timer
+            // gets throttled the moment the user switches to the game, which
+            // is exactly what the countdown is for. It is cancellable.
+            let go = p.delay_ms == 0 || timer::wait(p.delay_ms, &cancel);
+            if go {
+                let seed = st.settings.lock().unwrap().rng_seed;
+                let mut engine = Engine::new(st.input.clone(), seed);
+                let _ = engine.run_at(&p.mac, &cancel, p.at);
+            }
+
+            // Hand over to the next queued run, or release the slot. If an
+            // abort already took the slot (panic clears the queue; disabling
+            // one macro only drops its own entries), whatever is left still
+            // runs, unless a fresh press has claimed the slot in the meantime.
+            let mut g = st.running.lock().unwrap();
+            let ours = g.as_ref().is_some_and(|h| h.run_id == run_id);
+            if ours || g.is_none() {
+                let next = st.queue.lock().unwrap().pop_front();
+                match next {
+                    Some(n) => {
+                        let (id, c) = claim(&mut g, &n.mac);
+                        job = Some((n, id, c));
+                    }
+                    None => {
+                        if ours {
+                            *g = None;
+                        }
+                    }
+                }
+            }
         }
     });
     if spawned.is_err() {
@@ -200,7 +296,7 @@ fn launch(state: &Arc<AppState>, m: Macro, delay_ms: u64) {
 mod tests {
     use super::*;
     use crate::input::fake::{Event, FakeInput};
-    use crate::model::{Jitter, KeyRef, Step, Trigger};
+    use crate::model::{Anchor, Jitter, KeyRef, Step, Trigger};
     use std::time::{Duration, Instant};
 
     struct Recorder(Mutex<Vec<bool>>);
@@ -223,9 +319,14 @@ mod tests {
             input: input.clone(),
             tx,
             running: Mutex::new(None),
+            queue: Mutex::new(VecDeque::new()),
             notify: Some(Box::new(rec.clone())),
         });
         (st, input, rec)
+    }
+
+    fn start(id: &str) -> TriggerEvent {
+        TriggerEvent::Start { macro_id: id.into(), delay_ms: 0, at: None }
     }
 
     fn long_wait(id: &str) -> Macro {
@@ -233,6 +334,28 @@ mod tests {
         m.id = id.into();
         m.steps.push(Step::Wait { id: "w".into(), ms: Jitter::exact(30_000) });
         m
+    }
+
+    /// A macro that marks each run with one cursor move, then waits a little.
+    fn marker(id: &str, queue: bool, anchor: Anchor) -> Macro {
+        let mut m = Macro::new(id);
+        m.id = id.into();
+        m.queue = queue;
+        m.steps.push(Step::Move {
+            id: "mv".into(),
+            x: 7,
+            y: 7,
+            anchor,
+            coord_jitter_px: 0,
+            move_duration_ms: 0,
+            capture: None,
+        });
+        m.steps.push(Step::Wait { id: "w".into(), ms: Jitter::exact(40) });
+        m
+    }
+
+    fn moves(input: &FakeInput) -> Vec<Event> {
+        input.events().into_iter().filter(|e| matches!(e, Event::Move(..))).collect()
     }
 
     fn wait_until(mut f: impl FnMut() -> bool, ms: u64) -> bool {
@@ -250,7 +373,7 @@ mod tests {
     #[test]
     fn panic_stops_a_running_macro_immediately() {
         let (st, _, _) = state_with(vec![long_wait("m")]);
-        handle(&st, TriggerEvent::Start { macro_id: "m".into(), delay_ms: 0 });
+        handle(&st, start("m"));
         assert!(wait_until(|| st.running_id().is_some(), 500));
         let t = Instant::now();
         handle(&st, TriggerEvent::Panic);
@@ -272,7 +395,7 @@ mod tests {
         });
         m.steps.push(Step::Wait { id: "w".into(), ms: Jitter::exact(5) });
         let (st, _, _) = state_with(vec![m]);
-        handle(&st, TriggerEvent::Start { macro_id: "h".into(), delay_ms: 0 });
+        handle(&st, start("h"));
         std::thread::sleep(Duration::from_millis(60));
         assert_eq!(st.running_id().as_deref(), Some("h"), "should still be looping");
         handle(&st, TriggerEvent::Stop { macro_id: "h".into() });
@@ -291,20 +414,131 @@ mod tests {
             swallow: false,
         });
         let (st, _, _) = state_with(vec![m]);
-        handle(&st, TriggerEvent::Start { macro_id: "t".into(), delay_ms: 0 });
+        handle(&st, start("t"));
         assert!(wait_until(|| st.running_id().is_some(), 500));
-        handle(&st, TriggerEvent::Start { macro_id: "t".into(), delay_ms: 0 });
+        handle(&st, start("t"));
         assert!(wait_until(|| st.running_id().is_none(), 500), "second press must stop it");
     }
 
     #[test]
-    fn a_second_trigger_while_running_is_ignored() {
-        let (st, _, _) = state_with(vec![long_wait("a"), long_wait("b")]);
-        handle(&st, TriggerEvent::Start { macro_id: "a".into(), delay_ms: 0 });
+    fn without_queue_a_press_while_running_is_ignored() {
+        let (st, input, _) = state_with(vec![marker("m", false, Anchor::Fixed)]);
+        for _ in 0..3 {
+            handle(&st, start("m"));
+        }
+        assert!(wait_until(|| st.running_id().is_none(), 1000));
+        std::thread::sleep(Duration::from_millis(80));
+        assert_eq!(moves(&input).len(), 1, "only the first press runs");
+    }
+
+    /// The feature: press five times, it runs five times, back to back,
+    /// never interrupting the run in progress.
+    #[test]
+    fn with_queue_every_press_runs_in_order_after_the_current_one() {
+        let (st, input, _) = state_with(vec![marker("q", true, Anchor::Fixed)]);
+        for _ in 0..5 {
+            handle(&st, start("q"));
+        }
+        assert_eq!(st.run_status().queued, 4, "four waiting behind the first");
+        assert!(wait_until(|| moves(&input).len() == 5 && st.running_id().is_none(), 2000));
+
+        // Sequential, not overlapping: each run's move comes after the
+        // previous run's 40 ms wait.
+        let t: Vec<Instant> = input
+            .timeline()
+            .into_iter()
+            .filter(|(_, e)| matches!(e, Event::Move(..)))
+            .map(|(t, _)| t)
+            .collect();
+        for w in t.windows(2) {
+            assert!(w[1].duration_since(w[0]) >= Duration::from_millis(38), "runs overlapped");
+        }
+    }
+
+    #[test]
+    fn each_queued_run_uses_the_mouse_position_from_its_own_press() {
+        let (st, input, _) = state_with(vec![marker("q", true, Anchor::Activation)]);
+        for p in [(1, 1), (2, 2), (3, 3)] {
+            handle(&st, TriggerEvent::Start { macro_id: "q".into(), delay_ms: 0, at: Some(p) });
+        }
+        assert!(wait_until(|| moves(&input).len() == 3, 2000));
+        assert_eq!(moves(&input), vec![Event::Move(1, 1), Event::Move(2, 2), Event::Move(3, 3)]);
+    }
+
+    #[test]
+    fn panic_clears_the_queue_too() {
+        let mut q = long_wait("q");
+        q.queue = true;
+        let (st, input, _) = state_with(vec![q]);
+        for _ in 0..4 {
+            handle(&st, start("q"));
+        }
+        assert_eq!(st.run_status().queued, 3);
+        handle(&st, TriggerEvent::Panic);
+        assert!(wait_until(|| st.running_id().is_none(), 500));
+        std::thread::sleep(Duration::from_millis(80));
+        assert_eq!(st.run_status(), RunStatus::default(), "nothing running, nothing queued");
+        assert!(input.events().is_empty());
+    }
+
+    #[test]
+    fn switching_a_macro_off_drops_its_queued_runs_but_not_others() {
+        let mut a = long_wait("a");
+        a.queue = true;
+        let b = marker("b", true, Anchor::Fixed);
+        let (st, input, _) = state_with(vec![a, b]);
+        handle(&st, start("a")); // running
+        handle(&st, start("a")); // queued
+        handle(&st, start("b")); // queued
+        handle(&st, start("a")); // queued
+        assert_eq!(st.run_status().queued, 3);
+        st.abort_if("a");
+        // a stops, its queued runs vanish, b still runs once
+        assert!(wait_until(|| moves(&input).len() == 1 && st.running_id().is_none(), 1500));
+        assert_eq!(st.run_status(), RunStatus::default());
+    }
+
+    #[test]
+    fn the_queue_is_capped() {
+        let mut q = long_wait("q");
+        q.queue = true;
+        let (st, _, _) = state_with(vec![q]);
+        for _ in 0..(MAX_QUEUE + 20) {
+            handle(&st, start("q"));
+        }
+        assert_eq!(st.run_status().queued, MAX_QUEUE);
+        st.abort();
+    }
+
+    #[test]
+    fn hold_repeat_and_toggle_macros_never_queue() {
+        for mode in [TriggerMode::HoldRepeat, TriggerMode::Toggle] {
+            let mut m = long_wait("x");
+            m.queue = true;
+            m.trigger = Some(Trigger {
+                key: KeyRef { vk: 0x41, scancode: 0x1E, extended: false, label: "A".into() },
+                modifiers: vec![],
+                mode,
+                swallow: false,
+            });
+            let (st, _, _) = state_with(vec![m]);
+            handle(&st, start("x"));
+            assert!(wait_until(|| st.running_id().is_some(), 500));
+            handle(&st, start("x"));
+            assert_eq!(st.run_status().queued, 0, "{mode:?} must not queue");
+            st.abort();
+        }
+    }
+
+    #[test]
+    fn run_status_names_the_running_macro() {
+        let mut m = long_wait("m");
+        m.name = "Demo".into();
+        let (st, _, _) = state_with(vec![m]);
+        handle(&st, start("m"));
         assert!(wait_until(|| st.running_id().is_some(), 500));
-        handle(&st, TriggerEvent::Start { macro_id: "b".into(), delay_ms: 0 });
-        std::thread::sleep(Duration::from_millis(30));
-        assert_eq!(st.running_id().as_deref(), Some("a"));
+        let s = st.run_status();
+        assert_eq!((s.macro_id.as_deref(), s.name.as_deref(), s.queued), (Some("m"), Some("Demo"), 0));
         st.abort();
     }
 
@@ -316,7 +550,7 @@ mod tests {
             id: "mv".into(),
             x: 10,
             y: 10,
-            anchor: crate::model::Anchor::Fixed,
+            anchor: Anchor::Fixed,
             coord_jitter_px: 0,
             move_duration_ms: 0,
             capture: None,
@@ -324,7 +558,7 @@ mod tests {
         let (st, input, _) = state_with(vec![m]);
 
         // cancelled mid-countdown: nothing is ever sent
-        handle(&st, TriggerEvent::Start { macro_id: "c".into(), delay_ms: 2_000 });
+        handle(&st, TriggerEvent::Start { macro_id: "c".into(), delay_ms: 2_000, at: None });
         std::thread::sleep(Duration::from_millis(50));
         assert_eq!(st.running_id().as_deref(), Some("c"), "counting down counts as running");
         handle(&st, TriggerEvent::Panic);
@@ -334,7 +568,7 @@ mod tests {
 
         // allowed to finish: input arrives only after the delay
         let t = Instant::now();
-        handle(&st, TriggerEvent::Start { macro_id: "c".into(), delay_ms: 120 });
+        handle(&st, TriggerEvent::Start { macro_id: "c".into(), delay_ms: 120, at: None });
         assert!(wait_until(|| !input.events().is_empty(), 1000));
         assert!(t.elapsed() >= Duration::from_millis(110), "input came after {:?}", t.elapsed());
         assert_eq!(input.events(), vec![Event::Move(10, 10)]);
@@ -354,12 +588,16 @@ mod tests {
     }
 
     #[test]
-    fn switching_off_stops_whatever_is_running() {
-        let (st, _, _) = state_with(vec![long_wait("m")]);
-        handle(&st, TriggerEvent::Start { macro_id: "m".into(), delay_ms: 0 });
+    fn switching_off_stops_whatever_is_running_and_clears_the_queue() {
+        let mut m = long_wait("m");
+        m.queue = true;
+        let (st, _, _) = state_with(vec![m]);
+        handle(&st, start("m"));
+        handle(&st, start("m"));
         assert!(wait_until(|| st.running_id().is_some(), 500));
         handle(&st, TriggerEvent::ToggleEnabled); // on -> off
         assert!(wait_until(|| st.running_id().is_none(), 500), "off must mean off");
+        assert_eq!(st.run_status().queued, 0);
     }
 
     #[test]

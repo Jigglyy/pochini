@@ -12,7 +12,8 @@ The user flow: a main screen lists saved macros, you create or edit one, a macro
 ordered list of steps (click at X,Y / click where the mouse is / press a key / wait N ms
 with optional randomness), you bind it to a hotkey, and pressing the hotkey anywhere runs it
 against whatever is on screen. A master switch (and a global toggle hotkey) turns every
-hotkey on or off; each macro also has its own switch.
+hotkey on or off; each macro also has its own switch, can **queue** repeated presses, and can
+be restricted to **one app** (the hotkey only fires while the mouse is over that app).
 
 Because input is synthesized at the OS level, macros work against **any** target (native
 apps, browsers, Electron apps, emulators, games without kernel anti-cheat), not just windows
@@ -21,7 +22,7 @@ this app owns.
 ## Status
 
 Implemented and building. `src-tauri/` has the full Rust core (model, storage, input,
-hotkey, engine, IPC) with **76 passing unit tests**; `src/` is a ShadCN + Tailwind v4 UI
+hotkey, engine, IPC) with **94 passing unit tests**; `src/` is a ShadCN + Tailwind v4 UI
 styled after Kanbini (macro list, step editor, settings). `npm run tauri dev` opens the app.
 
 The M0/M1 Win32 assumptions were measured before being ported; see
@@ -144,9 +145,12 @@ These are the things that silently break this category of app. Full reasoning in
 3. **Keyboard synthesis uses scan codes (`KEYEVENTF_SCANCODE`), not virtual key codes.**
    DirectInput/Raw Input consumers (most games, some emulators) ignore VK-only injection.
 
-4. **The low-level hook callback does no work.** It reads the modifier state, asks
+4. **The low-level hook callback does no blocking work.** It reads the modifier state, asks
    `hotkey::logic::KeyLogic` what to do, enqueues the result, and returns. Windows silently
-   unhooks a callback that exceeds `LowLevelHooksTimeout` (300 ms default).
+   unhooks a callback that exceeds `LowLevelHooksTimeout` (300 ms default). Through
+   `KeyContext` it may read the cursor position, and, only when an "App only" binding is a
+   candidate, the executable under the cursor (a few user32 calls; the process query is cached
+   per pid in a thread-local, no locks).
 
 5. **Ask Windows for the modifier state; never track it from the event stream.** The hook
    reads `GetAsyncKeyState` for Ctrl/Alt/Shift/Win on every key. A tracker built from
@@ -237,7 +241,7 @@ Mostly carried over from Kanbini, whose renderer this UI copies the look of:
 
 ## Testing
 
-`cargo test` is the gate: 76 tests, no Windows APIs required for most of them.
+`cargo test` is the gate: 94 tests, no Windows APIs required for most of them.
 
 - `input/coords.rs` walks **every pixel** of six virtual-desktop layouts (including negative
   origins and odd sizes) through the round trip, and has an explicit regression test that
@@ -248,7 +252,8 @@ Mostly carried over from Kanbini, whose renderer this UI copies the look of:
 - `hotkey/logic.rs` covers every hook decision: auto-repeat, release order, swallow pairing,
   toggle debounce, and the modifier contract.
 - `app.rs` drives the real worker against a fake backend: panic mid-run, hold-repeat release,
-  toggle-mode second press, countdown cancel, master switch off stops the run.
+  toggle-mode second press, countdown cancel, master switch off stops the run, and the queue
+  (order, no overlap, per-press positions, cap, clearing).
 - Anything that needs a real desktop session belongs in `tools/m0-probe` or the
   `trace_macro` example, not in CI: a CI runner has no interactive session and `SendInput`
   in Session 0 is meaningless.

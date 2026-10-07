@@ -22,6 +22,9 @@ pub struct MacroSummary {
     pub step_count: usize,
     pub conflict: bool,
     pub duration_ms: (u64, u64),
+    pub queue: bool,
+    /// "App only" executable, if set.
+    pub app: Option<String>,
 }
 
 fn hotkey_label(m: &Macro) -> Option<String> {
@@ -54,6 +57,8 @@ pub fn list_macros(state: State<'_, Arc<AppState>>) -> R<Vec<MacroSummary>> {
             step_count: m.steps.len(),
             conflict: conflicts.contains(&m.id),
             duration_ms: m.duration_range(),
+            queue: m.queue,
+            app: m.guard.as_ref().map(|g| g.process.clone()).filter(|p| !p.is_empty()),
         })
         .collect())
 }
@@ -226,7 +231,7 @@ pub fn key_ref_for_vk(vk: u16) -> R<KeyRef> {
 pub fn run_macro(state: State<'_, Arc<AppState>>, id: String, delay_ms: u64) -> R<()> {
     state
         .tx
-        .send(TriggerEvent::Start { macro_id: id, delay_ms })
+        .send(TriggerEvent::Start { macro_id: id, delay_ms, at: None })
         .map_err(|e| e.to_string())
 }
 
@@ -248,7 +253,17 @@ pub fn stop_macro(state: State<'_, Arc<AppState>>) -> R<()> {
     Ok(())
 }
 
+/// What is running and how many presses are queued behind it, for the pill.
 #[tauri::command]
-pub fn is_running(state: State<'_, Arc<AppState>>) -> R<Option<String>> {
-    Ok(state.running_id())
+pub fn run_status(state: State<'_, Arc<AppState>>) -> R<crate::app::RunStatus> {
+    Ok(state.run_status())
+}
+
+/// Running applications for the "App only" picker.
+#[tauri::command]
+pub fn list_apps() -> R<Vec<crate::input::win::AppWindow>> {
+    #[cfg(windows)]
+    return Ok(crate::input::win::list_apps());
+    #[cfg(not(windows))]
+    Ok(Vec::new())
 }

@@ -10,6 +10,27 @@ use super::TriggerEvent;
 use crate::input::keys::modifier_for_vk;
 use crate::model::{Modifier, TriggerMode};
 
+/// What the hook can find out about the moment of a key press. Asked lazily:
+/// only when a binding actually needs it.
+pub trait KeyContext {
+    /// Executable name of the app whose window is under the mouse.
+    fn app_under_cursor(&mut self) -> Option<String>;
+    /// Where the mouse is.
+    fn cursor(&mut self) -> Option<(i32, i32)>;
+}
+
+/// A context that knows nothing (tests, and anywhere the cursor is irrelevant).
+pub struct NoContext;
+
+impl KeyContext for NoContext {
+    fn app_under_cursor(&mut self) -> Option<String> {
+        None
+    }
+    fn cursor(&mut self) -> Option<(i32, i32)> {
+        None
+    }
+}
+
 /// What the callback should do with the event it just saw.
 #[derive(Debug, Default, PartialEq)]
 pub struct Outcome {
@@ -42,7 +63,14 @@ impl KeyLogic {
     /// elevated window, on the secure desktop, or held before the app started)
     /// believes that modifier is down forever, and every hotkey that needs
     /// exact modifiers silently stops matching.
-    pub fn on_key(&mut self, table: &BindingTable, vk: u16, down: bool, mods: &[Modifier]) -> Outcome {
+    pub fn on_key(
+        &mut self,
+        table: &BindingTable,
+        vk: u16,
+        down: bool,
+        mods: &[Modifier],
+        ctx: &mut dyn KeyContext,
+    ) -> Outcome {
         if modifier_for_vk(vk).is_some() {
             return Outcome::default();
         }
@@ -51,7 +79,7 @@ impl KeyLogic {
             return self.on_release(table, vk);
         }
 
-        match table.match_key(vk, mods) {
+        match table.match_key_with(vk, mods, &mut || ctx.app_under_cursor()) {
             Match::None => Outcome::default(),
             // The panic key is never swallowed: you may be pressing Esc for the
             // app underneath as well.
@@ -70,7 +98,7 @@ impl KeyLogic {
                 }
                 self.held.push(HeldTrigger { vk, macro_id: macro_id.clone(), mode, swallowed: swallow });
                 Outcome {
-                    event: Some(TriggerEvent::Start { macro_id, delay_ms: 0 }),
+                    event: Some(TriggerEvent::Start { macro_id, delay_ms: 0, at: ctx.cursor() }),
                     swallow,
                 }
             }
@@ -125,18 +153,18 @@ mod tests {
     }
 
     fn start(id: &str) -> Option<TriggerEvent> {
-        Some(TriggerEvent::Start { macro_id: id.into(), delay_ms: 0 })
+        Some(TriggerEvent::Start { macro_id: id.into(), delay_ms: 0, at: None })
     }
 
     #[test]
     fn a_held_key_fires_once_despite_auto_repeat() {
         let t = BindingTable::build(&[mac("a", A, vec![], TriggerMode::Once, false)], ESC, true);
         let mut k = KeyLogic::default();
-        assert_eq!(k.on_key(&t, A, true, NONE).event, start("a"));
-        assert_eq!(k.on_key(&t, A, true, NONE).event, None);
-        assert_eq!(k.on_key(&t, A, true, NONE).event, None);
-        k.on_key(&t, A, false, NONE);
-        assert_eq!(k.on_key(&t, A, true, NONE).event, start("a"));
+        assert_eq!(k.on_key(&t, A, true, NONE, &mut NoContext).event, start("a"));
+        assert_eq!(k.on_key(&t, A, true, NONE, &mut NoContext).event, None);
+        assert_eq!(k.on_key(&t, A, true, NONE, &mut NoContext).event, None);
+        k.on_key(&t, A, false, NONE, &mut NoContext);
+        assert_eq!(k.on_key(&t, A, true, NONE, &mut NoContext).event, start("a"));
     }
 
     /// Regression: releasing Ctrl before A left A marked as held, so Ctrl+A
@@ -145,12 +173,12 @@ mod tests {
     fn releasing_the_modifier_first_does_not_jam_the_hotkey() {
         let t = BindingTable::build(&[mac("a", A, vec![Modifier::Ctrl], TriggerMode::Once, false)], ESC, true);
         let mut k = KeyLogic::default();
-        k.on_key(&t, CTRL, true, NONE);
-        assert_eq!(k.on_key(&t, A, true, C).event, start("a"));
-        k.on_key(&t, CTRL, false, C); // Ctrl up first
-        k.on_key(&t, A, false, NONE); // then A, with no modifiers held any more
-        k.on_key(&t, CTRL, true, NONE);
-        assert_eq!(k.on_key(&t, A, true, C).event, start("a"), "second press must fire");
+        k.on_key(&t, CTRL, true, NONE, &mut NoContext);
+        assert_eq!(k.on_key(&t, A, true, C, &mut NoContext).event, start("a"));
+        k.on_key(&t, CTRL, false, C, &mut NoContext); // Ctrl up first
+        k.on_key(&t, A, false, NONE, &mut NoContext); // then A, with no modifiers held any more
+        k.on_key(&t, CTRL, true, NONE, &mut NoContext);
+        assert_eq!(k.on_key(&t, A, true, C, &mut NoContext).event, start("a"), "second press must fire");
     }
 
     #[test]
@@ -161,11 +189,11 @@ mod tests {
             true,
         );
         let mut k = KeyLogic::default();
-        k.on_key(&t, CTRL, true, NONE);
-        k.on_key(&t, A, true, C);
-        k.on_key(&t, CTRL, false, C);
+        k.on_key(&t, CTRL, true, NONE, &mut NoContext);
+        k.on_key(&t, A, true, C, &mut NoContext);
+        k.on_key(&t, CTRL, false, C, &mut NoContext);
         assert_eq!(
-            k.on_key(&t, A, false, NONE).event,
+            k.on_key(&t, A, false, NONE, &mut NoContext).event,
             Some(TriggerEvent::Stop { macro_id: "h".into() })
         );
     }
@@ -174,17 +202,17 @@ mod tests {
     fn a_swallowed_press_has_its_release_and_repeats_swallowed() {
         let t = BindingTable::build(&[mac("s", A, vec![], TriggerMode::Once, true)], ESC, true);
         let mut k = KeyLogic::default();
-        assert!(k.on_key(&t, A, true, NONE).swallow);
-        assert!(k.on_key(&t, A, true, NONE).swallow, "auto-repeat");
-        assert!(k.on_key(&t, A, false, NONE).swallow, "release");
+        assert!(k.on_key(&t, A, true, NONE, &mut NoContext).swallow);
+        assert!(k.on_key(&t, A, true, NONE, &mut NoContext).swallow, "auto-repeat");
+        assert!(k.on_key(&t, A, false, NONE, &mut NoContext).swallow, "release");
     }
 
     #[test]
     fn a_pass_through_binding_never_swallows() {
         let t = BindingTable::build(&[mac("p", A, vec![], TriggerMode::Once, false)], ESC, true);
         let mut k = KeyLogic::default();
-        assert!(!k.on_key(&t, A, true, NONE).swallow);
-        assert!(!k.on_key(&t, A, false, NONE).swallow);
+        assert!(!k.on_key(&t, A, true, NONE, &mut NoContext).swallow);
+        assert!(!k.on_key(&t, A, false, NONE, &mut NoContext).swallow);
     }
 
     #[test]
@@ -193,13 +221,13 @@ mod tests {
         let mut k = KeyLogic::default();
         let toggle = Some(TriggerEvent::ToggleEnabled);
 
-        assert_eq!(k.on_key(&t, F12, true, CS).event, toggle);
-        assert_eq!(k.on_key(&t, F12, true, CS).event, None, "auto-repeat");
+        assert_eq!(k.on_key(&t, F12, true, CS, &mut NoContext).event, toggle);
+        assert_eq!(k.on_key(&t, F12, true, CS, &mut NoContext).event, None, "auto-repeat");
         // modifiers released before F12
-        k.on_key(&t, CTRL, false, CS);
-        k.on_key(&t, SHIFT, false, &[Modifier::Shift]);
-        k.on_key(&t, F12, false, NONE);
-        assert_eq!(k.on_key(&t, F12, true, CS).event, toggle, "second press must toggle again");
+        k.on_key(&t, CTRL, false, CS, &mut NoContext);
+        k.on_key(&t, SHIFT, false, &[Modifier::Shift], &mut NoContext);
+        k.on_key(&t, F12, false, NONE, &mut NoContext);
+        assert_eq!(k.on_key(&t, F12, true, CS, &mut NoContext).event, toggle, "second press must toggle again");
     }
 
     /// Regression, reproduced live: a modifier key-up the hook never saw
@@ -212,18 +240,56 @@ mod tests {
     fn a_lost_modifier_release_does_not_poison_later_hotkeys() {
         let t = BindingTable::build(&[], ESC, true).with_toggle(F12, CS.to_vec());
         let mut k = KeyLogic::default();
-        k.on_key(&t, 0xA4, true, NONE); // Alt down seen; its key-up never arrives
-        assert_eq!(k.on_key(&t, F12, true, CS).event, Some(TriggerEvent::ToggleEnabled));
+        k.on_key(&t, 0xA4, true, NONE, &mut NoContext); // Alt down seen; its key-up never arrives
+        assert_eq!(k.on_key(&t, F12, true, CS, &mut NoContext).event, Some(TriggerEvent::ToggleEnabled));
+    }
+
+    struct Over(Option<&'static str>, (i32, i32));
+    impl KeyContext for Over {
+        fn app_under_cursor(&mut self) -> Option<String> {
+            self.0.map(String::from)
+        }
+        fn cursor(&mut self) -> Option<(i32, i32)> {
+            Some(self.1)
+        }
+    }
+
+    #[test]
+    fn a_trigger_carries_where_the_mouse_was_at_the_press() {
+        let t = BindingTable::build(&[mac("a", A, vec![], TriggerMode::Once, false)], ESC, true);
+        let mut k = KeyLogic::default();
+        assert_eq!(
+            k.on_key(&t, A, true, NONE, &mut Over(None, (120, 340))).event,
+            Some(TriggerEvent::Start { macro_id: "a".into(), delay_ms: 0, at: Some((120, 340)) })
+        );
+    }
+
+    /// App only: outside the chosen app the key is simply not ours, so it is
+    /// never swallowed, even when the binding blocks keys inside the app.
+    #[test]
+    fn outside_its_app_an_app_only_hotkey_passes_through_untouched() {
+        let mut m = mac("g", A, vec![], TriggerMode::Once, true);
+        m.guard = Some(crate::model::Guard { process: "game.exe".into(), label: String::new() });
+        let t = BindingTable::build(&[m], ESC, true);
+        let mut k = KeyLogic::default();
+
+        let elsewhere = k.on_key(&t, A, true, NONE, &mut Over(Some("Discord.exe"), (0, 0)));
+        assert_eq!(elsewhere, Outcome::default(), "no event, not swallowed");
+        assert_eq!(k.on_key(&t, A, false, NONE, &mut Over(Some("Discord.exe"), (0, 0))), Outcome::default());
+
+        let inside = k.on_key(&t, A, true, NONE, &mut Over(Some("game.exe"), (5, 6)));
+        assert!(inside.swallow);
+        assert!(matches!(inside.event, Some(TriggerEvent::Start { .. })));
     }
 
     #[test]
     fn panic_fires_on_press_only_and_is_never_swallowed() {
         let t = BindingTable::build(&[], ESC, true);
         let mut k = KeyLogic::default();
-        let o = k.on_key(&t, ESC, true, NONE);
+        let o = k.on_key(&t, ESC, true, NONE, &mut NoContext);
         assert_eq!(o.event, Some(TriggerEvent::Panic));
         assert!(!o.swallow);
-        assert_eq!(k.on_key(&t, ESC, false, NONE), Outcome::default());
+        assert_eq!(k.on_key(&t, ESC, false, NONE, &mut NoContext), Outcome::default());
     }
 
     #[test]
@@ -231,8 +297,8 @@ mod tests {
         let t = BindingTable::build(&[], ESC, true);
         let mut k = KeyLogic::default();
         for vk in [CTRL, SHIFT, 0xA4, 0x5B] {
-            assert_eq!(k.on_key(&t, vk, true, NONE), Outcome::default());
-            assert_eq!(k.on_key(&t, vk, false, NONE), Outcome::default());
+            assert_eq!(k.on_key(&t, vk, true, NONE, &mut NoContext), Outcome::default());
+            assert_eq!(k.on_key(&t, vk, false, NONE, &mut NoContext), Outcome::default());
         }
     }
 }

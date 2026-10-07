@@ -86,14 +86,19 @@ export type Repeat =
   | { kind: "count"; n: number }
   | { kind: "forever" };
 
+/** "App only": the hotkey fires only while the mouse is over this app. */
+export type Guard = { process: string; label: string };
+
 export type Macro = {
   id: string;
   name: string;
   enabled: boolean;
   trigger: Trigger | null;
   repeat: Repeat;
+  /** Presses while running are queued instead of ignored. */
+  queue: boolean;
   steps: Step[];
-  guard: null;
+  guard: Guard | null;
   created_at: string;
   updated_at: string;
 };
@@ -106,6 +111,9 @@ export type MacroSummary = {
   step_count: number;
   conflict: boolean;
   duration_ms: [number, number];
+  queue: boolean;
+  /** "App only" executable, if set. */
+  app: string | null;
 };
 
 export type Settings = {
@@ -116,6 +124,10 @@ export type Settings = {
   /** Flips `enabled` from anywhere, even from inside a fullscreen game. */
   toggle_hotkey: Hotkey | null;
 };
+
+export type AppWindow = { process: string; title: string };
+
+export type RunStatus = { macro_id: string | null; name: string | null; queued: number };
 
 export type Monitor = {
   device: string;

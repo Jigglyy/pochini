@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Copy, MoreHorizontal, Pencil, Play, Plus, Trash2 } from "lucide-react";
+import { AppWindow, Copy, ListOrdered, MoreHorizontal, Pencil, Play, Plus, Trash2 } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -140,6 +140,28 @@ export function MacroList({
                 </span>
               </button>
 
+              {r.app && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Badge variant="outline" className="hidden max-w-44 text-muted-foreground md:inline-flex">
+                      <AppWindow />
+                      <span className="truncate">{r.app}</span>
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent>Hotkey only works over {r.app}</TooltipContent>
+                </Tooltip>
+              )}
+              {r.queue && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Badge variant="outline" className="hidden text-muted-foreground md:inline-flex">
+                      <ListOrdered />
+                      Queue
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent>Presses while running are queued</TooltipContent>
+                </Tooltip>
+              )}
               {r.conflict && (
                 <Badge variant="outline" className="border-warning/50 text-warning">
                   Hotkey clash

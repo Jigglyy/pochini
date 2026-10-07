@@ -105,10 +105,19 @@ impl Engine {
     /// Run the whole macro, honouring `repeat`. Always leaves the keyboard and
     /// mouse in the state it found them, whether it finishes or aborts.
     pub fn run(&mut self, m: &Macro, cancel: &CancelToken) -> Result<()> {
-        // Captured once, before any step moves the cursor: this is "where the
-        // mouse was when the macro was activated". The worker starts the run
-        // the moment the hotkey arrives (or the Run countdown ends).
-        self.activation = self.input.cursor_pos().unwrap_or((0, 0));
+        self.run_at(m, cancel, None)
+    }
+
+    /// Run with a known activation point: where the mouse was when the hotkey
+    /// was pressed. A queued run starts later, after earlier runs have moved
+    /// the cursor, so the point has to travel with the press rather than be
+    /// read at start. `None` reads the cursor now (the Run countdown ending).
+    pub fn run_at(&mut self, m: &Macro, cancel: &CancelToken, activation: Option<(i32, i32)>) -> Result<()> {
+        // Captured once, before any step moves the cursor.
+        self.activation = match activation {
+            Some(p) => p,
+            None => self.input.cursor_pos().unwrap_or((0, 0)),
+        };
         let mut held = HeldState::default();
         let result = self.run_inner(m, cancel, &mut held);
         // The release pass runs on success, on error and on cancellation.
@@ -476,6 +485,23 @@ mod tests {
             .filter(|ev| matches!(ev, Event::Move(..)))
             .collect();
         assert_eq!(moves, vec![Event::Move(100, 100), Event::Move(777, 333)]);
+    }
+
+    #[test]
+    fn a_given_activation_point_wins_over_the_current_cursor() {
+        let f = Arc::new(FakeInput::with_cursor(10, 10));
+        let mut e = Engine::new(f.clone(), Some(1));
+        let m = mac(vec![Step::Move {
+            id: "m".into(),
+            x: 0,
+            y: 0,
+            anchor: Anchor::Activation,
+            coord_jitter_px: 0,
+            move_duration_ms: 0,
+            capture: None,
+        }]);
+        e.run_at(&m, &CancelToken::new(), Some((640, 480))).unwrap();
+        assert_eq!(f.events(), vec![Event::Move(640, 480)]);
     }
 
     #[test]

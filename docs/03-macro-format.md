@@ -26,6 +26,7 @@ version.
   "enabled": true,
   "trigger": { /* Trigger */ },
   "repeat": { "kind": "once" },  // or {"kind":"count","n":10} | {"kind":"forever"}
+  "queue": false,                // true: presses while running are queued, not ignored
   "steps": [ /* Step */ ],
   "guard": null,                 // optional Guard, see below
   "created_at": "2026-09-17T12:00:00Z",
@@ -181,15 +182,36 @@ cleared it and stays cleared.
 
 Theme (system / light / dark) is a renderer-only preference kept in localStorage, not here.
 
-## Guard (post-v1, reserved)
+## Guard ("App only")
 
 ```jsonc
-{ "foreground_process": "notepad.exe", "on_mismatch": "abort" }
+"guard": { "process": "game.exe", "label": "Game" }   // or null
 ```
 
-Refuses to run unless the foreground window belongs to a matching process. The single best
-safety feature for coordinate macros - it stops a macro meant for one game from clicking
-through your email client. Reserved in the schema now so adding it later is not a migration.
+When set, the macro's hotkey fires only while the mouse is over a top-level window that
+belongs to that executable (compared ignoring case). Anywhere else the key is treated as
+unbound: it passes through to the app under the cursor and is never swallowed, even if the
+trigger has `swallow` on. `label` is the window title the user picked from, for display only.
+
+The check runs in the hook callback at the moment of the press: `GetCursorPos`,
+`WindowFromPoint`, `GetAncestor(GA_ROOT)`, `GetWindowThreadProcessId`, then the executable
+name, cached per process id for a few seconds. It is only done when an app-only binding is a
+candidate for the key. An app-only binding beats an unrestricted one on the same key while the
+mouse is over its app, and the same key bound for two different apps is not a clash.
+
+Matching by executable name (not window handle or process id) keeps the choice valid across
+restarts of the target app. The shape replaces a reserved, never-written
+`{ "foreground_process", "on_mismatch" }` placeholder, so no migration was needed.
+
+## Queue
+
+`"queue": true` changes what a press does while something is already running: instead of being
+ignored, it is appended to a FIFO queue (at most 50 entries), and each queued run starts right
+after the previous one finishes, without interrupting it. Every queued press carries the mouse
+position from its own press, so "click where the mouse started" steps aim where the user
+pointed at that press rather than wherever the previous run left the cursor. Panic stop, the
+master switch going off, and switching the macro off (or deleting it) all clear its queued
+runs. Only meaningful for `"mode": "once"`; hold-to-repeat and toggle-mode macros never queue.
 
 ## Design notes
 

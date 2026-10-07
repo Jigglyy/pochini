@@ -78,6 +78,7 @@ pub fn run() {
                 input: backend,
                 tx: tx.clone(),
                 running: Mutex::new(None),
+                queue: Mutex::new(std::collections::VecDeque::new()),
                 notify: Some(Box::new(TauriNotify(app.handle().clone()))),
             });
 
@@ -115,7 +116,8 @@ pub fn run() {
             commands::key_ref_for_vk,
             commands::run_macro,
             commands::stop_macro,
-            commands::is_running,
+            commands::run_status,
+            commands::list_apps,
             commands::test_steps,
         ])
         .run(tauri::generate_context!())
