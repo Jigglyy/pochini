@@ -1,7 +1,6 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "./_launch";
-import { clickAt, macro, typeText, wait } from "./data";
-import type { Step } from "../src/types";
+import { clickAt, macro, typeText, wait, type ClickStep } from "./data";
 
 // Not a test: screenshots of every screen for design review. Skipped unless
 // POCHINI_SCREENS names an output folder:
@@ -11,7 +10,7 @@ const out = process.env.POCHINI_SCREENS;
 test.skip(!out, "set POCHINI_SCREENS to an output folder");
 
 const space = { vk: 0x20, scancode: 0x39, extended: false, label: "Space" };
-const rel = (anchor: "activation" | "previous", dx: number, dy: number): Step => ({
+const rel = (anchor: "activation" | "previous", dx: number, dy: number): ClickStep => ({
   ...clickAt(0, 0),
   anchor,
   dx,
@@ -66,7 +65,7 @@ for (const theme of ["dark", "light"] as const) {
     await page.setViewportSize({ width: 1000, height: 1700 });
     await page.getByRole("button", { name: "Settings" }).click();
     await page.getByText(theme === "light" ? "Light" : "Dark", { exact: true }).click();
-    await page.getByRole("button", { name: "Macros" }).click();
+    await page.getByRole("button", { name: "Macros", exact: true }).click();
     await expect(page.getByText("Fill form")).toBeVisible();
     await shot(page, `${theme}-1-home`);
 
@@ -78,6 +77,10 @@ for (const theme of ["dark", "light"] as const) {
 
     await page.locator("[data-step-id]").nth(2).locator('[role="button"][aria-expanded]').click({ button: "right" });
     await shot(page, `${theme}-4-context-menu`);
+    await page.keyboard.press("Escape");
+
+    await page.getByRole("button", { name: "About Target" }).click();
+    await shot(page, `${theme}-4b-help`);
     await page.keyboard.press("Escape");
 
     await page.getByRole("button", { name: "Settings" }).click();

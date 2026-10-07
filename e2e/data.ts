@@ -25,7 +25,9 @@ export function macro(name: string, o: Partial<Macro> = {}): Macro {
 
 export const wait = (ms: number): Step => ({ type: "wait", id: id("w"), ms: { base: ms, jitter: 0 } });
 
-export const clickAt = (x: number, y: number): Step => ({
+export type ClickStep = Extract<Step, { type: "click" }>;
+
+export const clickAt = (x: number, y: number): ClickStep => ({
   type: "click",
   id: id("c"),
   x,

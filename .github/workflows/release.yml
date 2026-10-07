@@ -1,24 +1,35 @@
 name: Release
 
-# Publish a version by pushing its tag (scripts/release.mjs prints these):
+# Publish a version by pushing its release commit to main
+# (scripts/release.mjs prints the steps):
 #
-#   git tag v0.5.0
-#   git push origin main v0.5.0
+#   git commit -am "chore(release): 0.7.0"
+#   git push origin main
 #
-# A Windows runner checks that the tag matches the version in package.json
-# and src-tauri/Cargo.toml, runs the Rust tests and the frontend type-check,
-# builds the app, and publishes a GitHub Release named "Pochini v0.5.0" with
-# Pochini-0.5.0.exe attached and that version's CHANGELOG.md section as the
-# notes. Same shape as Kanbini's release workflow.
+# A Windows runner checks that the commit message, package.json and
+# src-tauri/Cargo.toml agree on the version, builds the app, and publishes a
+# GitHub Release "Pochini v0.7.0" (creating the v0.7.0 tag on that commit)
+# with Pochini-0.7.0.exe attached and that version's CHANGELOG.md section as
+# the notes. Same shape as Kanbini's release workflow.
+#
+# Why main and not a tag push: GitHub scopes the build cache to the ref a run
+# starts from, and a tag run can only read caches from its own tag or main. Tag
+# runs therefore always compiled every dependency from scratch (~20 minutes).
+# Runs on main share one cache, so each release only rebuilds what changed.
+#
+# The tests are not run here: `cargo test` and `npm run e2e` run locally
+# before every release (CLAUDE.md > Releases), and a second, debug-profile
+# compile of everything here cost about 6 minutes per release.
+#
+# Other pushes to main skip the job without starting a runner. A manual run
+# from the Actions tab is a dry run: it builds and keeps the .exe as a run
+# artifact, with no Release.
 #
 # The .exe is unsigned: SmartScreen shows "unknown publisher" on first run.
 
 on:
   push:
-    tags:
-      - "v*"
-  # Dry run from the Actions tab: builds and keeps the .exe as a run
-  # artifact, but creates no Release (that only happens on a tag).
+    branches: [main]
   workflow_dispatch:
 
 # Never cancel a release build half-way.
@@ -27,19 +38,20 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  # Lets the built-in GITHUB_TOKEN create the Release and upload the .exe.
+  # Lets the built-in GITHUB_TOKEN create the Release, its tag, and upload the .exe.
   contents: write
 
 jobs:
   windows:
     name: Build Pochini for Windows
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.head_commit.message, 'chore(release):')
     runs-on: windows-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -55,12 +67,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # The version lives in the repo (scripts/release.mjs bumps it before
-      # the tag is made), so a tag that disagrees means a mistake: stop
-      # rather than publish an .exe whose About screen shows another number.
+      # The version lives in the repo (scripts/release.mjs bumps it), so a
+      # disagreement means a mistake: stop rather than publish an .exe whose
+      # About screen shows another number.
       - name: Read version
         id: version
         shell: bash
+        env:
+          MESSAGE: ${{ github.event.head_commit.message }}
         run: |
           PKG=$(node -p "require('./package.json').version")
           CARGO=$(grep -m1 '^version' src-tauri/Cargo.toml | cut -d'"' -f2)
@@ -68,16 +82,14 @@ jobs:
             echo "::error::package.json is $PKG but src-tauri/Cargo.toml is $CARGO"
             exit 1
           fi
-          if [[ "$GITHUB_REF" == refs/tags/v* && "${GITHUB_REF_NAME#v}" != "$PKG" ]]; then
-            echo "::error::tag $GITHUB_REF_NAME does not match package.json version $PKG"
-            exit 1
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            SUBJECT=$(printf '%s' "$MESSAGE" | head -n1)
+            if [ "$SUBJECT" != "chore(release): $PKG" ]; then
+              echo "::error::release commit says \"$SUBJECT\" but package.json is $PKG"
+              exit 1
+            fi
           fi
           echo "version=$PKG" >> "$GITHUB_OUTPUT"
-
-      # Tagging is a separate, deliberate act; don't ship a build that
-      # fails the gate.
-      - name: Rust tests
-        run: cargo test --manifest-path src-tauri/Cargo.toml
 
       - name: Build (type-check, frontend, release exe)
         run: npm run tauri build -- --no-bundle
@@ -89,15 +101,16 @@ jobs:
           cp src-tauri/target/release/pochini.exe "release/Pochini-${{ steps.version.outputs.version }}.exe"
 
       - name: Upload exe as a run artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Pochini-${{ steps.version.outputs.version }}
           path: release/*.exe
           if-no-files-found: error
 
-      # Release notes are this version's section of CHANGELOG.md.
+      # Release notes are this version's section of CHANGELOG.md. The tag is
+      # created on the release commit.
       - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: github.event_name == 'push'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -111,7 +124,7 @@ jobs:
             const end = body.search(/^## /m);
             require('fs').writeFileSync('notes.md', (end < 0 ? body : body.slice(0, end)).trim() + '\n');
           "
-          gh release create "$GITHUB_REF_NAME" release/*.exe \
-            --title "Pochini $GITHUB_REF_NAME" \
-            --notes-file notes.md \
-            --verify-tag
+          gh release create "v$VERSION" release/*.exe \
+            --target "$GITHUB_SHA" \
+            --title "Pochini v$VERSION" \
+            --notes-file notes.md

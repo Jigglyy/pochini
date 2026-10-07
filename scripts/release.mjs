@@ -10,8 +10,9 @@
 // The version lives in package.json (and package-lock.json); tauri.conf.json
 // reads it from there, and Cargo.toml is kept in step here. The result is
 // release/Pochini-<version>.exe, and any older Pochini-*.exe in release/ is
-// deleted: there is only ever one current build. Pushing the v<version> tag
-// then publishes it as a GitHub Release (.github/workflows/release.yml).
+// deleted: there is only ever one current build. Pushing the
+// "chore(release): <version>" commit to main then publishes it as a GitHub
+// Release (.github/workflows/release.yml).
 
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { execSync } from "node:child_process";
@@ -93,6 +94,5 @@ console.log(`
 Then publish it on GitHub (the Release workflow builds the same exe there):
   1. add a "## ${next} - <date>" section to CHANGELOG.md (it becomes the release notes)
   2. git commit -am "chore(release): ${next}"
-  3. git tag v${next}
-  4. git push origin main v${next}
+  3. git push origin main   (the workflow tags v${next} and publishes the release)
 `);
