@@ -53,7 +53,7 @@ what was rejected (Electron, C#/WPF, Python, AutoHotkey).
 ```powershell
 npm install
 npm run tauri dev                                  # run the app
-npm run release -- patch                           # versioned .exe, see Releases below
+npm run release -- patch                           # versioned .exe + GitHub Release, see Releases
 npm run icons                                      # regenerate all icons from assets/pochini-icon.svg
 npm run build                                      # type-check + build the frontend alone
 cargo test  --manifest-path src-tauri/Cargo.toml
@@ -85,8 +85,22 @@ npm run release -- patch     # or minor / major / X.Y.Z / current
 `scripts/release.mjs` bumps the version in `package.json` + `package-lock.json` (the single
 source; `tauri.conf.json` reads it) and in `src-tauri/Cargo.toml`, runs
 `tauri build --no-bundle`, writes **`release/Pochini-<version>.exe`** (gitignored), and deletes
-any older `Pochini-*.exe` there. Add a `CHANGELOG.md` entry for each version. Semver; while the
-major is 0, a minor bump may change behaviour or the macro file format.
+any older `Pochini-*.exe` there. Semver; while the major is 0, a minor bump may change
+behaviour or the macro file format.
+
+**Every version is also published as a GitHub Release.** After the local build:
+
+1. Add `## X.Y.Z - <date>` to `CHANGELOG.md`; that section becomes the release notes.
+2. `git commit -am "chore(release): X.Y.Z"`
+3. `git tag vX.Y.Z` and `git push origin main vX.Y.Z`
+4. `.github/workflows/release.yml` (Kanbini's pattern) runs on the tag: it fails if the tag,
+   `package.json` and `Cargo.toml` disagree, runs `cargo test`, builds with
+   `tauri build --no-bundle`, and publishes "Pochini vX.Y.Z" with `Pochini-X.Y.Z.exe`
+   attached. Watch it with `gh run watch`, then check `gh release view vX.Y.Z`.
+   A manual run from the Actions tab is a dry run: it builds and keeps the exe as a run
+   artifact, with no Release.
+
+Report both the local exe path and the GitHub release link.
 
 ## Layout
 
