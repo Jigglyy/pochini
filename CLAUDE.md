@@ -285,8 +285,8 @@ Mostly carried over from Kanbini, whose renderer this UI copies the look of:
 - **Type**: Segoe UI Variable (`--font-sans`, the Text cut) for the UI and `font-display` (the
   Display cut) for page titles and the macro name. No all-caps labels; keycaps are sans.
 - **Explanations live behind a "?"**, not on screen. Give `Field`, `ToggleRow`, `Section` or
-  `JitterField` a `help` prop and it renders a `HelpTip` after the label: hover shows it,
-  click pins it, Escape closes it. On-screen `hint` text is only for live values ("Lands at
+  `JitterField` a `help` prop and it renders a `HelpTip` after the label: a tooltip on hover
+  (or keyboard focus) only; clicking it does nothing, by the user's choice. On-screen `hint` text is only for live values ("Lands at
   (1623, 638)", "A random 50 to 75 ms each time") and short warnings or reasons ("Only in
   'Run once per press' mode"). Keep labels self-explanatory and help to two or three
   sentences. `ToggleRow` labels its switch by id, so the "?" never takes the switch's label.

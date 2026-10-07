@@ -79,9 +79,10 @@ for (const theme of ["dark", "light"] as const) {
     await shot(page, `${theme}-4-context-menu`);
     await page.keyboard.press("Escape");
 
-    await page.getByRole("button", { name: "About Target" }).click();
+    await page.getByRole("button", { name: "About Target" }).hover();
+    await expect(page.getByRole("tooltip")).toBeVisible();
     await shot(page, `${theme}-4b-help`);
-    await page.keyboard.press("Escape");
+    await page.mouse.move(0, 0, { steps: 5 });
 
     await page.getByRole("button", { name: "Settings" }).click();
     await shot(page, `${theme}-5-settings`);

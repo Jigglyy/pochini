@@ -4,6 +4,13 @@ All notable changes to Pochini. Versions follow [semantic versioning](https://se
 while the major version is 0, a minor bump may change behaviour or the macro file format.
 Each version is built with `npm run release` into `release/Pochini-<version>.exe`.
 
+## 0.7.1 - 2026-10-07
+
+### Changed
+
+- The "?" next to a label is hover only: its explanation shows while the mouse is on it, and
+  clicking it does nothing.
+
 ## 0.7.0 - 2026-10-07
 
 ### Changed

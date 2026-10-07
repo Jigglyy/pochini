@@ -1,68 +1,37 @@
-import { useRef, useState, type ReactNode } from "react";
+import type { ReactNode, SyntheticEvent } from "react";
 import { CircleHelp } from "lucide-react";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
-/** The "?" after a label. Hovering shows the explanation; clicking (or Enter
- *  on the focused icon) pins it open until a click elsewhere or Escape. Keeps
- *  the screen to short labels, with the why one hover away. */
+/** Stop a click from doing anything: Radix closes a tooltip on press. */
+const inert = (e: SyntheticEvent) => {
+  e.preventDefault();
+  e.stopPropagation();
+};
+
+/** The "?" after a label: hover it (or Tab to it) to read the explanation.
+ *  Hover only; clicking does nothing. Keeps the screen to short labels, with
+ *  the why one hover away. */
 export function HelpTip({ about, children, className }: { about: string; children: ReactNode; className?: string }) {
-  const [open, setOpen] = useState(false);
-  const [pinned, setPinned] = useState(false);
-  const timer = useRef<number | undefined>(undefined);
-
-  // Hover opens after the same 200 ms as tooltips and closes a moment after
-  // the pointer leaves, so it can travel from the icon onto the text.
-  const hover = (on: boolean) => {
-    if (pinned) return;
-    window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => setOpen(on), on ? 200 : 120);
-  };
-
   return (
-    <Popover
-      open={open}
-      onOpenChange={(o) => {
-        if (!o) {
-          setOpen(false);
-          setPinned(false);
-        }
-      }}
-    >
-      <PopoverTrigger asChild>
+    <Tooltip>
+      <TooltipTrigger asChild>
         <button
           type="button"
           aria-label={`About ${about}`}
-          onPointerEnter={() => hover(true)}
-          onPointerLeave={() => hover(false)}
-          onClick={(e) => {
-            // Ours, not Radix's toggle (which would close a hover-opened tip),
-            // and never the surrounding label's (which would flip a switch).
-            e.preventDefault();
-            e.stopPropagation();
-            window.clearTimeout(timer.current);
-            setPinned(!pinned);
-            setOpen(!pinned);
-          }}
+          onPointerDown={inert}
+          onClick={inert}
           className={cn(
-            "inline-flex size-5 shrink-0 items-center justify-center rounded-full text-muted-foreground/70 outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
-            open && "text-foreground",
+            "inline-flex size-5 shrink-0 cursor-help items-center justify-center rounded-full text-muted-foreground/70 outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
             className,
           )}
         >
           <CircleHelp className="size-3.5" />
         </button>
-      </PopoverTrigger>
-      <PopoverContent
-        side="top"
-        align="start"
-        className="w-80 p-3 text-xs leading-relaxed text-popover-foreground"
-        onOpenAutoFocus={(e) => e.preventDefault()}
-        onPointerEnter={() => hover(true)}
-        onPointerLeave={() => hover(false)}
-      >
+      </TooltipTrigger>
+      <TooltipContent side="top" align="start" className="max-w-80 py-2 text-left leading-relaxed text-pretty">
         {children}
-      </PopoverContent>
-    </Popover>
+      </TooltipContent>
+    </Tooltip>
   );
 }
