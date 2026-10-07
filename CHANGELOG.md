@@ -4,6 +4,21 @@ All notable changes to Pochini. Versions follow [semantic versioning](https://se
 while the major version is 0, a minor bump may change behaviour or the macro file format.
 Each version is built with `npm run release` into `release/Pochini-<version>.exe`.
 
+## 0.7.0 - 2026-10-07
+
+### Changed
+
+- **Shorter screens.** Long descriptions are gone from the editor and Settings. Each label has
+  a small "?" instead: hover it to read the explanation, click it to keep it open (Escape or a
+  click elsewhere closes it). What stays on screen is live information, like where an offset
+  click lands or a duration's random range, and short warnings.
+- **Faster releases.** GitHub builds a release in a few minutes instead of about 20: it now
+  reuses its build cache between releases, skips a second compile for tests (they run on the
+  PC before every release), and the app is optimized with thin LTO (the exe is 5.4 MB instead
+  of 4.8 MB). Local release builds are faster too.
+- TypeScript 7 (the new native compiler) and Vite 8.3. Tauri was already on the newest
+  stable release, 2.12.
+
 ## 0.6.1 - 2026-10-07
 
 ### Changed

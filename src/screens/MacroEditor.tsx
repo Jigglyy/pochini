@@ -193,7 +193,7 @@ export function MacroEditor({
       <Section title="Trigger">
         <Field
           label="Hotkey"
-          hint={t ? undefined : "Record a key to run this macro from anywhere, even inside a game."}
+          help="Press Record, then the key or combination. The macro runs whenever you press it, in any app, even inside a game."
         >
           <KeyCapture
             value={t ? { key: t.key, modifiers: t.modifiers } : null}
@@ -208,7 +208,22 @@ export function MacroEditor({
         </Field>
 
         {t && (
-          <Field label="Mode">
+          <Field
+            label="Mode"
+            help={
+              <div className="flex flex-col gap-1.5">
+                <p>
+                  <span className="font-medium">Run once per press</span>: one run for each press.
+                </p>
+                <p>
+                  <span className="font-medium">Repeat while held</span>: runs again and again until you let go.
+                </p>
+                <p>
+                  <span className="font-medium">Press to start, press again to stop</span>: a toggle.
+                </p>
+              </div>
+            }
+          >
             <Select
               value={t.mode}
               onValueChange={(v) => edit({ trigger: { ...t, mode: v as TriggerMode } })}
@@ -227,14 +242,14 @@ export function MacroEditor({
 
         <ToggleRow
           label="Hotkey on"
-          hint="When off, this macro ignores its hotkey. Run and Test still work."
+          help="When off, this macro ignores its hotkey. Run and Test still work."
           checked={m.enabled}
           onChange={(enabled) => edit({ enabled })}
         />
         {t && (
           <ToggleRow
             label="Block the key from other apps"
-            hint="The app or game you are in never sees the key press. Off by default, so the key keeps working normally too."
+            help="The app or game you're in never sees the key press. Off by default, so the key keeps working there too."
             checked={t.swallow}
             onChange={(swallow) => edit({ trigger: { ...t, swallow } })}
           >
@@ -248,7 +263,7 @@ export function MacroEditor({
         )}
         <ToggleRow
           label="App only"
-          hint="The hotkey only works while the mouse is over the chosen app. Anywhere else the key behaves normally and is never blocked."
+          help="The hotkey only works while the mouse is over the chosen app. Anywhere else the key behaves normally and is never blocked."
           checked={m.guard !== null}
           onChange={(on) => edit({ guard: on ? (m.guard ?? { process: "", label: "" }) : null })}
         >
@@ -262,11 +277,8 @@ export function MacroEditor({
       <Section title="When it runs">
         <Field
           label="Repeat"
-          hint={
-            m.repeat.kind === "forever"
-              ? "Runs until you press the panic key, flip it off, or press a toggle-mode hotkey again."
-              : undefined
-          }
+          help="How many times the steps run each time the macro starts."
+          hint={m.repeat.kind === "forever" ? "Stop it with the panic key, or a toggle hotkey's second press." : undefined}
         >
           <Select
             value={m.repeat.kind}
@@ -299,18 +311,15 @@ export function MacroEditor({
         </Field>
         <ToggleRow
           label="Queue presses"
-          hint={
-            t && t.mode !== "once"
-              ? 'Only for "Run once per press" mode.'
-              : "Pressing the hotkey while this macro runs queues another run instead of ignoring the press. Queued runs follow one after another, each using the mouse position from its own press. Panic stop clears the queue."
-          }
+          hint={t && t.mode !== "once" ? 'Only in "Run once per press" mode.' : undefined}
+          help="Pressing the hotkey while this macro runs queues another run instead of ignoring the press. Runs follow one after another, each from its own press position. Panic stop clears the queue."
           checked={m.queue}
           disabled={!!t && t.mode !== "once"}
           onChange={(queue) => edit({ queue })}
         />
         <ToggleRow
           label="Move mouse back to where it started"
-          hint="When the macro finishes, the cursor jumps back to where it was when you pressed the hotkey (or when the Run countdown ended). Also after releasing a hold-to-repeat key or pressing a toggle hotkey again; not after Panic or Stop, which leave the mouse alone."
+          help="When the macro ends, the cursor jumps back to where it was when the macro started. Also after releasing a hold-to-repeat key or pressing a toggle hotkey again, but not after Panic or Stop."
           checked={m.return_to_start}
           onChange={(return_to_start) => edit({ return_to_start })}
         />

@@ -18,7 +18,7 @@ test("create, name and save a macro", async ({ app: { page } }) => {
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByRole("button", { name: "Saved", exact: true })).toBeDisabled();
 
-  await page.getByRole("button", { name: "Macros" }).click();
+  await page.getByRole("button", { name: "Macros", exact: true }).click();
   const row = page.getByRole("listitem").filter({ hasText: "Sell loop" });
   await expect(row).toContainText("1 step");
 });
@@ -26,7 +26,7 @@ test("create, name and save a macro", async ({ app: { page } }) => {
 test("leaving with unsaved changes asks first", async ({ app: { page } }) => {
   await page.getByRole("button", { name: "Create your first macro" }).click();
   await page.getByRole("textbox", { name: "Macro name" }).fill("Draft");
-  await page.getByRole("button", { name: "Macros" }).click();
+  await page.getByRole("button", { name: "Macros", exact: true }).click();
 
   const dialog = page.getByRole("alertdialog");
   await expect(dialog).toContainText("Discard unsaved changes?");

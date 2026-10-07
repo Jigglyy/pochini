@@ -3,7 +3,8 @@
 Three screens behind one header. The look follows the user's Kanbini app: neutral oklch
 greys, an indigo primary, ShadCN components. Every screen sits in one 896 px column that the
 header shares, sections are a sentence-case heading over one panel of hairline-divided rows,
-and the type is Windows 11's Segoe UI Variable. Conventions for building more of it are in
+and the type is Windows 11's Segoe UI Variable. Labels stay short; each explanation is behind a
+"?" after its label (hover to read, click to pin). Conventions for building more of it are in
 [CLAUDE.md](../CLAUDE.md#ui-conventions).
 
 ---

@@ -43,7 +43,7 @@ See [docs/05-roadmap.md](docs/05-roadmap.md).
 |---|---|
 | Shell | Tauri v2 |
 | Core | Rust, `windows` crate (windows-rs) for Win32 |
-| UI | React 19 + TypeScript + Vite, Tailwind v4 (CSS-first), ShadCN/UI (Radix), lucide icons |
+| UI | React 19 + TypeScript 7 (the native compiler) + Vite 8, Tailwind v4 (CSS-first), ShadCN/UI (Radix), lucide icons |
 | Storage | Plain JSON on disk under the app config dir |
 
 See [docs/adr/0002-stack-tauri-rust.md](docs/adr/0002-stack-tauri-rust.md) for why, and
@@ -93,21 +93,22 @@ behaviour or the macro file format.
 
 **Every version is also published as a GitHub Release.** After the local build:
 
-1. Add `## X.Y.Z - <date>` to `CHANGELOG.md`; that section becomes the release notes.
-2. `git commit -am "chore(release): X.Y.Z"`
-3. `git tag vX.Y.Z` and `git push origin main vX.Y.Z`
-4. `.github/workflows/release.yml` (Kanbini's pattern) runs on the tag: it fails if the tag,
-   `package.json` and `Cargo.toml` disagree, runs `cargo test`, builds with
-   `tauri build --no-bundle`, and publishes "Pochini vX.Y.Z" with `Pochini-X.Y.Z.exe`
-   attached. It takes about 20 minutes. Watch it with `gh run watch`, then check
-   `gh release view vX.Y.Z`.
-   A manual run from `main` (Actions tab) is a dry run: it builds and keeps the exe as a run
-   artifact, with no Release. A manual run on a tag publishes:
-   `gh workflow run release.yml --ref vX.Y.Z`. Use that if a tag push starts no run (v0.5.0
-   did not, because the tag went up in the same push that added the workflow file).
+1. Run `cargo test` and `npm run e2e`. CI does not run tests (the user wants them run here,
+   and a debug compile on the runner cost ~6 minutes per release).
+2. Add `## X.Y.Z - <date>` to `CHANGELOG.md`; that section becomes the release notes.
+3. `git commit -am "chore(release): X.Y.Z"` and `git push origin main`. No tag push.
+4. `.github/workflows/release.yml` (Kanbini's pattern) runs on that push because the head
+   commit starts with `chore(release):`. It fails if the commit message, `package.json` and
+   `Cargo.toml` disagree, builds with `tauri build --no-bundle`, and publishes
+   "Pochini vX.Y.Z" (creating the tag on the release commit) with `Pochini-X.Y.Z.exe`
+   attached. Watch it with `gh run watch`, then check `gh release view vX.Y.Z`. Other pushes
+   to main skip the job. A manual run (Actions tab) is a dry run with the exe as an artifact.
+   - Releases build from main, not from a tag, because GitHub scopes the build cache per
+     ref: tag runs could never reuse a cache and compiled everything (~20 minutes).
+   - The release profile uses thin LTO: an incremental release build is 30 s instead of
+     104 s with fat LTO and one codegen unit, for a 5.4 MB instead of 4.8 MB exe.
 
-Before tagging, run `npm run e2e` locally; the user wants the e2e suite run here, not on
-GitHub. Pushing changes under `.github/workflows/` needs the `workflow` scope on the gh login
+Pushing changes under `.github/workflows/` needs the `workflow` scope on the gh login
 (`gh auth refresh -h github.com -s workflow`, granted 2026-10-07).
 
 Report both the local exe path and the GitHub release link.
@@ -283,6 +284,12 @@ Mostly carried over from Kanbini, whose renderer this UI copies the look of:
   The editor's title row is 40 px (`size="lg"` buttons beside the `h-10` name).
 - **Type**: Segoe UI Variable (`--font-sans`, the Text cut) for the UI and `font-display` (the
   Display cut) for page titles and the macro name. No all-caps labels; keycaps are sans.
+- **Explanations live behind a "?"**, not on screen. Give `Field`, `ToggleRow`, `Section` or
+  `JitterField` a `help` prop and it renders a `HelpTip` after the label: hover shows it,
+  click pins it, Escape closes it. On-screen `hint` text is only for live values ("Lands at
+  (1623, 638)", "A random 50 to 75 ms each time") and short warnings or reasons ("Only in
+  'Run once per press' mode"). Keep labels self-explanatory and help to two or three
+  sentences. `ToggleRow` labels its switch by id, so the "?" never takes the switch's label.
 - **Quiet chrome**: secondary actions that also live in a menu (a step's move / duplicate /
   delete buttons) show on hover or keyboard focus only. Facts about a macro go on the line
   under its name, so the right side of every row stays aligned columns.

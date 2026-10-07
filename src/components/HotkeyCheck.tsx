@@ -91,10 +91,7 @@ export function HotkeyCheck({ toggleCombo }: { toggleCombo: string | null }) {
       )}
 
       <div className="flex flex-col gap-2">
-        <p className="text-xs text-muted-foreground">
-          Press any hotkey you have set up. Pochini lists what it received. Only your hotkeys are shown, never
-          other typing.
-        </p>
+        <p className="text-xs text-muted-foreground">Press one of your hotkeys to see what Pochini receives.</p>
         {recent.length === 0 ? (
           <p className="rounded-md border border-dashed border-border p-3 text-center text-sm text-muted-foreground">
             Nothing yet

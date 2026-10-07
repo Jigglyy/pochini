@@ -1,6 +1,7 @@
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
+import { HelpTip } from "./HelpTip";
 
 /** A titled group: a heading, then one faintly filled panel whose rows are
  *  divided by hairlines. Every direct child is a row (a Field, a ToggleRow,
@@ -8,12 +9,15 @@ import { cn } from "@/lib/utils";
  *  drops the panel for content that brings its own cards (the step list). */
 export function Section({
   title,
+  help,
   action,
   children,
   className,
   bare = false,
 }: {
   title: string;
+  /** Explanation behind a "?" after the title. */
+  help?: ReactNode;
   action?: ReactNode;
   children: ReactNode;
   className?: string;
@@ -22,7 +26,10 @@ export function Section({
   return (
     <section className={cn("flex flex-col gap-2.5", className)}>
       <div className="flex min-h-8 items-end justify-between gap-3">
-        <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+        <h3 className="flex items-center gap-1 text-sm font-semibold text-foreground">
+          {title}
+          {help && <HelpTip about={title}>{help}</HelpTip>}
+        </h3>
         {action}
       </div>
       {bare ? (
@@ -40,17 +47,25 @@ export function Section({
 export function Field({
   label,
   hint,
+  help,
   children,
   className,
 }: {
   label: string;
+  /** A short line under the control: live values or a warning, not an
+   *  explanation (that goes in `help`). */
   hint?: ReactNode;
+  /** Explanation behind a "?" after the label. */
+  help?: ReactNode;
   children: ReactNode;
   className?: string;
 }) {
   return (
     <div className={cn("grid grid-cols-[8rem_minmax(0,1fr)] items-start gap-x-4 gap-y-1.5", className)}>
-      <span className="flex h-9 items-center text-sm text-muted-foreground">{label}</span>
+      <span className="flex h-9 items-center gap-1 text-sm text-muted-foreground">
+        {label}
+        {help && <HelpTip about={label}>{help}</HelpTip>}
+      </span>
       <div className="flex min-h-9 min-w-0 flex-wrap items-center gap-2">{children}</div>
       {hint && <p className="col-start-2 max-w-prose text-xs leading-relaxed text-muted-foreground">{hint}</p>}
     </div>
@@ -62,38 +77,55 @@ export function Field({
 export function ToggleRow({
   label,
   hint,
+  help,
   checked,
   onChange,
   disabled,
   children,
 }: {
   label: string;
+  /** A short line under the title: why it is disabled, or a warning. */
   hint?: ReactNode;
+  /** Explanation behind a "?" after the title. */
+  help?: ReactNode;
   checked: boolean;
   onChange: (next: boolean) => void;
   disabled?: boolean;
   /** Extra controls shown under the row while it is on. */
   children?: ReactNode;
 }) {
+  // The labels point at the switch by id. Wrapping the row in one <label>
+  // would make it label its first control, which is the "?" when there is
+  // help: the switch would lose its name and clicking the title would open
+  // the help instead of flipping the switch.
+  const id = useId();
   return (
     <div>
-      <label
-        className={cn(
-          "flex items-start justify-between gap-6 text-sm",
-          disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer",
-        )}
-      >
-        <span className="flex min-w-0 flex-col gap-1">
-          <span className="font-medium text-foreground">{label}</span>
-          {hint && <span className="max-w-prose text-xs leading-relaxed text-muted-foreground">{hint}</span>}
-        </span>
+      <div className={cn("flex items-start justify-between gap-6 text-sm", disabled && "opacity-60")}>
+        <div className="flex min-w-0 flex-col gap-1">
+          <span className="flex items-center gap-1">
+            <label
+              htmlFor={id}
+              className={cn("font-medium text-foreground", disabled ? "cursor-not-allowed" : "cursor-pointer")}
+            >
+              {label}
+            </label>
+            {help && <HelpTip about={label}>{help}</HelpTip>}
+          </span>
+          {hint && (
+            <label htmlFor={id} className="max-w-prose text-xs leading-relaxed text-muted-foreground">
+              {hint}
+            </label>
+          )}
+        </div>
         <Switch
+          id={id}
           checked={checked && !disabled}
           onCheckedChange={onChange}
           disabled={disabled}
           className="mt-0.5 shrink-0"
         />
-      </label>
+      </div>
       {checked && !disabled && children && <div className="mt-3 flex flex-col gap-2">{children}</div>}
     </div>
   );

@@ -51,7 +51,7 @@ export function Settings({
       <Section title="Hotkeys">
         <Field
           label="Macros on/off"
-          hint="Turns every macro hotkey on or off from anywhere, even inside a fullscreen game. It keeps working while macros are off, so it can turn them back on."
+          help="Turns every macro hotkey on or off from anywhere, even inside a fullscreen game. It keeps working while macros are off, so it can turn them back on."
         >
           <KeyCapture
             value={settings.toggle_hotkey}
@@ -61,7 +61,7 @@ export function Settings({
         </Field>
         <Field
           label="Panic stop"
-          hint="Stops a running macro or countdown at once. Never blocked from other apps, and works while macros are off."
+          help="Stops a running macro or countdown at once. Never blocked from other apps, and works while macros are off."
         >
           <KeyCapture
             value={{ key: settings.panic_key, modifiers: [] }}
@@ -72,7 +72,10 @@ export function Settings({
         </Field>
       </Section>
 
-      <Section title="Hotkey check">
+      <Section
+        title="Hotkey check"
+        help="Shows what Pochini receives when you press one of your hotkeys, to explain one that does nothing. Only keys you have set up are listed, never other typing."
+      >
         <HotkeyCheck toggleCombo={settings.toggle_hotkey ? comboLabel(settings.toggle_hotkey) : null} />
       </Section>
 
@@ -105,6 +108,7 @@ export function Settings({
 
       <Section
         title="Step colors"
+        help="Each kind of step has its own color in the editor. You can also right-click a step there to recolor it."
         action={
           customColors && (
             <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={resetStepColors}>
@@ -113,12 +117,7 @@ export function Settings({
           )
         }
       >
-        <div className="flex flex-col gap-3">
-          <p className="text-xs text-muted-foreground">
-            Each kind of step has its own color in the editor. You can also right-click a step there to recolor it.
-          </p>
-          <StepColorSettings />
-        </div>
+        <StepColorSettings />
       </Section>
 
       {info && (
@@ -126,7 +125,10 @@ export function Settings({
           <Field label="Version">
             <span className="pt-2 text-sm tabular-nums">Pochini {info.version}</span>
           </Field>
-          <Field label="Data folder" hint="Your macros (macros.json, with macros.bak as the previous save) and settings.">
+          <Field
+            label="Data folder"
+            help="macros.json holds your macros (macros.bak is the previous save) and settings.json your settings."
+          >
             <code className="select-text break-all pt-2 font-mono text-xs text-muted-foreground">
               {info.data_dir}
             </code>

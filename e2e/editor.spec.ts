@@ -104,9 +104,7 @@ test.describe("offset targets", () => {
     await page.getByRole("button", { name: "Click at mouse" }).click();
     const only = page.locator("[data-step-id]").nth(0);
     await only.getByRole("button", { name: "Previous point + offset" }).click();
-    await expect(only.getByTestId("lands-at")).toContainText(
-      "No earlier click or move, so this counts from where the mouse started.",
-    );
+    await expect(only.getByTestId("lands-at")).toContainText("nothing before it, so from the mouse start");
   });
 
   test("a fixed step anchors the chain to the screen", async ({ app: { page } }) => {

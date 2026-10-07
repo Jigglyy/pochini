@@ -95,13 +95,22 @@ function TargetPicker({ anchor, onChange }: { anchor: Anchor; onChange: (a: Anch
   );
 }
 
-const TARGET_HINT: Record<Anchor, string | undefined> = {
-  fixed: undefined,
-  activation:
-    "Aims at where the mouse was when the macro started (where you pressed the hotkey, or where it sat when the Run countdown ended), moved by the offset.",
-  previous:
-    "Aims at the point the previous click or move aimed at, moved by the offset. Random jitter is never carried along. With Repeat, a chain that starts with this keeps going on the next pass.",
-};
+const TARGET_HELP = (
+  <div className="flex flex-col gap-1.5">
+    <p>
+      <span className="font-medium">Fixed position</span>: the same screen point every time.
+    </p>
+    <p>
+      <span className="font-medium">Mouse start + offset</span>: measured from where the mouse was when the
+      macro started (where you pressed the hotkey, or where it sat when the Run countdown ended).
+    </p>
+    <p>
+      <span className="font-medium">Previous point + offset</span>: measured from where the previous click or
+      move aimed. Jitter never adds up along a chain. With Repeat, a chain that starts this way keeps going
+      on the next pass.
+    </p>
+  </div>
+);
 
 function OffsetField({ dx, dy, onChange }: { dx: number; dy: number; onChange: (dx: number, dy: number) => void }) {
   const num = (v: string) => Math.trunc(+v || 0);
@@ -324,7 +333,7 @@ export function StepRow({
         <div className="flex flex-col gap-4 border-t border-border px-4 py-4">
           {(step.type === "click" || step.type === "move") && (
             <>
-              <Field label="Target" hint={TARGET_HINT[step.anchor]}>
+              <Field label="Target" help={TARGET_HELP}>
                 <TargetPicker anchor={step.anchor} onChange={(anchor) => set({ anchor })} />
               </Field>
               {step.anchor === "fixed" ? (
@@ -334,18 +343,21 @@ export function StepRow({
               ) : (
                 <Field
                   label="Offset"
+                  help="In pixels. Right and down are positive, left and up negative."
                   hint={
                     <span data-testid="lands-at">
-                      Right and down are positive.
-                      {step.anchor === "previous" && !hasEarlierPoint && " No earlier click or move, so this counts from where the mouse started."}
-                      {aim && ` Lands at ${fmtAim(aim)}.`}
+                      {aim && `Lands at ${fmtAim(aim)}`}
+                      {step.anchor === "previous" && !hasEarlierPoint && " (nothing before it, so from the mouse start)"}
                     </span>
                   }
                 >
                   <OffsetField dx={step.dx} dy={step.dy} onChange={(dx, dy) => set({ dx, dy })} />
                 </Field>
               )}
-              <Field label="Jitter" hint="Random offset within this many pixels of the target.">
+              <Field
+                label="Jitter"
+                help="Aims at a random spot up to this many pixels from the target, so repeated clicks don't hit the exact same pixel."
+              >
                 <Input
                   type="number"
                   min={0}
@@ -355,7 +367,10 @@ export function StepRow({
                 />
                 <span className="text-xs text-muted-foreground">px</span>
               </Field>
-              <Field label="Travel" hint="0 jumps straight there. Some targets only react to real movement.">
+              <Field
+                label="Travel"
+                help="0 jumps straight to the target. Above 0 glides the cursor there over that many milliseconds; some targets only react to real movement."
+              >
                 <Input
                   type="number"
                   min={0}
@@ -395,10 +410,15 @@ export function StepRow({
                   </SelectContent>
                 </Select>
               </Field>
-              <JitterField label="Hold" value={step.hold_ms} onChange={(hold_ms) => set({ hold_ms })} />
+              <JitterField
+                label="Hold"
+                help="How long the button stays down."
+                value={step.hold_ms}
+                onChange={(hold_ms) => set({ hold_ms })}
+              />
               <JitterField
                 label="Settle"
-                hint="Paused before pressing and after releasing, so the target sees the cursor resting on it. Raise it if a click gets dropped."
+                help="Pauses before pressing and after releasing, so the target sees the cursor resting on it. Raise it if clicks get dropped."
                 value={step.settle_ms}
                 onChange={(settle_ms) => set({ settle_ms })}
               />
@@ -406,7 +426,7 @@ export function StepRow({
           )}
 
           {step.type === "scroll" && (
-            <Field label="Scroll" hint="Negative scrolls down or left.">
+            <Field label="Scroll" help="Notches of the mouse wheel. Negative scrolls down (or left), positive up (or right).">
               <Input
                 type="number"
                 className="w-24 tabular-nums"
@@ -446,7 +466,7 @@ export function StepRow({
                   </SelectContent>
                 </Select>
               </Field>
-              <Field label="With">
+              <Field label="With" help="Modifier keys held down while the key is pressed.">
                 {MODS.map((m) => (
                   <label key={m} className="flex cursor-pointer items-center gap-2 text-sm capitalize">
                     <Switch
@@ -459,13 +479,21 @@ export function StepRow({
                   </label>
                 ))}
               </Field>
-              <JitterField label="Hold" value={step.hold_ms} onChange={(hold_ms) => set({ hold_ms })} />
+              <JitterField
+                label="Hold"
+                help="How long the key stays down."
+                value={step.hold_ms}
+                onChange={(hold_ms) => set({ hold_ms })}
+              />
             </>
           )}
 
           {step.type === "text" && (
             <>
-              <Field label="Text" hint="Sent as Unicode characters. Right for text fields; games generally will not see it.">
+              <Field
+                label="Text"
+                help="Typed as Unicode characters: right for text fields and chat boxes. Games usually ignore it; use Key steps there."
+              >
                 <Input
                   className="min-w-0 flex-1"
                   value={step.value}
@@ -475,6 +503,7 @@ export function StepRow({
               </Field>
               <JitterField
                 label="Per char"
+                help="The pause between characters."
                 value={step.per_char_ms}
                 onChange={(per_char_ms) => set({ per_char_ms })}
               />

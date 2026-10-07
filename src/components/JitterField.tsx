@@ -8,25 +8,18 @@ import { Field } from "./layout";
  *  "adds" is never ambiguous. */
 export function JitterField({
   label,
-  hint,
+  help,
   value,
   onChange,
 }: {
   label: string;
-  hint?: string;
+  help?: string;
   value: Jitter;
   onChange: (j: Jitter) => void;
 }) {
   const on = value.jitter > 0;
   return (
-    <Field
-      label={label}
-      hint={
-        on
-          ? `Each run waits a random ${value.base} to ${value.base + value.jitter} ms.${hint ? ` ${hint}` : ""}`
-          : hint
-      }
-    >
+    <Field label={label} help={help} hint={on ? `A random ${value.base} to ${value.base + value.jitter} ms each time.` : undefined}>
       <div className="relative">
         <Input
           type="number"
