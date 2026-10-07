@@ -24,10 +24,10 @@ panels. Conventions for building more of it are in [CLAUDE.md](../CLAUDE.md#ui-c
 ## Screen 1: Macros (home)
 
 ```
-Your macros                                                    [+ New macro]
+Your macros                          Sort [Custom order  v]   [+ New macro]
 
-| Demo                                   Space   [o==]  [> Run]  [...] |
-| 3 steps · 480 ms to 705 ms                                                |
+| :: * Demo                              Space   [o==]  [> Run]  [...] |
+|      3 steps · 480 ms to 705 ms                                           |
 
 Panic stop [Esc] stops a running macro at once.
 ```
@@ -35,6 +35,17 @@ Panic stop [Esc] stops a running macro at once.
 - When the master switch is off, a muted banner says hotkeys are ignored and how to turn
   them back on (switch or toggle hotkey).
 - Rows show an app badge for App only macros and a "Queue" badge when queueing is on.
+- **Favorites**: a star before the name (shown on hover until set, then always, filled). Also
+  in the row menu.
+- **Sort** (shown with two or more macros, remembered in localStorage): Custom order,
+  Favorites first, Name (A to Z), Newest first, Recently edited.
+  - **Custom order**: drag a row to reorder. Drag works like Kanbini's cards: the whole row is
+    the handle, a press becomes a drag after 6 px, a lifted copy follows the pointer. The star,
+    switch, Run and menu never start a drag. The menu also has Move up / Move down.
+  - **Favorites first**: a Favorites group above an "Other macros" group, each in custom
+    order. Dragging works inside a group, never across (starring moves a macro between
+    groups). Both drag views edit the same stored order.
+  - Name and date sorts are automatic, so rows cannot be dragged there.
 - Each row: name and a summary line (step count, estimated duration), a "Hotkey clash" badge
   if another macro uses the same combo, the hotkey as keycaps, the macro's **own switch**
   (hotkey on/off for just this macro; dims the row when off), **Run**, and a menu (Edit,
@@ -82,7 +93,9 @@ STEPS                                              Takes 480 ms to 705 ms
   - **Move mouse back to where it started**: after the run, the cursor returns to the press
     point. Not after Panic or Stop.
 - **Steps**: each step is a card with a number, a type icon and a plain-English summary;
-  reorder (arrows or Alt+Up/Down), duplicate, delete, expand. A newly added step opens
+  reorder by dragging its header (grip icon; 6 px before a drag starts, so clicks still
+  expand), by the arrows, or Alt+Up/Down; duplicate, delete, expand. The open body (inputs)
+  never starts a drag. Reordering marks the macro unsaved, like any other edit. A newly added step opens
   expanded.
   - Click / Move: **Target** switch (fixed position, or where the mouse was at activation).
     Fixed shows X/Y inputs, **Pick** (3 second countdown, then reads the real cursor
@@ -117,6 +130,5 @@ The user must always be able to tell that something is driving their mouse, and 
 
 ## Not built yet
 
-Tray icon (closing the window currently quits the app and its hotkeys), drag-to-reorder for
-macros and steps, the hook-armed F2 coordinate capture with a magnifier, first-run notice
+Tray icon (closing the window currently quits the app and its hotkeys), the hook-armed F2 coordinate capture with a magnifier, first-run notice
 about the keyboard hook, import/export of a single macro.

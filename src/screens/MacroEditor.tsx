@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { closestCenter, DndContext, DragOverlay, type DragEndEvent } from "@dnd-kit/core";
+import { arrayMove, SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import {
   ArrowUpDown,
   Check,
@@ -16,7 +18,8 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AppPicker } from "@/components/AppPicker";
 import { KeyCapture } from "@/components/KeyCapture";
-import { StepRow } from "@/components/StepRow";
+import { SortableStepRow, StepFace } from "@/components/StepRow";
+import { DROP_ANIMATION, useDragSensors } from "@/components/sortable";
 import { Field, Notice, Section, ToggleRow } from "@/components/layout";
 import { getMacro, saveMacro, testSteps } from "@/lib/ipc";
 import { blankStep, fmtRange, newId, stepRange, type NewStepKind } from "@/lib/steps";
@@ -56,6 +59,8 @@ export function MacroEditor({
   const [dirty, setDirty] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [justAdded, setJustAdded] = useState<string | null>(null);
+  const [draggingStep, setDraggingStep] = useState<string | null>(null);
+  const sensors = useDragSensors();
 
   useEffect(() => {
     getMacro(id)
@@ -117,6 +122,16 @@ export function MacroEditor({
     const steps = [...m.steps];
     [steps[i], steps[j]] = [steps[j], steps[i]];
     edit({ steps });
+  };
+
+  const draggingIndex = m.steps.findIndex((s) => s.id === draggingStep);
+  const dropStep = ({ active, over }: DragEndEvent) => {
+    setDraggingStep(null);
+    if (!over || active.id === over.id) return;
+    const from = m.steps.findIndex((s) => s.id === active.id);
+    const to = m.steps.findIndex((s) => s.id === over.id);
+    if (from < 0 || to < 0) return;
+    edit({ steps: arrayMove(m.steps, from, to) });
   };
 
   const add = (kind: NewStepKind) => {
@@ -315,25 +330,38 @@ export function MacroEditor({
             No steps yet. Add one below.
           </div>
         ) : (
-          <div className="flex flex-col gap-2">
-            {m.steps.map((s, i) => (
-              <StepRow
-                key={s.id}
-                step={s}
-                index={i}
-                count={m.steps.length}
-                defaultOpen={s.id === justAdded}
-                onChange={(ns) => setStep(i, ns)}
-                onDelete={() => edit({ steps: m.steps.filter((_, j) => j !== i) })}
-                onDuplicate={() => {
-                  const steps = [...m.steps];
-                  steps.splice(i + 1, 0, { ...s, id: newId() } as Step);
-                  edit({ steps });
-                }}
-                onMove={(d) => moveStep(i, d)}
-              />
-            ))}
-          </div>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragStart={(e) => setDraggingStep(String(e.active.id))}
+            onDragEnd={dropStep}
+            onDragCancel={() => setDraggingStep(null)}
+          >
+            <SortableContext items={m.steps.map((s) => s.id)} strategy={verticalListSortingStrategy}>
+              <div className="flex flex-col gap-2">
+                {m.steps.map((s, i) => (
+                  <SortableStepRow
+                    key={s.id}
+                    step={s}
+                    index={i}
+                    count={m.steps.length}
+                    defaultOpen={s.id === justAdded}
+                    onChange={(ns) => setStep(i, ns)}
+                    onDelete={() => edit({ steps: m.steps.filter((_, j) => j !== i) })}
+                    onDuplicate={() => {
+                      const steps = [...m.steps];
+                      steps.splice(i + 1, 0, { ...s, id: newId() } as Step);
+                      edit({ steps });
+                    }}
+                    onMove={(d) => moveStep(i, d)}
+                  />
+                ))}
+              </div>
+            </SortableContext>
+            <DragOverlay dropAnimation={DROP_ANIMATION}>
+              {draggingIndex >= 0 && <StepFace step={m.steps[draggingIndex]} index={draggingIndex} />}
+            </DragOverlay>
+          </DndContext>
         )}
 
         <div className="flex flex-wrap gap-2 border-t border-border pt-4">

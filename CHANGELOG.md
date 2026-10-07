@@ -4,6 +4,19 @@ All notable changes to Pochini. Versions follow [semantic versioning](https://se
 while the major version is 0, a minor bump may change behaviour or the macro file format.
 Each version is built with `npm run release` into `release/Pochini-<version>.exe`.
 
+## 0.4.0 - 2026-10-07
+
+### Added
+
+- **Drag to reorder steps** in the editor: grab a step's header and drop it where it belongs.
+  The arrow buttons and Alt+Up/Down still work.
+- **Favorites**: star a macro from its row (or the row menu).
+- **Sort** the macro list: Custom order, Favorites first, Name, Newest first, Recently edited.
+  Your choice is remembered.
+- **Drag to reorder macros** in Custom order, or inside the Favorites and Other macros groups
+  in Favorites first. Both edit the same order, so arranging your favorites leaves the rest
+  where they were. The row menu has Move up / Move down too.
+
 ## 0.3.0 - 2026-10-07
 
 ### Added

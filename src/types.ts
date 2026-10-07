@@ -93,6 +93,8 @@ export type Macro = {
   id: string;
   name: string;
   enabled: boolean;
+  /** Starred on the macro list. Only affects sorting. */
+  favorite: boolean;
   trigger: Trigger | null;
   repeat: Repeat;
   /** Presses while running are queued instead of ignored. */
@@ -116,6 +118,10 @@ export type MacroSummary = {
   queue: boolean;
   /** "App only" executable, if set. */
   app: string | null;
+  favorite: boolean;
+  /** RFC 3339. */
+  created_at: string;
+  updated_at: string;
 };
 
 export type Settings = {

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useState, type CSSProperties, type ReactNode, type Ref } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Copy,
   Crosshair,
+  GripVertical,
   Keyboard,
   MousePointerClick,
   Move,
@@ -25,6 +26,7 @@ import { CoordPicker } from "./CoordPicker";
 import { JitterField } from "./JitterField";
 import { KeyCapture } from "./KeyCapture";
 import { Field } from "./layout";
+import { useSortableItem, type DragHandle } from "./sortable";
 
 const MODS: Modifier[] = ["ctrl", "alt", "shift", "win"];
 
@@ -99,6 +101,39 @@ function TargetPicker({ anchor, onChange }: { anchor: Anchor; onChange: (a: Anch
   );
 }
 
+type StepRowProps = {
+  step: Step;
+  index: number;
+  count: number;
+  onChange: (s: Step) => void;
+  onDelete: () => void;
+  onDuplicate: () => void;
+  onMove: (delta: number) => void;
+  defaultOpen?: boolean;
+};
+
+/** A StepRow inside the editor's sortable list: drag its header to reorder. */
+export function SortableStepRow(props: StepRowProps) {
+  const s = useSortableItem(props.step.id);
+  return <StepRow {...props} itemRef={s.ref} style={s.style} handle={s.handle} />;
+}
+
+/** The lifted copy of a step while it is being dragged. Same layout as the
+ *  StepRow header. */
+export function StepFace({ step, index }: { step: Step; index: number }) {
+  const Icon = stepIcon(step);
+  return (
+    <div className="flex cursor-grabbing items-center gap-3 rounded-lg border border-primary/40 bg-card px-3 py-2.5 text-card-foreground shadow-xl">
+      <GripVertical className="size-4 shrink-0 text-muted-foreground" />
+      <span className="w-5 text-right text-xs tabular-nums text-muted-foreground">{index + 1}</span>
+      <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+        <Icon className="size-4" />
+      </span>
+      <span className="min-w-0 flex-1 truncate py-1.5 text-sm">{summarize(step)}</span>
+    </div>
+  );
+}
+
 export function StepRow({
   step,
   index,
@@ -108,23 +143,23 @@ export function StepRow({
   onDuplicate,
   onMove,
   defaultOpen = false,
-}: {
-  step: Step;
-  index: number;
-  count: number;
-  onChange: (s: Step) => void;
-  onDelete: () => void;
-  onDuplicate: () => void;
-  onMove: (delta: number) => void;
-  defaultOpen?: boolean;
+  itemRef,
+  style,
+  handle,
+}: StepRowProps & {
+  itemRef?: Ref<HTMLDivElement>;
+  style?: CSSProperties;
+  /** Drag listeners; spread on the header so the open body (inputs) never drags. */
+  handle?: DragHandle;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const set = (patch: Partial<Step>) => onChange({ ...step, ...patch } as Step);
   const Icon = stepIcon(step);
 
   return (
-    <div className="rounded-lg border border-border bg-card text-card-foreground">
+    <div ref={itemRef} style={style} className="rounded-lg border border-border bg-card text-card-foreground">
       <div
+        {...handle}
         role="button"
         tabIndex={0}
         aria-expanded={open}
@@ -139,6 +174,9 @@ export function StepRow({
         }}
         className="flex items-center gap-3 rounded-lg px-3 py-2.5 outline-none hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-ring"
       >
+        {handle && (
+          <GripVertical aria-hidden className="size-4 shrink-0 cursor-grab text-muted-foreground/60" />
+        )}
         <span className="w-5 text-right text-xs tabular-nums text-muted-foreground">{index + 1}</span>
         <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
           <Icon className="size-4" />

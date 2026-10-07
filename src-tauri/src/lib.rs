@@ -114,6 +114,7 @@ pub fn run() {
             commands::create_macro,
             commands::save_macro,
             commands::set_macro_enabled,
+            commands::set_macro_favorite,
             commands::delete_macro,
             commands::duplicate_macro,
             commands::reorder_macros,

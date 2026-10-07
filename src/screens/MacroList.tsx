@@ -1,5 +1,20 @@
-import { useEffect, useState } from "react";
-import { AppWindow, Copy, ListOrdered, MoreHorizontal, Pencil, Play, Plus, Trash2 } from "lucide-react";
+import { useEffect, useState, type CSSProperties, type PointerEvent, type Ref } from "react";
+import { closestCenter, DndContext, DragOverlay, type DragEndEvent } from "@dnd-kit/core";
+import { arrayMove, SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import {
+  AppWindow,
+  ArrowDown,
+  ArrowUp,
+  Copy,
+  GripVertical,
+  ListOrdered,
+  MoreHorizontal,
+  Pencil,
+  Play,
+  Plus,
+  Star,
+  Trash2,
+} from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,18 +34,31 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { KeyCombo, Kbd } from "@/components/layout";
 import { comboLabel } from "@/components/KeyCapture";
+import { DROP_ANIMATION, useDragSensors, useSortableItem, type DragHandle } from "@/components/sortable";
 import {
   createMacro,
   deleteMacro,
   duplicateMacro,
   listMacros,
+  reorderMacros,
   runMacro,
   setMacroEnabled,
+  setMacroFavorite,
 } from "@/lib/ipc";
+import {
+  applyGroupOrder,
+  DRAGGABLE,
+  groupMacros,
+  loadSortMode,
+  saveSortMode,
+  SORT_LABELS,
+  type SortMode,
+} from "@/lib/order";
 import { fmtRange } from "@/lib/steps";
 import { cn } from "@/lib/utils";
 import type { MacroSummary, Settings } from "@/types";
@@ -47,6 +75,11 @@ export function MacroList({
   const [rows, setRows] = useState<MacroSummary[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<MacroSummary | null>(null);
+  const [sort, setSortState] = useState<SortMode>(loadSortMode);
+  const setSort = (m: SortMode) => {
+    setSortState(m);
+    saveSortMode(m);
+  };
 
   const reload = () =>
     listMacros()
@@ -79,7 +112,44 @@ export function MacroList({
     }
   };
 
+  const favorite = async (r: MacroSummary, favorite: boolean) => {
+    setRows((rs) => rs?.map((x) => (x.id === r.id ? { ...x, favorite } : x)) ?? rs);
+    try {
+      await setMacroFavorite(r.id, favorite);
+    } catch (e) {
+      setErr(String(e));
+      reload();
+    }
+  };
+
+  /** `group`: the new order of one group (or of everything, in Custom order). */
+  const reorder = async (group: MacroSummary[]) => {
+    setRows((rs) => rs && applyGroupOrder(rs, group));
+    try {
+      await reorderMacros(group.map((r) => r.id));
+    } catch (e) {
+      setErr(String(e));
+      reload();
+    }
+  };
+
+  const actions: RowActions = {
+    onOpen,
+    onToggle: toggleRow,
+    onFavorite: favorite,
+    onRun: (r) => {
+      onRun(r.name);
+      runMacro(r.id).catch((e) => setErr(String(e)));
+    },
+    onDuplicate: (r) =>
+      duplicateMacro(r.id)
+        .then(reload)
+        .catch((e) => setErr(String(e))),
+    onDelete: setPendingDelete,
+  };
+
   const off = settings ? !settings.enabled : false;
+  const draggable = DRAGGABLE.has(sort);
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
@@ -100,10 +170,29 @@ export function MacroList({
 
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-xl font-semibold tracking-tight">Your macros</h2>
-        <Button onClick={create}>
-          <Plus />
-          New macro
-        </Button>
+        <div className="flex items-center gap-3">
+          {rows && rows.length > 1 && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <span className="hidden sm:inline">Sort</span>
+              <Select value={sort} onValueChange={(v) => setSort(v as SortMode)}>
+                <SelectTrigger size="sm" className="w-40" aria-label="Sort macros">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="end">
+                  {(Object.keys(SORT_LABELS) as SortMode[]).map((k) => (
+                    <SelectItem key={k} value={k}>
+                      {SORT_LABELS[k]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          <Button onClick={create}>
+            <Plus />
+            New macro
+          </Button>
+        </div>
       </div>
 
       {err && (
@@ -112,132 +201,18 @@ export function MacroList({
         </p>
       )}
 
-      {rows && rows.length > 0 && (
-        <ul className="flex flex-col gap-2">
-          {rows.map((r) => (
-            <li
-              key={r.id}
-              className={cn(
-                "flex items-center gap-4 rounded-lg border border-border bg-card px-4 py-3 transition-colors hover:border-primary/40",
-                !r.enabled && "bg-card/50",
-              )}
-            >
-              <button
-                type="button"
-                onClick={() => onOpen(r.id)}
-                className="flex min-w-0 flex-1 flex-col items-start gap-0.5 text-left outline-none focus-visible:underline"
-              >
-                <span
-                  className={cn(
-                    "max-w-full truncate font-medium",
-                    !r.enabled && "text-muted-foreground",
-                  )}
-                >
-                  {r.name}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {r.step_count} step{r.step_count === 1 ? "" : "s"} · {fmtRange(r.duration_ms)}
-                </span>
-              </button>
-
-              {r.app && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Badge variant="outline" className="hidden max-w-44 text-muted-foreground md:inline-flex">
-                      <AppWindow />
-                      <span className="truncate">{r.app}</span>
-                    </Badge>
-                  </TooltipTrigger>
-                  <TooltipContent>Hotkey only works over {r.app}</TooltipContent>
-                </Tooltip>
-              )}
-              {r.queue && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Badge variant="outline" className="hidden text-muted-foreground md:inline-flex">
-                      <ListOrdered />
-                      Queue
-                    </Badge>
-                  </TooltipTrigger>
-                  <TooltipContent>Presses while running are queued</TooltipContent>
-                </Tooltip>
-              )}
-              {r.conflict && (
-                <Badge variant="outline" className="border-warning/50 text-warning">
-                  Hotkey clash
-                </Badge>
-              )}
-              <div className={cn("hidden sm:block", !r.enabled && "opacity-50")}>
-                {r.hotkey ? (
-                  <KeyCombo combo={r.hotkey} />
-                ) : (
-                  <span className="text-xs italic text-muted-foreground">No hotkey</span>
-                )}
-              </div>
-
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="inline-flex">
-                    <Switch
-                      checked={r.enabled}
-                      onCheckedChange={(c) => toggleRow(r, c)}
-                      aria-label={`${r.name} hotkey ${r.enabled ? "on" : "off"}`}
-                    />
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {r.enabled ? "Hotkey on. Click to ignore it." : "Hotkey off. Click to listen for it."}
-                </TooltipContent>
-              </Tooltip>
-
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      onRun(r.name);
-                      runMacro(r.id).catch((e) => setErr(String(e)));
-                    }}
-                  >
-                    <Play />
-                    Run
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Starts after a 3 second countdown</TooltipContent>
-              </Tooltip>
-
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon-sm" aria-label={`More actions for ${r.name}`}>
-                    <MoreHorizontal />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onSelect={() => onOpen(r.id)}>
-                    <Pencil />
-                    Edit
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onSelect={async () => {
-                      await duplicateMacro(r.id);
-                      reload();
-                    }}
-                  >
-                    <Copy />
-                    Duplicate
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem variant="destructive" onSelect={() => setPendingDelete(r)}>
-                    <Trash2 />
-                    Delete
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </li>
-          ))}
-        </ul>
-      )}
+      {rows &&
+        rows.length > 0 &&
+        groupMacros(rows, sort).map((g) => (
+          <MacroGroup
+            key={`${sort}-${g.key}`}
+            title={g.title}
+            rows={g.rows}
+            draggable={draggable}
+            onReorder={reorder}
+            actions={actions}
+          />
+        ))}
 
       {rows && rows.length === 0 && (
         <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-card/40 p-12 text-center">
@@ -285,5 +260,275 @@ export function MacroList({
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+type RowActions = {
+  onOpen: (id: string) => void;
+  onToggle: (r: MacroSummary, enabled: boolean) => void;
+  onFavorite: (r: MacroSummary, favorite: boolean) => void;
+  onRun: (r: MacroSummary) => void;
+  onDuplicate: (r: MacroSummary) => void;
+  onDelete: (r: MacroSummary) => void;
+};
+
+/** One list of rows: the whole list, or the Favorites / Other macros group in
+ *  "Favorites first". Each group has its own drag context, so a drag can never
+ *  move a macro across groups (starring is what moves it). */
+function MacroGroup({
+  title,
+  rows,
+  draggable,
+  onReorder,
+  actions,
+}: {
+  title?: string;
+  rows: MacroSummary[];
+  draggable: boolean;
+  onReorder: (rows: MacroSummary[]) => void;
+  actions: RowActions;
+}) {
+  const sensors = useDragSensors();
+  const [dragging, setDragging] = useState<string | null>(null);
+
+  const move = (i: number, d: number) =>
+    draggable && i + d >= 0 && i + d < rows.length ? () => onReorder(arrayMove(rows, i, i + d)) : undefined;
+
+  const drop = ({ active, over }: DragEndEvent) => {
+    setDragging(null);
+    if (!over || active.id === over.id) return;
+    const from = rows.findIndex((r) => r.id === active.id);
+    const to = rows.findIndex((r) => r.id === over.id);
+    if (from >= 0 && to >= 0) onReorder(arrayMove(rows, from, to));
+  };
+
+  const list = (
+    <ul className="flex flex-col gap-2">
+      {rows.map((r, i) => {
+        const props = { r, actions, onMoveUp: move(i, -1), onMoveDown: move(i, 1) };
+        return draggable ? <SortableMacroRow key={r.id} {...props} /> : <MacroRow key={r.id} {...props} />;
+      })}
+    </ul>
+  );
+  const lifted = rows.find((r) => r.id === dragging);
+
+  return (
+    <section className="flex flex-col gap-2">
+      {title && (
+        <h3 className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          {title === "Favorites" && <Star className="size-3.5 fill-current text-warning" />}
+          {title}
+        </h3>
+      )}
+      {draggable ? (
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={(e) => setDragging(String(e.active.id))}
+          onDragEnd={drop}
+          onDragCancel={() => setDragging(null)}
+        >
+          <SortableContext items={rows.map((r) => r.id)} strategy={verticalListSortingStrategy}>
+            {list}
+          </SortableContext>
+          <DragOverlay dropAnimation={DROP_ANIMATION}>
+            {lifted && (
+              <ul>
+                <MacroRow r={lifted} actions={actions} lifted />
+              </ul>
+            )}
+          </DragOverlay>
+        </DndContext>
+      ) : (
+        list
+      )}
+    </section>
+  );
+}
+
+type RowProps = {
+  r: MacroSummary;
+  actions: RowActions;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+};
+
+function SortableMacroRow(props: RowProps) {
+  const s = useSortableItem(props.r.id);
+  return <MacroRow {...props} itemRef={s.ref} style={s.style} handle={s.handle} />;
+}
+
+/** Keeps a press on a control (star, switch, Run, menu) from starting a drag. */
+const noDrag = { onPointerDown: (e: PointerEvent) => e.stopPropagation() };
+
+function MacroRow({
+  r,
+  actions,
+  onMoveUp,
+  onMoveDown,
+  itemRef,
+  style,
+  handle,
+  lifted = false,
+}: RowProps & {
+  itemRef?: Ref<HTMLLIElement>;
+  style?: CSSProperties;
+  /** Set when the row can be dragged: the whole row is the handle. */
+  handle?: DragHandle;
+  /** The copy that follows the pointer during a drag. */
+  lifted?: boolean;
+}) {
+  const grip = handle !== undefined || lifted;
+  return (
+    <li
+      ref={itemRef}
+      style={style}
+      {...handle}
+      className={cn(
+        "group flex items-center gap-4 rounded-lg border border-border bg-card px-4 py-3 transition-colors hover:border-primary/40",
+        grip && "pl-2",
+        !r.enabled && "bg-card/50",
+        lifted && "cursor-grabbing border-primary/40 bg-card shadow-xl",
+      )}
+    >
+      <div className="-mr-2 flex items-center gap-1">
+        {grip && <GripVertical aria-hidden className="size-4 shrink-0 cursor-grab text-muted-foreground/60" />}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              {...noDrag}
+              onClick={() => actions.onFavorite(r, !r.favorite)}
+              aria-pressed={r.favorite}
+              aria-label={r.favorite ? `Remove ${r.name} from favorites` : `Add ${r.name} to favorites`}
+              className={cn(
+                "inline-flex size-7 shrink-0 items-center justify-center rounded-md outline-none transition-opacity hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring",
+                r.favorite
+                  ? "text-warning"
+                  : "text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
+              )}
+            >
+              <Star className={cn("size-4", r.favorite && "fill-current")} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>{r.favorite ? "Remove from favorites" : "Add to favorites"}</TooltipContent>
+        </Tooltip>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => actions.onOpen(r.id)}
+        className="flex min-w-0 flex-1 flex-col items-start gap-0.5 text-left outline-none focus-visible:underline"
+      >
+        <span className={cn("max-w-full truncate font-medium", !r.enabled && "text-muted-foreground")}>
+          {r.name}
+        </span>
+        <span className="text-xs text-muted-foreground">
+          {r.step_count} step{r.step_count === 1 ? "" : "s"} · {fmtRange(r.duration_ms)}
+        </span>
+      </button>
+
+      {r.app && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Badge variant="outline" className="hidden max-w-44 text-muted-foreground md:inline-flex">
+              <AppWindow />
+              <span className="truncate">{r.app}</span>
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent>Hotkey only works over {r.app}</TooltipContent>
+        </Tooltip>
+      )}
+      {r.queue && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Badge variant="outline" className="hidden text-muted-foreground md:inline-flex">
+              <ListOrdered />
+              Queue
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent>Presses while running are queued</TooltipContent>
+        </Tooltip>
+      )}
+      {r.conflict && (
+        <Badge variant="outline" className="border-warning/50 text-warning">
+          Hotkey clash
+        </Badge>
+      )}
+      <div className={cn("hidden sm:block", !r.enabled && "opacity-50")}>
+        {r.hotkey ? (
+          <KeyCombo combo={r.hotkey} />
+        ) : (
+          <span className="text-xs italic text-muted-foreground">No hotkey</span>
+        )}
+      </div>
+
+      <div className="flex items-center gap-4" {...noDrag}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-flex">
+              <Switch
+                checked={r.enabled}
+                onCheckedChange={(c) => actions.onToggle(r, c)}
+                aria-label={`${r.name} hotkey ${r.enabled ? "on" : "off"}`}
+              />
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>
+            {r.enabled ? "Hotkey on. Click to ignore it." : "Hotkey off. Click to listen for it."}
+          </TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="outline" size="sm" onClick={() => actions.onRun(r)}>
+              <Play />
+              Run
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Starts after a 3 second countdown</TooltipContent>
+        </Tooltip>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon-sm" aria-label={`More actions for ${r.name}`}>
+              <MoreHorizontal />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onSelect={() => actions.onOpen(r.id)}>
+              <Pencil />
+              Edit
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => actions.onFavorite(r, !r.favorite)}>
+              <Star />
+              {r.favorite ? "Remove from favorites" : "Add to favorites"}
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => actions.onDuplicate(r)}>
+              <Copy />
+              Duplicate
+            </DropdownMenuItem>
+            {(onMoveUp || onMoveDown) && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem disabled={!onMoveUp} onSelect={onMoveUp}>
+                  <ArrowUp />
+                  Move up
+                </DropdownMenuItem>
+                <DropdownMenuItem disabled={!onMoveDown} onSelect={onMoveDown}>
+                  <ArrowDown />
+                  Move down
+                </DropdownMenuItem>
+              </>
+            )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" onSelect={() => actions.onDelete(r)}>
+              <Trash2 />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </li>
   );
 }

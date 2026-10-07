@@ -25,6 +25,9 @@ pub struct MacroSummary {
     pub queue: bool,
     /// "App only" executable, if set.
     pub app: Option<String>,
+    pub favorite: bool,
+    pub created_at: String,
+    pub updated_at: String,
 }
 
 fn hotkey_label(m: &Macro) -> Option<String> {
@@ -59,6 +62,9 @@ pub fn list_macros(state: State<'_, Arc<AppState>>) -> R<Vec<MacroSummary>> {
             duration_ms: m.duration_range(),
             queue: m.queue,
             app: m.guard.as_ref().map(|g| g.process.clone()).filter(|p| !p.is_empty()),
+            favorite: m.favorite,
+            created_at: m.created_at.clone(),
+            updated_at: m.updated_at.clone(),
         })
         .collect())
 }
@@ -123,6 +129,22 @@ pub fn set_macro_enabled(state: State<'_, Arc<AppState>>, id: String, enabled: b
     Ok(())
 }
 
+/// The star on each macro row. Not an edit: `updated_at` stays, so starring
+/// does not move a macro in the "Recently edited" sort.
+#[tauri::command]
+pub fn set_macro_favorite(state: State<'_, Arc<AppState>>, id: String, favorite: bool) -> R<()> {
+    {
+        let mut f = state.macros.lock().unwrap();
+        let m = f
+            .macros
+            .iter_mut()
+            .find(|m| m.id == id)
+            .ok_or_else(|| format!("no macro with id {id}"))?;
+        m.favorite = favorite;
+    }
+    state.persist()
+}
+
 #[tauri::command]
 pub fn delete_macro(state: State<'_, Arc<AppState>>, id: String) -> R<()> {
     state.abort_if(&id);
@@ -139,6 +161,7 @@ pub fn duplicate_macro(state: State<'_, Arc<AppState>>, id: String) -> R<Macro> 
     m.name = format!("{} (copy)", m.name);
     // A duplicate must not inherit the hotkey, or both fire at once.
     m.trigger = None;
+    m.favorite = false;
     m.created_at = now_iso8601();
     m.updated_at = m.created_at.clone();
     for s in m.steps.iter_mut() {
@@ -162,12 +185,11 @@ fn reassign_step_id(s: &mut Step) {
     }
 }
 
+/// A drag on the macro list: `ids` is the new order of all macros, or of one
+/// group of them (see `MacroFile::reorder`).
 #[tauri::command]
 pub fn reorder_macros(state: State<'_, Arc<AppState>>, ids: Vec<String>) -> R<()> {
-    let mut f = state.macros.lock().unwrap();
-    f.macros
-        .sort_by_key(|m| ids.iter().position(|i| *i == m.id).unwrap_or(usize::MAX));
-    drop(f);
+    state.macros.lock().unwrap().reorder(&ids);
     state.persist()
 }
 

@@ -316,6 +316,9 @@ pub struct Macro {
     pub name: String,
     #[serde(default = "default_true")]
     pub enabled: bool,
+    /// Starred on the macro list. Purely for sorting; never affects a run.
+    #[serde(default)]
+    pub favorite: bool,
     pub trigger: Option<Trigger>,
     #[serde(default)]
     pub repeat: Repeat,
@@ -348,6 +351,7 @@ impl Macro {
             id: ulid::Ulid::new().to_string(),
             name: name.into(),
             enabled: true,
+            favorite: false,
             trigger: None,
             repeat: Repeat::Once,
             queue: false,
@@ -375,6 +379,40 @@ pub struct MacroFile {
     pub schema_version: u32,
     #[serde(default)]
     pub macros: Vec<Macro>,
+}
+
+impl MacroFile {
+    /// Apply a drag on the macro list. The order of `macros` is the user's
+    /// custom order.
+    ///
+    /// `ids` is the new order of some of the macros: all of them for a drag in
+    /// the custom view, or only one group (the favorites, or the rest) for a
+    /// drag in the favorites-first view. The listed macros swap among the
+    /// places they already hold and every other macro stays exactly where it
+    /// was, so reordering the favorites never shuffles the rest. Unknown and
+    /// repeated ids are ignored.
+    pub fn reorder(&mut self, ids: &[String]) {
+        let mut wanted: Vec<&String> = Vec::new();
+        for id in ids {
+            if !wanted.contains(&id) && self.macros.iter().any(|m| m.id == *id) {
+                wanted.push(id);
+            }
+        }
+        let slots: Vec<usize> = self
+            .macros
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| wanted.contains(&&m.id))
+            .map(|(i, _)| i)
+            .collect();
+        let moved: Vec<Macro> = wanted
+            .iter()
+            .filter_map(|id| self.macros.iter().find(|m| m.id == **id).cloned())
+            .collect();
+        for (slot, m) in slots.into_iter().zip(moved) {
+            self.macros[slot] = m;
+        }
+    }
 }
 
 impl Default for MacroFile {
@@ -552,11 +590,64 @@ mod tests {
         assert_eq!(cleared.toggle_hotkey, None);
     }
 
+    fn file_of(ids: &[&str]) -> MacroFile {
+        let mut f = MacroFile::default();
+        for id in ids {
+            let mut m = Macro::new(*id);
+            m.id = (*id).into();
+            f.macros.push(m);
+        }
+        f
+    }
+
+    fn order(f: &MacroFile) -> Vec<&str> {
+        f.macros.iter().map(|m| m.id.as_str()).collect()
+    }
+
+    fn ids(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn a_full_reorder_sets_the_custom_order() {
+        let mut f = file_of(&["a", "b", "c", "d"]);
+        f.reorder(&ids(&["d", "a", "c", "b"]));
+        assert_eq!(order(&f), ["d", "a", "c", "b"]);
+    }
+
+    #[test]
+    fn reordering_one_group_leaves_the_others_in_place() {
+        // Favorites b and d sit at positions 1 and 3 of the custom order.
+        let mut f = file_of(&["a", "b", "c", "d", "e"]);
+        f.reorder(&ids(&["d", "b"]));
+        assert_eq!(order(&f), ["a", "d", "c", "b", "e"]);
+    }
+
+    #[test]
+    fn reorder_ignores_unknown_and_repeated_ids_and_keeps_every_macro() {
+        let mut f = file_of(&["a", "b", "c"]);
+        f.reorder(&ids(&["zzz", "c", "c", "a"]));
+        assert_eq!(order(&f), ["c", "b", "a"]);
+        f.reorder(&[]);
+        assert_eq!(order(&f), ["c", "b", "a"]);
+    }
+
+    #[test]
+    fn reorder_keeps_each_macros_data() {
+        let mut f = file_of(&["a", "b"]);
+        f.macros[0].favorite = true;
+        f.macros[0].name = "first".into();
+        f.reorder(&ids(&["b", "a"]));
+        assert_eq!(f.macros[1].name, "first");
+        assert!(f.macros[1].favorite && !f.macros[0].favorite);
+    }
+
     #[test]
     fn queue_defaults_off_and_guard_roundtrips() {
         let m: Macro = serde_json::from_str(r#"{"id":"a","name":"n","trigger":null}"#).unwrap();
         assert!(!m.queue);
         assert!(!m.return_to_start);
+        assert!(!m.favorite);
         assert!(m.guard.is_none());
 
         let mut m = Macro::new("x");

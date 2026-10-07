@@ -78,7 +78,8 @@ Rebuilt on ShadCN + Tailwind v4 in Kanbini's style.
 - [x] Settings screen: toggle hotkey, panic key, theme (system / light / dark)
 - [x] Per-macro **Queue presses** (FIFO, cap 50, each run keeps its own press position)
 - [x] Per-macro **App only** with a running-apps picker
-- [ ] Drag-to-reorder for macros and steps
+- [x] Drag-to-reorder for macros and steps (dnd-kit, as in Kanbini)
+- [x] Favorites and macro list sorting (custom, favorites first, name, newest, recently edited)
 - [ ] Coordinate picking via a hook-armed key, with a magnifier
 - [ ] Tray icon (closing the window currently quits the app and its hotkeys)
 - [ ] First-run notice about the keyboard hook

@@ -1,29 +1,7 @@
 import { useEffect, useState } from "react";
+import { readPrefs, writePrefs, type ThemePref } from "./prefs";
 
-// Renderer-only preferences live in localStorage as one JSON blob (the
-// Kanbini pattern). index.html reads the same key before first paint so the
-// window never flashes the wrong theme.
-
-export type ThemePref = "system" | "light" | "dark";
-const KEY = "pochini.settings";
-
-type UiPrefs = { theme?: ThemePref };
-
-function read(): UiPrefs {
-  try {
-    return JSON.parse(localStorage.getItem(KEY) || "{}") as UiPrefs;
-  } catch {
-    return {};
-  }
-}
-
-function write(p: UiPrefs): void {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(p));
-  } catch {
-    /* private mode / storage blocked: the choice just won't persist */
-  }
-}
+export type { ThemePref };
 
 const media = () => window.matchMedia("(prefers-color-scheme: dark)");
 
@@ -33,7 +11,7 @@ export function applyTheme(pref: ThemePref): void {
 }
 
 export function useTheme(): [ThemePref, (t: ThemePref) => void] {
-  const [pref, setPref] = useState<ThemePref>(() => read().theme ?? "system");
+  const [pref, setPref] = useState<ThemePref>(() => readPrefs().theme ?? "system");
 
   useEffect(() => {
     applyTheme(pref);
@@ -46,7 +24,7 @@ export function useTheme(): [ThemePref, (t: ThemePref) => void] {
   }, [pref]);
 
   const set = (t: ThemePref) => {
-    write({ ...read(), theme: t });
+    writePrefs({ theme: t });
     setPref(t);
   };
   return [pref, set];
