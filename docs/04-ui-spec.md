@@ -42,8 +42,7 @@ Panic stop [Esc] stops a running macro at once.
   fixed columns (hotkey, switch, Run, menu) so they line up down the list.
 - **Colors**: right-click a row (or its menu > Color) for the same 14-accent palette as steps,
   plus "No color". A colored row is outlined in the accent (Kanbini's colored lists and
-  boards), with a thicker left edge and a faint wash; a macro that is switched off keeps only
-  the colored edge. The right-click menu also has Edit,
+  boards), with a thicker left edge and a faint wash, whether or not its hotkey is on. The right-click menu also has Edit,
   favorite, Duplicate, Move up / down and Delete.
 - **Favorites**: a star before the name (shown on hover until set, then always, filled). Also
   in the row menu.

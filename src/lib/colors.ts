@@ -99,8 +99,8 @@ export function tone(c: StepColor): Tone | null {
 
 /** Border colours for a coloured card, Kanbini style: the whole outline in
  *  the accent (with the card's thicker left edge), not just the edge. With
- *  `outline` false only the left edge is coloured (a switched-off macro).
- *  Longhands only, so React never mixes border-color with border-left-color. */
+ *  `outline` false only the left edge is coloured. Longhands only, so React
+ *  never mixes border-color with border-left-color. */
 export function outlineStyle(t: Tone | null, outline = true): CSSProperties {
   if (!t) return {};
   const side = outline ? t.bar : undefined;

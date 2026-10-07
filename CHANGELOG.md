@@ -4,6 +4,13 @@ All notable changes to Pochini. Versions follow [semantic versioning](https://se
 while the major version is 0, a minor bump may change behaviour or the macro file format.
 Each version is built with `npm run release` into `release/Pochini-<version>.exe`.
 
+## 0.8.2 - 2026-10-08
+
+### Fixed
+
+- A colored macro whose hotkey is switched off showed only the colored left edge. It now gets
+  the full colored outline and wash like any other colored macro.
+
 ## 0.8.1 - 2026-10-08
 
 ### Changed

@@ -412,10 +412,10 @@ function MacroRow({
   const row = (
     <li
       ref={itemRef}
-      // A colored row is outlined in its color, Kanbini style. A switched-off
-      // macro keeps only the colored edge (no outline, no wash), so "off"
-      // still reads as off. Inline colors also beat the hover border.
-      style={{ ...style, ...outlineStyle(t, r.enabled), backgroundColor: r.enabled ? t?.wash : undefined }}
+      // A colored row is outlined in its color with a faint wash, Kanbini
+      // style, whether or not its hotkey is on (the switch and the dimmed
+      // name already say "off"). Inline colors also beat the hover border.
+      style={{ ...style, ...outlineStyle(t), backgroundColor: t?.wash }}
       data-macro-id={lifted ? undefined : r.id}
       {...handle}
       className={cn(

@@ -60,8 +60,9 @@ test("coloring is not an edit: Recently edited order stays", async ({ app: { pag
 test.describe("a switched-off macro", () => {
   test.use({ seed: { macros: [macro("Off one", { id: "off", enabled: false, color: "red" })] } });
 
-  test("keeps only the colored edge", async ({ app: { page } }) => {
+  test("is outlined in its color too", async ({ app: { page } }) => {
     await expect(row(page, "off")).toHaveCSS("border-left-color", RED);
-    await expect(row(page, "off")).not.toHaveCSS("border-top-color", RED);
+    await expect(row(page, "off")).toHaveCSS("border-top-color", RED);
+    await expect(row(page, "off")).toHaveCSS("border-bottom-color", RED);
   });
 });
