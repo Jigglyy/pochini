@@ -70,7 +70,7 @@ export default function App() {
   return (
     <div className="flex h-screen flex-col bg-background text-foreground">
       <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-6 py-3">
-        <img src={logo} alt="" aria-hidden draggable={false} className="size-7 shrink-0" />
+        <img src={logo} alt="" aria-hidden draggable={false} className="size-9 shrink-0" />
         <h1 className="text-lg font-semibold tracking-tight">Pochini</h1>
 
         {route.kind !== "home" && (
