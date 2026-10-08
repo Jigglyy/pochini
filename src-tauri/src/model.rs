@@ -348,6 +348,9 @@ pub struct Macro {
     /// run instead of ignoring the press. Only meaningful for `TriggerMode::Once`.
     #[serde(default)]
     pub queue: bool,
+    /// Where queued runs start (only with `queue`).
+    #[serde(default)]
+    pub queue_from: QueueFrom,
     /// When the run ends, move the cursor back to where the macro started
     /// (the activation point). Not after Panic / Stop / switching off.
     #[serde(default)]
@@ -360,6 +363,21 @@ pub struct Macro {
     pub created_at: String,
     #[serde(default)]
     pub updated_at: String,
+}
+
+/// The activation point a queued run uses: where the mouse was at its own
+/// press, or where the first press of the chain was. A press made while the
+/// macro runs catches the cursor wherever the macro has moved it, so "each
+/// press" can aim a queued "click where the mouse started" at the macro's
+/// own last click.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum QueueFrom {
+    #[default]
+    EachPress,
+    /// Every queued run starts from the activation point of the run that
+    /// started the chain (the first press, or where the Run countdown ended).
+    FirstPress,
 }
 
 fn default_true() -> bool {
@@ -386,6 +404,7 @@ impl Macro {
             trigger: None,
             repeat: Repeat::Once,
             queue: false,
+            queue_from: QueueFrom::EachPress,
             return_to_start: false,
             steps: Vec::new(),
             guard: None,
@@ -641,6 +660,16 @@ mod tests {
     }
 
     #[test]
+    fn queue_from_roundtrips_as_snake_case() {
+        let mut m = Macro::new("q");
+        m.queue_from = QueueFrom::FirstPress;
+        let json = serde_json::to_string(&m).unwrap();
+        assert!(json.contains(r#""queue_from":"first_press""#), "{json}");
+        let back: Macro = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.queue_from, QueueFrom::FirstPress);
+    }
+
+    #[test]
     fn colors_are_normalized_before_they_are_stored() {
         assert_eq!(normalize_color(Some("Red".into())), Some("red".into()));
         assert_eq!(normalize_color(Some("  sky ".into())), Some("sky".into()));
@@ -718,6 +747,7 @@ mod tests {
         assert!(!m.return_to_start);
         assert!(!m.favorite);
         assert!(m.color.is_none());
+        assert_eq!(m.queue_from, QueueFrom::EachPress);
         assert!(m.guard.is_none());
 
         let mut m = Macro::new("x");

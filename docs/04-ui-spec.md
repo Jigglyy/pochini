@@ -98,7 +98,8 @@ STEPS                                              Takes 480 ms to 705 ms
 - **When it runs** section:
   - Repeat: once / a set number of times / until stopped.
   - **Queue presses**: presses while this macro runs are queued instead of ignored. Disabled
-    (with a note) unless the mode is "Run once per press".
+    (with a short reason) unless the mode is "Run once per press". While on, "Queued runs start
+    from" offers Each press / The first press (the chain's first press position).
   - **Move mouse back to where it started**: after the run, the cursor returns to the press
     point. Not after Panic or Stop.
 - **Steps**: each step is a card with a number, a type icon and a plain-English summary;

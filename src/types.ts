@@ -92,6 +92,8 @@ export type Repeat =
   | { kind: "count"; n: number }
   | { kind: "forever" };
 
+export type QueueFrom = "each_press" | "first_press";
+
 /** "App only": the hotkey fires only while the mouse is over this app. */
 export type Guard = { process: string; label: string };
 
@@ -107,6 +109,8 @@ export type Macro = {
   repeat: Repeat;
   /** Presses while running are queued instead of ignored. */
   queue: boolean;
+  /** Where queued runs start: their own press, or the chain's first press. */
+  queue_from: QueueFrom;
   /** When the run ends, move the cursor back to where the macro started. */
   return_to_start: boolean;
   steps: Step[];

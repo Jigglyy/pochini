@@ -20,11 +20,17 @@ import { AppPicker } from "@/components/AppPicker";
 import { KeyCapture } from "@/components/KeyCapture";
 import { SortableStepRow, StepFace } from "@/components/StepRow";
 import { DROP_ANIMATION, useDragSensors } from "@/components/sortable";
-import { Field, Notice, Section, ToggleRow } from "@/components/layout";
+import { HelpTip } from "@/components/HelpTip";
+import { Field, Notice, Section, Segmented, ToggleRow } from "@/components/layout";
 import { getMacro, saveMacro, testSteps } from "@/lib/ipc";
 import { tone, useStepColors } from "@/lib/colors";
 import { aimPoints, blankStep, fmtRange, newId, stepRange, type NewStepKind } from "@/lib/steps";
-import type { Macro, Repeat, Step, TriggerMode } from "@/types";
+import type { Macro, QueueFrom, Repeat, Step, TriggerMode } from "@/types";
+
+const QUEUE_FROM: readonly { value: QueueFrom; label: string }[] = [
+  { value: "each_press", label: "Each press" },
+  { value: "first_press", label: "The first press" },
+];
 
 const ADD: { kind: NewStepKind; label: string; Icon: typeof Play; hint: string }[] = [
   { kind: "click", label: "Click", Icon: MousePointerClick, hint: "Click a fixed position" },
@@ -312,11 +318,34 @@ export function MacroEditor({
         <ToggleRow
           label="Queue presses"
           hint={t && t.mode !== "once" ? 'Only in "Run once per press" mode.' : undefined}
-          help="Pressing the hotkey while this macro runs queues another run instead of ignoring the press. Runs follow one after another, each from its own press position. Panic stop clears the queue."
+          help="Pressing the hotkey while this macro runs queues another run instead of ignoring the press. Runs follow one after another. Panic stop clears the queue."
           checked={m.queue}
           disabled={!!t && t.mode !== "once"}
           onChange={(queue) => edit({ queue })}
-        />
+        >
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="text-muted-foreground">Queued runs start from</span>
+            <Segmented
+              label="Queued runs start from"
+              value={m.queue_from}
+              options={QUEUE_FROM}
+              onChange={(queue_from) => edit({ queue_from })}
+            />
+            <HelpTip about="where queued runs start">
+              <div className="flex flex-col gap-1.5">
+                <p>
+                  <span className="font-medium">Each press</span>: where the mouse was when you pressed the
+                  hotkey. A press made while the macro runs catches the mouse wherever the macro moved it.
+                </p>
+                <p>
+                  <span className="font-medium">The first press</span>: every queued run starts where the first
+                  press was, so "Click where the mouse started" keeps clicking that spot. A press after the queue
+                  has emptied starts a new chain.
+                </p>
+              </div>
+            </HelpTip>
+          </div>
+        </ToggleRow>
         <ToggleRow
           label="Move mouse back to where it started"
           help="When the macro ends, the cursor jumps back to where it was when the macro started. Also after releasing a hold-to-repeat key or pressing a toggle hotkey again, but not after Panic or Stop."

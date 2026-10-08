@@ -30,7 +30,7 @@ import type { Anchor, Modifier, Step } from "@/types";
 import { CoordPicker } from "./CoordPicker";
 import { JitterField } from "./JitterField";
 import { KeyCapture } from "./KeyCapture";
-import { Field } from "./layout";
+import { Field, Segmented } from "./layout";
 import { useSortableItem, type DragHandle } from "./sortable";
 import { colorName, KIND_ICONS, KindChip, SwatchGrid } from "./StepColors";
 
@@ -67,32 +67,14 @@ function IconAction({ label, onClick, children, danger }: {
   );
 }
 
+const TARGETS = [
+  { value: "fixed", label: "Fixed position" },
+  { value: "activation", label: "Mouse start + offset" },
+  { value: "previous", label: "Previous point + offset" },
+] as const;
+
 function TargetPicker({ anchor, onChange }: { anchor: Anchor; onChange: (a: Anchor) => void }) {
-  const opts: { value: Anchor; label: string }[] = [
-    { value: "fixed", label: "Fixed position" },
-    { value: "activation", label: "Mouse start + offset" },
-    { value: "previous", label: "Previous point + offset" },
-  ];
-  return (
-    <div role="group" aria-label="Target" className="inline-flex flex-wrap rounded-md border border-input p-0.5">
-      {opts.map((o) => (
-        <button
-          key={o.value}
-          type="button"
-          onClick={() => onChange(o.value)}
-          aria-pressed={anchor === o.value}
-          className={cn(
-            "rounded-[5px] px-2.5 py-1 text-sm transition-colors",
-            anchor === o.value
-              ? "bg-accent font-medium text-foreground"
-              : "text-muted-foreground hover:text-foreground",
-          )}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
+  return <Segmented label="Target" value={anchor} options={TARGETS} onChange={onChange} />;
 }
 
 const TARGET_HELP = (

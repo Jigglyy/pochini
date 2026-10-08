@@ -131,6 +131,39 @@ export function ToggleRow({
   );
 }
 
+/** A few mutually exclusive choices in one bordered strip. */
+export function Segmented<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  /** Names the group for screen readers. */
+  label: string;
+  value: T;
+  options: readonly { value: T; label: string }[];
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div role="group" aria-label={label} className="inline-flex flex-wrap rounded-md border border-input p-0.5">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          onClick={() => onChange(o.value)}
+          aria-pressed={value === o.value}
+          className={cn(
+            "rounded-[5px] px-2.5 py-1 text-sm transition-colors",
+            value === o.value ? "bg-accent font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /** One keycap. */
 export function Kbd({ children, className }: { children: ReactNode; className?: string }) {
   return (

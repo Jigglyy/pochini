@@ -29,6 +29,7 @@ version.
   "trigger": { /* Trigger */ },
   "repeat": { "kind": "once" },  // or {"kind":"count","n":10} | {"kind":"forever"}
   "queue": false,                // true: presses while running are queued, not ignored
+  "queue_from": "each_press",    // or "first_press": where queued runs start (see Queue)
   "return_to_start": false,      // true: move the cursor back to where the run started
   "steps": [ /* Step */ ],
   "guard": null,                 // optional Guard, see below
@@ -246,8 +247,13 @@ restarts of the target app. The shape replaces a reserved, never-written
 `"queue": true` changes what a press does while something is already running: instead of being
 ignored, it is appended to a FIFO queue (at most 50 entries), and each queued run starts right
 after the previous one finishes, without interrupting it. Every queued press carries the mouse
-position from its own press, so "click where the mouse started" steps aim where the user
-pointed at that press rather than wherever the previous run left the cursor. Panic stop, the
+position from its own press (`"queue_from": "each_press"`, the default). But a press made
+while the macro runs catches the cursor wherever the macro has moved it, so a queued "click
+where the mouse started" can land on the macro's own last click. `"queue_from": "first_press"`
+makes every queued run reuse the activation point of the run that started the chain (the
+first press, or where the Run countdown ended); "move mouse back" returns there too. A press
+after the queue has emptied starts a new chain. Implemented in the run thread of `app.rs`
+(`chain_start`), which drains the queue back to back. Panic stop, the
 master switch going off, and switching the macro off (or deleting it) all clear its queued
 runs. Only meaningful for `"mode": "once"`; hold-to-repeat and toggle-mode macros never queue.
 

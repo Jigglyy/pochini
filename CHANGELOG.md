@@ -4,6 +4,16 @@ All notable changes to Pochini. Versions follow [semantic versioning](https://se
 while the major version is 0, a minor bump may change behaviour or the macro file format.
 Each version is built with `npm run release` into `release/Pochini-<version>.exe`.
 
+## 0.9.0 - 2026-10-08
+
+### Added
+
+- **Queued runs can start from the first press.** With Queue presses on, choose "Queued runs
+  start from": Each press (as before) or The first press. A press made while the macro runs
+  catches the mouse wherever the macro moved it, so a queued "Click where the mouse started"
+  used to click the macro's own last spot; with The first press, every queued run starts where
+  the first press was. A press after the queue has emptied starts fresh.
+
 ## 0.8.2 - 2026-10-08
 
 ### Fixed

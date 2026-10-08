@@ -9,7 +9,7 @@ use crate::engine::{timer, CancelToken, Engine};
 use crate::hotkey::logic::{Seen, SeenResult, Via};
 use crate::hotkey::{BindingTable, TriggerEvent};
 use crate::input::InputBackend;
-use crate::model::{Macro, MacroFile, Repeat, Settings, TriggerMode};
+use crate::model::{Macro, MacroFile, QueueFrom, Repeat, Settings, TriggerMode};
 use crate::storage::Store;
 
 /// How many presses can wait behind a running macro. A cap rather than
@@ -55,6 +55,9 @@ pub struct Pending {
     pub delay_ms: u64,
     /// Where the mouse was at the press that queued it.
     pub at: Option<(i32, i32)>,
+    /// Queued with `QueueFrom::FirstPress`: start from where the chain of
+    /// back-to-back runs started instead of from `at`.
+    pub from_chain_start: bool,
 }
 
 /// How many recent hotkey reports the Settings "Hotkey check" keeps.
@@ -271,10 +274,11 @@ fn handle(state: &Arc<AppState>, ev: TriggerEvent) {
             }
             // Queueing only makes sense for one run per press.
             let queueable = m.queue && matches!(mode, None | Some(TriggerMode::Once));
-            launch(state, Pending { mac: m, delay_ms, at }, queueable);
+            let from_chain_start = queueable && m.queue_from == QueueFrom::FirstPress;
+            launch(state, Pending { mac: m, delay_ms, at, from_chain_start }, queueable);
         }
         TriggerEvent::RunAdhoc { mac, delay_ms } => {
-            launch(state, Pending { mac: *mac, delay_ms, at: None }, false)
+            launch(state, Pending { mac: *mac, delay_ms, at: None, from_chain_start: false }, false)
         }
         TriggerEvent::Seen(seen) => state.record_seen(seen),
     }
@@ -313,15 +317,26 @@ fn launch(state: &Arc<AppState>, first: Pending, queueable: bool) {
     let st = state.clone();
     let spawned = std::thread::Builder::new().name("macro-run".into()).spawn(move || {
         let mut job = Some((first, run_id, cancel));
+        // The activation point of the first run in this chain of back-to-back
+        // runs, for queued runs set to start from the first press.
+        let mut chain_start: Option<(i32, i32)> = None;
         while let Some((p, run_id, cancel)) = job.take() {
             // The countdown lives here rather than in the UI: a webview timer
             // gets throttled the moment the user switches to the game, which
             // is exactly what the countdown is for. It is cancellable.
             let go = p.delay_ms == 0 || timer::wait(p.delay_ms, &cancel);
             if go {
+                let at = match chain_start {
+                    Some(start) if p.from_chain_start => Some(start),
+                    // No point from a press (the Run countdown just ended):
+                    // read it now, which is what the engine would do anyway,
+                    // so the chain knows where it started.
+                    _ => p.at.or_else(|| st.input.cursor_pos().ok()),
+                };
+                chain_start = chain_start.or(at);
                 let seed = st.settings.lock().unwrap().rng_seed;
                 let mut engine = Engine::new(st.input.clone(), seed);
-                let _ = engine.run_at(&p.mac, &cancel, p.at);
+                let _ = engine.run_at(&p.mac, &cancel, at);
             }
 
             // Hand over to the next queued run, or release the slot. If an
@@ -525,6 +540,50 @@ mod tests {
         }
         assert!(wait_until(|| moves(&input).len() == 3, 2000));
         assert_eq!(moves(&input), vec![Event::Move(1, 1), Event::Move(2, 2), Event::Move(3, 3)]);
+    }
+
+    fn press(id: &str, at: (i32, i32)) -> TriggerEvent {
+        TriggerEvent::Start { macro_id: id.into(), delay_ms: 0, at: Some(at) }
+    }
+
+    fn first_press_marker(id: &str) -> Macro {
+        let mut m = marker(id, true, Anchor::Activation);
+        m.queue_from = QueueFrom::FirstPress;
+        m
+    }
+
+    /// The feature: presses made while the macro runs catch the cursor
+    /// wherever the macro moved it; "first press" ignores that and reuses
+    /// where the chain started.
+    #[test]
+    fn with_first_press_every_queued_run_starts_where_the_chain_started() {
+        let (st, input, _) = state_with(vec![first_press_marker("q")]);
+        for p in [(1, 1), (2, 2), (3, 3)] {
+            handle(&st, press("q", p));
+        }
+        assert!(wait_until(|| moves(&input).len() == 3, 2000));
+        assert_eq!(moves(&input), vec![Event::Move(1, 1); 3]);
+    }
+
+    #[test]
+    fn a_chain_started_by_run_uses_the_cursor_at_the_end_of_the_countdown() {
+        let (st, input, _) = state_with(vec![first_press_marker("q")]);
+        handle(&st, TriggerEvent::Start { macro_id: "q".into(), delay_ms: 30, at: None });
+        handle(&st, press("q", (9, 9)));
+        assert!(wait_until(|| moves(&input).len() == 2, 2000));
+        // FakeInput's cursor starts at (0, 0).
+        assert_eq!(moves(&input), vec![Event::Move(0, 0), Event::Move(0, 0)]);
+    }
+
+    #[test]
+    fn after_the_queue_drains_the_next_press_starts_a_new_chain() {
+        let (st, input, _) = state_with(vec![first_press_marker("q")]);
+        handle(&st, press("q", (1, 1)));
+        handle(&st, press("q", (2, 2)));
+        assert!(wait_until(|| moves(&input).len() == 2 && st.running_id().is_none(), 2000));
+        handle(&st, press("q", (5, 5)));
+        assert!(wait_until(|| moves(&input).len() == 3, 2000));
+        assert_eq!(moves(&input), vec![Event::Move(1, 1), Event::Move(1, 1), Event::Move(5, 5)]);
     }
 
     #[test]
