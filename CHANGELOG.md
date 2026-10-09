@@ -4,6 +4,20 @@ All notable changes to Pochini. Versions follow [semantic versioning](https://se
 while the major version is 0, a minor bump may change behaviour or the macro file format.
 Each version is built with `npm run release` into `release/Pochini-<version>.exe`.
 
+## 0.9.1 - 2026-10-09
+
+### Fixed
+
+- Queued runs drifted to a new spot after the second press. That happened with "Queued runs
+  start from: Each press", which was the default: a press made while the macro runs catches
+  the mouse where the macro left it, and "Move mouse back" then kept returning there. **The
+  first press** is now the default, and turning Queue presses on selects it.
+
+### Added
+
+- While a macro has unsaved changes, the editor says that its hotkey still runs the saved
+  version.
+
 ## 0.9.0 - 2026-10-08
 
 ### Added

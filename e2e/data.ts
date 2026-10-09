@@ -15,7 +15,7 @@ export function macro(name: string, o: Partial<Macro> = {}): Macro {
     trigger: null,
     repeat: { kind: "once" },
     queue: false,
-    queue_from: "each_press",
+    queue_from: "first_press",
     return_to_start: false,
     steps: [],
     guard: null,

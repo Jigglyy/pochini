@@ -84,6 +84,8 @@ STEPS                                              Takes 480 ms to 705 ms
   [+ Click] [+ Click at mouse] [+ Move] [+ Key] [+ Type text] [+ Wait] [+ Scroll]
 ```
 
+- While there are unsaved changes, a line under the title says the hotkey still runs the saved
+  version.
 - **Name** is a large inline input. **Test** runs the current, unsaved steps after the same
   3 second countdown. **Save** (or Ctrl+S) is enabled only when there are changes.
 - **Trigger** section:
@@ -99,7 +101,7 @@ STEPS                                              Takes 480 ms to 705 ms
   - Repeat: once / a set number of times / until stopped.
   - **Queue presses**: presses while this macro runs are queued instead of ignored. Disabled
     (with a short reason) unless the mode is "Run once per press". While on, "Queued runs start
-    from" offers Each press / The first press (the chain's first press position).
+    from" offers The first press (default; turning the queue on selects it) / Each press.
   - **Move mouse back to where it started**: after the run, the cursor returns to the press
     point. Not after Panic or Stop.
 - **Steps**: each step is a card with a number, a type icon and a plain-English summary;

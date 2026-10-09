@@ -533,8 +533,10 @@ mod tests {
     }
 
     #[test]
-    fn each_queued_run_uses_the_mouse_position_from_its_own_press() {
-        let (st, input, _) = state_with(vec![marker("q", true, Anchor::Activation)]);
+    fn with_each_press_every_queued_run_uses_the_mouse_position_from_its_own_press() {
+        let mut m = marker("q", true, Anchor::Activation);
+        m.queue_from = QueueFrom::EachPress;
+        let (st, input, _) = state_with(vec![m]);
         for p in [(1, 1), (2, 2), (3, 3)] {
             handle(&st, TriggerEvent::Start { macro_id: "q".into(), delay_ms: 0, at: Some(p) });
         }
@@ -547,8 +549,8 @@ mod tests {
     }
 
     fn first_press_marker(id: &str) -> Macro {
-        let mut m = marker(id, true, Anchor::Activation);
-        m.queue_from = QueueFrom::FirstPress;
+        let m = marker(id, true, Anchor::Activation);
+        assert_eq!(m.queue_from, QueueFrom::FirstPress, "the default");
         m
     }
 
@@ -584,6 +586,70 @@ mod tests {
         handle(&st, press("q", (5, 5)));
         assert!(wait_until(|| moves(&input).len() == 3, 2000));
         assert_eq!(moves(&input), vec![Event::Move(1, 1), Event::Move(1, 1), Event::Move(5, 5)]);
+    }
+
+    /// The user's "Fill form": click where the mouse started, two fixed clicks,
+    /// move the mouse back. A second Space press lands while run 1 is on its
+    /// last click, so it catches the cursor there.
+    fn start_and_two_clicks(id: &str, from: QueueFrom) -> Macro {
+        let click = |anchor, x, y| Step::Click {
+            id: "c".into(),
+            x,
+            y,
+            button: crate::model::MouseButton::Left,
+            action: crate::model::ClickAction::Click,
+            anchor,
+            dx: 0,
+            dy: 0,
+            coord_jitter_px: 0,
+            hold_ms: Jitter::exact(5),
+            settle_ms: Jitter::exact(5),
+            move_duration_ms: 0,
+            capture: None,
+        };
+        let mut m = Macro::new(id);
+        m.id = id.into();
+        m.queue = true;
+        m.queue_from = from;
+        m.return_to_start = true;
+        m.steps = vec![click(Anchor::Activation, 0, 0), click(Anchor::Fixed, 1127, 830), click(Anchor::Fixed, 1504, 938)];
+        m
+    }
+
+    /// The first click of each run, which aims at that run's start point.
+    fn run_starts(input: &FakeInput) -> Vec<Event> {
+        moves(input).into_iter().filter(|e| !matches!(e, Event::Move(1127, 830) | Event::Move(1504, 938))).collect()
+    }
+
+    #[test]
+    fn start_and_two_clicks_with_each_press_drifts_to_where_the_macro_left_the_cursor() {
+        let (st, input, _) = state_with(vec![start_and_two_clicks("s", QueueFrom::EachPress)]);
+        handle(&st, press("s", (500, 400)));
+        handle(&st, press("s", (1504, 938))); // pressed during run 1's last click
+        assert!(wait_until(|| st.running_id().is_none() && moves(&input).len() >= 8, 3000));
+        // Run 2 starts at the macro's own last click and "moves back" there,
+        // so every later run drifts too: the symptom the user reported.
+        let (start, a, b) = (Event::Move(500, 400), Event::Move(1127, 830), Event::Move(1504, 938));
+        assert_eq!(
+            moves(&input),
+            vec![start.clone(), a.clone(), b.clone(), start, b.clone(), a, b.clone(), b]
+        );
+    }
+
+    #[test]
+    fn start_and_two_clicks_with_first_press_starts_every_run_where_the_first_press_was() {
+        let (st, input, _) = state_with(vec![start_and_two_clicks("s", QueueFrom::FirstPress)]);
+        handle(&st, press("s", (500, 400)));
+        handle(&st, press("s", (1504, 938)));
+        handle(&st, press("s", (1127, 830)));
+        assert!(wait_until(|| st.running_id().is_none() && moves(&input).len() >= 12, 3000));
+        // Each run: start click at (500, 400), and "move back" returns there.
+        assert_eq!(run_starts(&input), vec![Event::Move(500, 400); 6]);
+    }
+
+    #[test]
+    fn a_new_macro_queues_from_the_first_press() {
+        assert_eq!(Macro::new("n").queue_from, QueueFrom::FirstPress);
     }
 
     #[test]

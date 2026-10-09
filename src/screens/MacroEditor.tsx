@@ -28,8 +28,8 @@ import { aimPoints, blankStep, fmtRange, newId, stepRange, type NewStepKind } fr
 import type { Macro, QueueFrom, Repeat, Step, TriggerMode } from "@/types";
 
 const QUEUE_FROM: readonly { value: QueueFrom; label: string }[] = [
-  { value: "each_press", label: "Each press" },
   { value: "first_press", label: "The first press" },
+  { value: "each_press", label: "Each press" },
 ];
 
 const ADD: { kind: NewStepKind; label: string; Icon: typeof Play; hint: string }[] = [
@@ -190,6 +190,12 @@ export function MacroEditor({
         </Button>
       </div>
 
+      {dirty && (
+        <p className="-mt-5 text-xs text-warning" role="status">
+          Not saved yet. Your hotkey still runs the saved version.
+        </p>
+      )}
+
       {err && (
         <p className="rounded-md border border-destructive/50 bg-destructive/10 p-2.5 text-sm text-destructive">
           {err}
@@ -321,7 +327,9 @@ export function MacroEditor({
           help="Pressing the hotkey while this macro runs queues another run instead of ignoring the press. Runs follow one after another. Panic stop clears the queue."
           checked={m.queue}
           disabled={!!t && t.mode !== "once"}
-          onChange={(queue) => edit({ queue })}
+          // Turning the queue on starts from the first press: with a macro that
+          // moves the mouse, "each press" almost never aims where you meant.
+          onChange={(queue) => edit(queue ? { queue, queue_from: "first_press" } : { queue })}
         >
           <div className="flex flex-wrap items-center gap-2 text-sm">
             <span className="text-muted-foreground">Queued runs start from</span>
@@ -334,13 +342,13 @@ export function MacroEditor({
             <HelpTip about="where queued runs start">
               <div className="flex flex-col gap-1.5">
                 <p>
-                  <span className="font-medium">Each press</span>: where the mouse was when you pressed the
-                  hotkey. A press made while the macro runs catches the mouse wherever the macro moved it.
-                </p>
-                <p>
                   <span className="font-medium">The first press</span>: every queued run starts where the first
                   press was, so "Click where the mouse started" keeps clicking that spot. A press after the queue
                   has emptied starts a new chain.
+                </p>
+                <p>
+                  <span className="font-medium">Each press</span>: where the mouse was at that press. A press made
+                  while the macro runs catches the mouse wherever the macro moved it.
                 </p>
               </div>
             </HelpTip>

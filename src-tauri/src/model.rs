@@ -365,19 +365,20 @@ pub struct Macro {
     pub updated_at: String,
 }
 
-/// The activation point a queued run uses: where the mouse was at its own
-/// press, or where the first press of the chain was. A press made while the
-/// macro runs catches the cursor wherever the macro has moved it, so "each
-/// press" can aim a queued "click where the mouse started" at the macro's
-/// own last click.
+/// The activation point a queued run uses: where the first press of the
+/// chain was (the default), or where the mouse was at its own press. A press
+/// made while the macro runs catches the cursor wherever the macro has moved
+/// it, so with "each press" a queued "click where the mouse started" aims at
+/// the macro's own last click, and "move mouse back" keeps returning there.
+/// The user hit exactly that, so the first press is the default.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum QueueFrom {
-    #[default]
-    EachPress,
     /// Every queued run starts from the activation point of the run that
     /// started the chain (the first press, or where the Run countdown ended).
+    #[default]
     FirstPress,
+    EachPress,
 }
 
 fn default_true() -> bool {
@@ -404,7 +405,7 @@ impl Macro {
             trigger: None,
             repeat: Repeat::Once,
             queue: false,
-            queue_from: QueueFrom::EachPress,
+            queue_from: QueueFrom::FirstPress,
             return_to_start: false,
             steps: Vec::new(),
             guard: None,
@@ -747,7 +748,7 @@ mod tests {
         assert!(!m.return_to_start);
         assert!(!m.favorite);
         assert!(m.color.is_none());
-        assert_eq!(m.queue_from, QueueFrom::EachPress);
+        assert_eq!(m.queue_from, QueueFrom::FirstPress);
         assert!(m.guard.is_none());
 
         let mut m = Macro::new("x");
