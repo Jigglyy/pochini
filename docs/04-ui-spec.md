@@ -170,6 +170,10 @@ click reorders, adds or removes them (FLIP; drags are dnd-kit's). Screens fade i
 pill and confirmations ease in, colored rows ease between colors, the star pops when set.
 Nothing ever blocks a click. All of it is off when Windows' "Animation effects" is off.
 
+Nothing opens or appears out of view: an expanding step or switch option scrolls its card
+into view while it opens, a new or moved step or macro is scrolled to, and confirmations on
+the list stay pinned to the top while you scroll.
+
 ## Not built yet
 
 Tray icon (closing the window currently quits the app and its hotkeys), the hook-armed F2 coordinate capture with a magnifier, first-run notice

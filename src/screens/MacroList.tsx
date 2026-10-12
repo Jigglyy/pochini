@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type PointerEvent, type Ref } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type PointerEvent, type Ref } from "react";
 import { closestCenter, DndContext, DragOverlay, type DragEndEvent } from "@dnd-kit/core";
 import { arrayMove, SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import {
@@ -55,7 +55,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { KeyCombo, Kbd } from "@/components/layout";
 import { Swatch, SwatchGrid } from "@/components/StepColors";
 import { asColor, outlineStyle, tone, type StepColor } from "@/lib/colors";
-import { useFlip } from "@/lib/motion";
+import { refocusWithoutScroll, useFlip } from "@/lib/motion";
 import { comboLabel } from "@/components/KeyCapture";
 import { DROP_ANIMATION, useDragSensors, useSortableItem, type DragHandle } from "@/components/sortable";
 import {
@@ -273,27 +273,33 @@ export function MacroList({
         </div>
       </div>
 
-      {note && (
-        <div
-          role="status"
-          className="flex animate-in items-start gap-3 rounded-md border border-success/40 bg-success/10 px-3 py-2.5 text-sm fade-in-0 slide-in-from-top-1 motion-reduce:animate-none"
-        >
-          <span className="min-w-0 flex-1 break-words">{note}</span>
-          <button
-            type="button"
-            onClick={() => setNote(null)}
-            aria-label="Dismiss"
-            className="text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <X className="size-4" />
-          </button>
+      {/* Sticky, so a confirmation or error shows even while scrolled down
+          the list (Export... from a row near the bottom). Opaque tints, as
+          rows scroll underneath. */}
+      {(note || err) && (
+        <div className="sticky top-0 z-20 flex flex-col gap-2">
+          {note && (
+            <div
+              role="status"
+              className="flex animate-in items-start gap-3 rounded-md border border-success/40 bg-[color-mix(in_oklab,var(--success)_12%,var(--background))] px-3 py-2.5 text-sm shadow-sm fade-in-0 slide-in-from-top-1 motion-reduce:animate-none"
+            >
+              <span className="min-w-0 flex-1 break-words">{note}</span>
+              <button
+                type="button"
+                onClick={() => setNote(null)}
+                aria-label="Dismiss"
+                className="text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+          )}
+          {err && (
+            <p className="animate-in rounded-md border border-destructive/50 bg-[color-mix(in_oklab,var(--destructive)_12%,var(--background))] p-2.5 text-sm text-destructive shadow-sm fade-in-0">
+              {err}
+            </p>
+          )}
         </div>
-      )}
-
-      {err && (
-        <p className="rounded-md border border-destructive/50 bg-destructive/10 p-2.5 text-sm text-destructive">
-          {err}
-        </p>
       )}
 
       {rows && rows.length > 0 && (
@@ -485,6 +491,8 @@ function MacroRow({
 }) {
   const grip = handle !== undefined || lifted;
   const [pop, setPop] = useState(false);
+  const menuButton = useRef<HTMLButtonElement>(null);
+  const nameButton = useRef<HTMLButtonElement>(null);
   const color = asColor(r.color);
   const t = tone(color);
   const row = (
@@ -544,6 +552,7 @@ function MacroRow({
       </div>
 
       <button
+        ref={nameButton}
         type="button"
         onClick={() => actions.onOpen(r.id)}
         className="flex min-w-0 flex-1 flex-col items-start gap-1 text-left outline-none focus-visible:underline"
@@ -613,11 +622,11 @@ function MacroRow({
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon-sm" aria-label={`More actions for ${r.name}`}>
+            <Button ref={menuButton} variant="ghost" size="icon-sm" aria-label={`More actions for ${r.name}`}>
               <MoreHorizontal />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
+          <DropdownMenuContent align="end" onCloseAutoFocus={refocusWithoutScroll(menuButton)}>
             <DropdownMenuItem onSelect={() => actions.onOpen(r.id)}>
               <Pencil />
               Edit
@@ -671,7 +680,7 @@ function MacroRow({
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>{row}</ContextMenuTrigger>
-      <ContextMenuContent className="w-56">
+      <ContextMenuContent className="w-56" onCloseAutoFocus={refocusWithoutScroll(nameButton)}>
         <ContextMenuLabel className="text-xs font-medium text-muted-foreground">Color</ContextMenuLabel>
         <SwatchGrid value={color} onPick={(c) => actions.onColor(r, c)} Item={ContextMenuItem} />
         <ContextMenuSeparator />

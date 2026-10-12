@@ -26,8 +26,8 @@ this app owns.
 ## Status
 
 Implemented and building. `src-tauri/` has the full Rust core (model, storage, input,
-hotkey, engine, IPC) with **139 passing unit tests**; `src/` is a ShadCN + Tailwind v4 UI
-styled after Kanbini (macro list, step editor, settings), covered by **40 Playwright e2e
+hotkey, engine, IPC) with **141 passing unit tests**; `src/` is a ShadCN + Tailwind v4 UI
+styled after Kanbini (macro list, step editor, settings), covered by **45 Playwright e2e
 tests** against the real app. `npm run tauri dev` opens the app.
 
 The M0/M1 Win32 assumptions were measured before being ported; see
@@ -306,7 +306,13 @@ Mostly carried over from Kanbini, whose renderer this UI copies the look of:
   technique). Lists that change by a click (sort, star, menus, add, duplicate, delete,
   import) glide with `useFlip()`: give items `data-flip`, call `prepare()` right before the
   state change. Drag drops do not call it; dnd-kit animates those. Screens fade in on
-  arrival. **Not View Transitions**: while one runs, Chromium sends every click to the page
+  arrival.
+- **Nothing opens or appears out of view.** `Collapse` scrolls its card into view as it opens
+  (`reveal()`: bottom into view, top never pushed off, alongside the animation; not on a
+  screen's first render unless `revealOnMount`). `useFlip` reveals the first new item, or
+  the one passed to `prepare(key)` (a step being moved). Confirmations and errors on the
+  list are sticky. Menus that add or move things give focus back without scrolling
+  (`refocusWithoutScroll`), or Radix's focus return undoes the reveal. **Not View Transitions**: while one runs, Chromium sends every click to the page
   root, so quick repeated clicks were swallowed (an e2e test guards this). Windows'
   "Animation effects" off (prefers-reduced-motion) turns all of it off: a global rule in
   `index.css`, plus `useFlip` and `motion-reduce:` checks.
@@ -324,8 +330,8 @@ Mostly carried over from Kanbini, whose renderer this UI copies the look of:
 
 ## Testing
 
-`cargo test` is the gate: 139 tests, no Windows APIs required for most of them. The UI has
-`npm run e2e` (40 Playwright tests), run locally before every release.
+`cargo test` is the gate: 141 tests, no Windows APIs required for most of them. The UI has
+`npm run e2e` (45 Playwright tests), run locally before every release.
 
 - `input/coords.rs` walks **every pixel** of six virtual-desktop layouts (including negative
   origins and odd sizes) through the round trip, and has an explicit regression test that

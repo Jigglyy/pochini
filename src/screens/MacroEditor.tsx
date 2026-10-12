@@ -134,7 +134,7 @@ export function MacroEditor({
     if (j < 0 || j >= m.steps.length) return;
     const steps = [...m.steps];
     [steps[i], steps[j]] = [steps[j], steps[i]];
-    flip.prepare();
+    flip.prepare(m.steps[i].id); // keep the step being moved in view
     edit({ steps });
   };
 

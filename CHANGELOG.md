@@ -4,6 +4,19 @@ All notable changes to Pochini. Versions follow [semantic versioning](https://se
 while the major version is 0, a minor bump may change behaviour or the macro file format.
 Each version is built with `npm run release` into `release/Pochini-<version>.exe`.
 
+## 0.10.1 - 2026-10-12
+
+### Fixed
+
+- **Things that open now stay in view.** Expanding a step near the bottom scrolls so the whole
+  step shows, smoothly while it opens. The same goes for options that open under a switch, a
+  step you just added, a step you move past the edge, and a macro duplicated or imported to
+  the end of a long list. Export and import confirmations stay pinned at the top while you
+  scroll.
+- **Saving could, for an instant, leave no macros.json.** A crash or power cut at exactly that
+  moment would have started Pochini with an empty library. Saving now replaces the file in one
+  step, and if macros.json is ever missing, Pochini recovers your macros from macros.bak.
+
 ## 0.10.0 - 2026-10-12
 
 ### Added

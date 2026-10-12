@@ -178,7 +178,9 @@ function StepMenu({
 }) {
   const color = useStepColors()[kind];
   return (
-    <ContextMenuContent className="w-60">
+    // No focus return: it would scroll back to the header after Duplicate or
+    // a move has scrolled the step into view.
+    <ContextMenuContent className="w-60" onCloseAutoFocus={(e) => e.preventDefault()}>
       <ContextMenuLabel className="text-xs font-medium text-muted-foreground">
         Color for every {KIND_LABELS[kind]} step
       </ContextMenuLabel>
@@ -304,7 +306,7 @@ export function StepRow({
         />
       </ContextMenu>
 
-      <Collapse open={open}>
+      <Collapse open={open} revealOnMount={defaultOpen}>
         <div className="flex flex-col gap-4 border-t border-border px-4 py-4">
           {(step.type === "click" || step.type === "move") && (
             <>
