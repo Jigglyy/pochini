@@ -55,9 +55,15 @@ impl Store {
     /// preserved as `.corrupt-<timestamp>` rather than overwritten, because the
     /// user may be able to salvage it by hand.
     pub fn load_macros(&self) -> Result<MacroFile> {
-        let path = self.macros_path();
+        let mut path = self.macros_path();
         if !path.exists() {
-            return Ok(MacroFile::default());
+            // A save interrupted by an older build (see atomic_write) could
+            // leave only the backup: recover from it rather than start empty.
+            let bak = path.with_extension("bak");
+            if !bak.exists() {
+                return Ok(MacroFile::default());
+            }
+            path = bak;
         }
         let text = fs::read_to_string(&path)?;
         match serde_json::from_str::<serde_json::Value>(&text) {
@@ -142,10 +148,12 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
         f.write_all(bytes)?;
         f.sync_all()?;
     }
+    // Keep the previous version as .bak by copying, then replace the file in
+    // one step (MoveFileExW with REPLACE_EXISTING on Windows). The file must
+    // never be missing, even for a moment: moving it aside first left a
+    // window where a crash meant an empty library on the next start.
     if path.exists() {
-        let bak = path.with_extension("bak");
-        let _ = fs::remove_file(&bak);
-        let _ = fs::rename(path, &bak);
+        let _ = fs::copy(path, path.with_extension("bak"));
     }
     fs::rename(&tmp, path)?;
     Ok(())
@@ -238,6 +246,55 @@ mod tests {
         assert_eq!(s.load_macros().unwrap().macros[0].name, "second");
         // No temp file left behind.
         assert!(!d.join("macros.tmp").exists());
+    }
+
+    /// Regression: a save used to rename macros.json to macros.bak before
+    /// putting the new file in place, so for a moment there was no
+    /// macros.json. A crash there started the next run with an empty library,
+    /// and the save after that overwrote the backup with it.
+    #[test]
+    fn a_missing_macros_json_is_recovered_from_the_backup() {
+        let d = tmpdir("recover");
+        let s = Store::new(&d);
+        let mut f = MacroFile::default();
+        f.macros.push(Macro::new("keep me"));
+        s.save_macros(&f).unwrap();
+        s.save_macros(&f).unwrap(); // now macros.bak exists too
+        fs::remove_file(d.join("macros.json")).unwrap(); // the crash window
+
+        let back = s.load_macros().unwrap();
+        assert_eq!(back.macros.len(), 1);
+        assert_eq!(back.macros[0].name, "keep me");
+    }
+
+    #[test]
+    fn saving_never_leaves_the_library_without_macros_json() {
+        let d = tmpdir("never-missing");
+        let s = Store::new(&d);
+        let mut f = MacroFile::default();
+        f.macros.push(Macro::new("v1"));
+        s.save_macros(&f).unwrap();
+
+        // Watch the file from another thread while saving repeatedly.
+        let path = d.join("macros.json");
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (p2, stop2) = (path.clone(), stop.clone());
+        let watcher = std::thread::spawn(move || {
+            let mut missing = 0;
+            while !stop2.load(std::sync::atomic::Ordering::Relaxed) {
+                if !p2.exists() {
+                    missing += 1;
+                }
+            }
+            missing
+        });
+        for i in 0..200 {
+            f.macros[0].name = format!("v{i}");
+            s.save_macros(&f).unwrap();
+        }
+        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        assert_eq!(watcher.join().unwrap(), 0, "macros.json went missing during a save");
+        assert_eq!(s.load_macros().unwrap().macros[0].name, "v199");
     }
 
     #[test]
