@@ -16,7 +16,13 @@ import type { Macro } from "../src/types";
 const here = dirname(fileURLToPath(import.meta.url));
 const EXE = resolve(here, "../src-tauri/target/debug/pochini.exe");
 
-export type Seed = { macros?: Macro[] };
+export type Seed = {
+  macros?: Macro[];
+  /** Extra files written into the data folder before launch (name -> text). */
+  files?: Record<string, string>;
+  /** A file in the data folder that every save / open dialog "returns". */
+  dialog?: string;
+};
 
 export type App = {
   page: Page;
@@ -48,6 +54,9 @@ async function launch(seed: Seed): Promise<{ app: App; close: () => Promise<void
   if (seed.macros) {
     await writeFile(join(dataDir, "macros.json"), JSON.stringify({ schema_version: 1, macros: seed.macros }));
   }
+  for (const [name, text] of Object.entries(seed.files ?? {})) {
+    await writeFile(join(dataDir, name), text);
+  }
   const port = await freePort();
   const child = spawn(EXE, [], {
     env: {
@@ -55,6 +64,7 @@ async function launch(seed: Seed): Promise<{ app: App; close: () => Promise<void
       POCHINI_E2E: "1",
       POCHINI_DATA_DIR: dataDir,
       POCHINI_E2E_CDP_PORT: String(port),
+      ...(seed.dialog ? { POCHINI_E2E_DIALOG_FILE: join(dataDir, seed.dialog) } : {}),
     },
     stdio: ["ignore", "ignore", "pipe"],
   });

@@ -4,6 +4,20 @@ All notable changes to Pochini. Versions follow [semantic versioning](https://se
 while the major version is 0, a minor bump may change behaviour or the macro file format.
 Each version is built with `npm run release` into `release/Pochini-<version>.exe`.
 
+## 0.10.0 - 2026-10-12
+
+### Added
+
+- **Share macros.** Export a macro from its menu (or right-click) to a `.pochini.json` file,
+  and bring macros in with the new Import button. Imported macros are new macros with their
+  hotkey turned off, so a macro from someone else never fires until you have looked at it.
+  A name that is already taken gets " (imported)".
+- **Smooth animations, like Kanbini.** Steps open and close smoothly instead of jumping; so do
+  options that appear under a switch. Steps and macros glide into place when you move, add,
+  duplicate, delete, sort, star or import them. Screens fade in, the star pops, and the run
+  pill eases in. Nothing waits for an animation, and it all turns off when Windows'
+  "Animation effects" is off.
+
 ## 0.9.1 - 2026-10-09
 
 ### Fixed

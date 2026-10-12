@@ -6,6 +6,7 @@ import {
   ArrowDown,
   ArrowUp,
   Copy,
+  Download,
   GripVertical,
   ListOrdered,
   MoreHorizontal,
@@ -16,6 +17,8 @@ import {
   Star,
   Trash2,
   TriangleAlert,
+  Upload,
+  X,
 } from "lucide-react";
 import {
   AlertDialog,
@@ -52,12 +55,15 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { KeyCombo, Kbd } from "@/components/layout";
 import { Swatch, SwatchGrid } from "@/components/StepColors";
 import { asColor, outlineStyle, tone, type StepColor } from "@/lib/colors";
+import { useFlip } from "@/lib/motion";
 import { comboLabel } from "@/components/KeyCapture";
 import { DROP_ANIMATION, useDragSensors, useSortableItem, type DragHandle } from "@/components/sortable";
 import {
   createMacro,
   deleteMacro,
   duplicateMacro,
+  exportMacro,
+  importMacros,
   listMacros,
   reorderMacros,
   runMacro,
@@ -90,15 +96,23 @@ export function MacroList({
   const [rows, setRows] = useState<MacroSummary[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<MacroSummary | null>(null);
+  // Rows glide when sorting, starring, menus, duplicates, imports or deletes
+  // move them; new rows fade in. Drag drops are animated by dnd-kit.
+  const flip = useFlip<HTMLDivElement>();
+  /** A one-line confirmation after an export or import. */
+  const [note, setNote] = useState<string | null>(null);
   const [sort, setSortState] = useState<SortMode>(loadSortMode);
   const setSort = (m: SortMode) => {
+    flip.prepare();
     setSortState(m);
     saveSortMode(m);
   };
 
-  const reload = () =>
+  /** `animated`: rows glide into place, new ones fade in, removed ones out. */
+  const reload = (animated = false) =>
     listMacros()
       .then((r) => {
+        if (animated) flip.prepare();
         setRows(r);
         setErr(null);
       })
@@ -128,6 +142,8 @@ export function MacroList({
   };
 
   const favorite = async (r: MacroSummary, favorite: boolean) => {
+    // In "Favorites first" the row glides to its new group.
+    flip.prepare();
     setRows((rs) => rs?.map((x) => (x.id === r.id ? { ...x, favorite } : x)) ?? rs);
     try {
       await setMacroFavorite(r.id, favorite);
@@ -148,14 +164,34 @@ export function MacroList({
     }
   };
 
-  /** `group`: the new order of one group (or of everything, in Custom order). */
-  const reorder = async (group: MacroSummary[]) => {
+  /** `group`: the new order of one group (or of everything, in Custom order).
+   *  `animated` for Move up / down from a menu; a drag drop is already
+   *  animated by dnd-kit. */
+  const reorder = async (group: MacroSummary[], animated = false) => {
+    if (animated) flip.prepare();
     setRows((rs) => rs && applyGroupOrder(rs, group));
     try {
       await reorderMacros(group.map((r) => r.id));
     } catch (e) {
       setErr(String(e));
       reload();
+    }
+  };
+
+  const importFile = async () => {
+    try {
+      const names = await importMacros();
+      if (names.length === 0) return; // cancelled
+      await reload(true);
+      setErr(null);
+      setNote(
+        names.length === 1
+          ? `Imported "${names[0]}". Its hotkey is off until you turn it on.`
+          : `Imported ${names.length} macros. Their hotkeys are off until you turn them on.`,
+      );
+    } catch (e) {
+      setNote(null);
+      setErr(String(e));
     }
   };
 
@@ -170,9 +206,20 @@ export function MacroList({
     },
     onDuplicate: (r) =>
       duplicateMacro(r.id)
-        .then(reload)
+        .then(() => reload(true))
         .catch((e) => setErr(String(e))),
     onDelete: setPendingDelete,
+    onExport: async (r) => {
+      try {
+        const path = await exportMacro(r.id);
+        if (path) {
+          setErr(null);
+          setNote(`Exported "${r.name}" to ${path}`);
+        }
+      } catch (e) {
+        setErr(String(e));
+      }
+    },
   };
 
   const off = settings ? !settings.enabled : false;
@@ -181,7 +228,7 @@ export function MacroList({
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
       {off && (
-        <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
+        <div className="flex animate-in flex-wrap items-center gap-2 rounded-md border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground fade-in-0 slide-in-from-top-1">
           <span className="font-medium text-foreground">Macros are off.</span>
           <span>Hotkeys are ignored. Turn them back on with the switch in the top right</span>
           {settings?.toggle_hotkey ? (
@@ -215,6 +262,10 @@ export function MacroList({
               </Select>
             </div>
           )}
+          <Button variant="outline" onClick={importFile}>
+            <Upload />
+            Import
+          </Button>
           <Button onClick={create}>
             <Plus />
             New macro
@@ -222,34 +273,59 @@ export function MacroList({
         </div>
       </div>
 
+      {note && (
+        <div
+          role="status"
+          className="flex animate-in items-start gap-3 rounded-md border border-success/40 bg-success/10 px-3 py-2.5 text-sm fade-in-0 slide-in-from-top-1 motion-reduce:animate-none"
+        >
+          <span className="min-w-0 flex-1 break-words">{note}</span>
+          <button
+            type="button"
+            onClick={() => setNote(null)}
+            aria-label="Dismiss"
+            className="text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+      )}
+
       {err && (
         <p className="rounded-md border border-destructive/50 bg-destructive/10 p-2.5 text-sm text-destructive">
           {err}
         </p>
       )}
 
-      {rows &&
-        rows.length > 0 &&
-        groupMacros(rows, sort).map((g) => (
-          <MacroGroup
-            key={`${sort}-${g.key}`}
-            title={g.title}
-            rows={g.rows}
-            draggable={draggable}
-            onReorder={reorder}
-            actions={actions}
-          />
-        ))}
+      {rows && rows.length > 0 && (
+        <div ref={flip.ref} className="flex flex-col gap-6">
+          {groupMacros(rows, sort).map((g) => (
+            <MacroGroup
+              key={`${sort}-${g.key}`}
+              title={g.title}
+              rows={g.rows}
+              draggable={draggable}
+              onReorder={reorder}
+              actions={actions}
+            />
+          ))}
+        </div>
+      )}
 
       {rows && rows.length === 0 && (
         <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-card/40 p-12 text-center">
           <p className="text-sm text-muted-foreground">
             No macros yet. Create one, add a few clicks, and bind it to a key.
           </p>
-          <Button onClick={create}>
-            <Plus />
-            Create your first macro
-          </Button>
+          <div className="flex flex-wrap justify-center gap-2">
+            <Button onClick={create}>
+              <Plus />
+              Create your first macro
+            </Button>
+            <Button variant="outline" onClick={importFile}>
+              <Upload />
+              Import a macro
+            </Button>
+          </div>
         </div>
       )}
 
@@ -278,7 +354,7 @@ export function MacroList({
                 if (!pendingDelete) return;
                 await deleteMacro(pendingDelete.id);
                 setPendingDelete(null);
-                reload();
+                reload(true);
               }}
             >
               Delete
@@ -298,6 +374,7 @@ type RowActions = {
   onRun: (r: MacroSummary) => void;
   onDuplicate: (r: MacroSummary) => void;
   onDelete: (r: MacroSummary) => void;
+  onExport: (r: MacroSummary) => void;
 };
 
 /** One list of rows: the whole list, or the Favorites / Other macros group in
@@ -313,14 +390,14 @@ function MacroGroup({
   title?: string;
   rows: MacroSummary[];
   draggable: boolean;
-  onReorder: (rows: MacroSummary[]) => void;
+  onReorder: (rows: MacroSummary[], animated?: boolean) => void;
   actions: RowActions;
 }) {
   const sensors = useDragSensors();
   const [dragging, setDragging] = useState<string | null>(null);
 
   const move = (i: number, d: number) =>
-    draggable && i + d >= 0 && i + d < rows.length ? () => onReorder(arrayMove(rows, i, i + d)) : undefined;
+    draggable && i + d >= 0 && i + d < rows.length ? () => onReorder(arrayMove(rows, i, i + d), true) : undefined;
 
   const drop = ({ active, over }: DragEndEvent) => {
     setDragging(null);
@@ -407,6 +484,7 @@ function MacroRow({
   lifted?: boolean;
 }) {
   const grip = handle !== undefined || lifted;
+  const [pop, setPop] = useState(false);
   const color = asColor(r.color);
   const t = tone(color);
   const row = (
@@ -415,11 +493,16 @@ function MacroRow({
       // A colored row is outlined in its color with a faint wash, Kanbini
       // style, whether or not its hotkey is on (the switch and the dimmed
       // name already say "off"). Inline colors also beat the hover border.
-      style={{ ...style, ...outlineStyle(t), backgroundColor: t?.wash }}
+      style={{
+        ...style,
+        ...outlineStyle(t),
+        backgroundColor: t?.wash,
+      }}
+      data-flip={lifted ? undefined : r.id}
       data-macro-id={lifted ? undefined : r.id}
       {...handle}
       className={cn(
-        "group flex items-center gap-3 rounded-lg border border-l-[3px] border-border bg-card py-2.5 pr-3 pl-2 transition-colors hover:border-primary/40",
+        "group flex items-center gap-3 rounded-lg border border-l-[3px] border-border bg-card py-2.5 pr-3 pl-2 transition-[border-color,background-color,box-shadow] duration-200 ease-smooth hover:border-primary/40",
         !r.enabled && "bg-card/50",
         lifted && "cursor-grabbing border-primary/40 bg-card shadow-xl",
       )}
@@ -437,7 +520,10 @@ function MacroRow({
             <button
               type="button"
               {...noDrag}
-              onClick={() => actions.onFavorite(r, !r.favorite)}
+              onClick={() => {
+                if (!r.favorite) setPop(true);
+                actions.onFavorite(r, !r.favorite);
+              }}
               aria-pressed={r.favorite}
               aria-label={r.favorite ? `Remove ${r.name} from favorites` : `Add ${r.name} to favorites`}
               className={cn(
@@ -447,7 +533,10 @@ function MacroRow({
                   : "text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
               )}
             >
-              <Star className={cn("size-4", r.favorite && "fill-current")} />
+              <Star
+                className={cn("size-4", r.favorite && "fill-current", pop && "animate-pop")}
+                onAnimationEnd={() => setPop(false)}
+              />
             </button>
           </TooltipTrigger>
           <TooltipContent>{r.favorite ? "Remove from favorites" : "Add to favorites"}</TooltipContent>
@@ -551,6 +640,10 @@ function MacroRow({
               <Copy />
               Duplicate
             </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => actions.onExport(r)}>
+              <Download />
+              Export...
+            </DropdownMenuItem>
             {(onMoveUp || onMoveDown) && (
               <>
                 <DropdownMenuSeparator />
@@ -593,6 +686,10 @@ function MacroRow({
         <ContextMenuItem onSelect={() => actions.onDuplicate(r)}>
           <Copy />
           Duplicate
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={() => actions.onExport(r)}>
+          <Download />
+          Export...
         </ContextMenuItem>
         {(onMoveUp || onMoveDown) && (
           <>

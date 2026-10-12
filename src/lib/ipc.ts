@@ -29,6 +29,12 @@ export const setMacroColor = (id: string, color: string | null) =>
   invoke<void>("set_macro_color", { id, color });
 export const deleteMacro = (id: string) => invoke<void>("delete_macro", { id });
 export const duplicateMacro = (id: string) => invoke<Macro>("duplicate_macro", { id });
+/** Save one macro to a .pochini.json file the user picks; where it went, or
+ *  null if they cancelled. */
+export const exportMacro = (id: string) => invoke<string | null>("export_macro", { id });
+/** Add the macros from a file the user picks (hotkeys off); their names, or
+ *  [] if they cancelled. */
+export const importMacros = () => invoke<string[]>("import_macros");
 /** `ids`: the new order of all macros, or of one group of them (see `MacroFile::reorder`). */
 export const reorderMacros = (ids: string[]) => invoke<void>("reorder_macros", { ids });
 

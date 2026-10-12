@@ -47,7 +47,7 @@ export function RunIndicator({ pending, onDone }: { pending: PendingRun | null; 
   return (
     <div
       role="status"
-      className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-full border border-border bg-popover py-1.5 pl-4 pr-1.5 text-sm text-popover-foreground shadow-2xl"
+      className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 animate-in items-center gap-3 rounded-full border border-border bg-popover py-1.5 pl-4 pr-1.5 text-sm text-popover-foreground shadow-2xl duration-200 fade-in-0 slide-in-from-bottom-3"
     >
       <span className="relative flex size-2.5">
         <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-60" />

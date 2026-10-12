@@ -24,6 +24,7 @@ import { HelpTip } from "@/components/HelpTip";
 import { Field, Notice, Section, Segmented, ToggleRow } from "@/components/layout";
 import { getMacro, saveMacro, testSteps } from "@/lib/ipc";
 import { tone, useStepColors } from "@/lib/colors";
+import { useFlip } from "@/lib/motion";
 import { aimPoints, blankStep, fmtRange, newId, stepRange, type NewStepKind } from "@/lib/steps";
 import type { Macro, QueueFrom, Repeat, Step, TriggerMode } from "@/types";
 
@@ -68,6 +69,8 @@ export function MacroEditor({
   const [justAdded, setJustAdded] = useState<string | null>(null);
   const [draggingStep, setDraggingStep] = useState<string | null>(null);
   const sensors = useDragSensors();
+  // Steps glide when buttons or menus move, add or remove them.
+  const flip = useFlip<HTMLDivElement>();
   const colors = useStepColors();
 
   useEffect(() => {
@@ -124,11 +127,14 @@ export function MacroEditor({
     edit({ steps });
   };
 
+  // Buttons and menus glide steps to their new places; a drag drop does
+  // not, dnd-kit already animated it.
   const moveStep = (i: number, d: number) => {
     const j = i + d;
     if (j < 0 || j >= m.steps.length) return;
     const steps = [...m.steps];
     [steps[i], steps[j]] = [steps[j], steps[i]];
+    flip.prepare();
     edit({ steps });
   };
 
@@ -145,6 +151,7 @@ export function MacroEditor({
 
   const add = (kind: NewStepKind) => {
     const s = blankStep(kind);
+    flip.prepare();
     setJustAdded(s.id);
     edit({ steps: [...m.steps, s] });
   };
@@ -191,7 +198,7 @@ export function MacroEditor({
       </div>
 
       {dirty && (
-        <p className="-mt-5 text-xs text-warning" role="status">
+        <p className="-mt-5 animate-in text-xs text-warning fade-in-0" role="status">
           Not saved yet. Your hotkey still runs the saved version.
         </p>
       )}
@@ -387,7 +394,7 @@ export function MacroEditor({
             onDragCancel={() => setDraggingStep(null)}
           >
             <SortableContext items={m.steps.map((s) => s.id)} strategy={verticalListSortingStrategy}>
-              <div className="flex flex-col gap-2">
+              <div ref={flip.ref} className="flex flex-col gap-2">
                 {m.steps.map((s, i) => (
                   <SortableStepRow
                     key={s.id}
@@ -398,10 +405,14 @@ export function MacroEditor({
                     hasEarlierPoint={aims.slice(0, i).some((a) => a !== null)}
                     defaultOpen={s.id === justAdded}
                     onChange={(ns) => setStep(i, ns)}
-                    onDelete={() => edit({ steps: m.steps.filter((_, j) => j !== i) })}
+                    onDelete={() => {
+                      flip.prepare();
+                      edit({ steps: m.steps.filter((_, j) => j !== i) });
+                    }}
                     onDuplicate={() => {
                       const steps = [...m.steps];
                       steps.splice(i + 1, 0, { ...s, id: newId() } as Step);
+                      flip.prepare();
                       edit({ steps });
                     }}
                     onMove={(d) => moveStep(i, d)}

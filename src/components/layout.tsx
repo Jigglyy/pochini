@@ -1,6 +1,7 @@
 import { useId, type ReactNode } from "react";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
+import { Collapse } from "./Collapse";
 import { HelpTip } from "./HelpTip";
 
 /** A titled group: a heading, then one faintly filled panel whose rows are
@@ -126,7 +127,9 @@ export function ToggleRow({
           className="mt-0.5 shrink-0"
         />
       </div>
-      {checked && !disabled && children && <div className="mt-3 flex flex-col gap-2">{children}</div>}
+      <Collapse open={checked && !disabled && !!children}>
+        <div className="flex flex-col gap-2 pt-3">{children}</div>
+      </Collapse>
     </div>
   );
 }

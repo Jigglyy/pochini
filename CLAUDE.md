@@ -16,6 +16,9 @@ hotkey on or off; each macro also has its own switch, can **queue** repeated pre
 be restricted to **one app** (the hotkey only fires while the mouse is over that app), and
 can **move the mouse back** to where it started when the run ends.
 
+Macros can be **exported** to a `.pochini.json` file and **imported** from one, so people
+can share them; imported macros arrive with their hotkey off.
+
 Because input is synthesized at the OS level, macros work against **any** target (native
 apps, browsers, Electron apps, emulators, games without kernel anti-cheat), not just windows
 this app owns.
@@ -23,8 +26,8 @@ this app owns.
 ## Status
 
 Implemented and building. `src-tauri/` has the full Rust core (model, storage, input,
-hotkey, engine, IPC) with **124 passing unit tests**; `src/` is a ShadCN + Tailwind v4 UI
-styled after Kanbini (macro list, step editor, settings), covered by **24 Playwright e2e
+hotkey, engine, IPC) with **139 passing unit tests**; `src/` is a ShadCN + Tailwind v4 UI
+styled after Kanbini (macro list, step editor, settings), covered by **40 Playwright e2e
 tests** against the real app. `npm run tauri dev` opens the app.
 
 The M0/M1 Win32 assumptions were measured before being ported; see
@@ -127,6 +130,8 @@ src/                      React UI
   lib/ipc.ts              typed wrappers over the Tauri commands
   lib/steps.ts            step construction, plain-English summaries, duration estimates
   lib/order.ts            macro list sort modes and drag-group ordering
+  lib/motion.ts           useFlip (smooth list reordering) and the easing curve
+  components/Collapse.tsx animated open / close (step bodies, toggle options)
   lib/colors.ts           step colour palette (Kanbini accents), defaults, the colour store
   lib/prefs.ts            renderer-only prefs (localStorage "pochini.settings")
   lib/theme.ts            system/light/dark preference
@@ -139,6 +144,7 @@ src-tauri/src/
   commands.rs             the #[tauri::command] surface
   model.rs                Macro / Step / Trigger / Jitter / Anchor / Settings serde types
   storage.rs              atomic macros.json + settings.json
+  share.rs                export / import format for shared macros (pure, tested)
   input/coords.rs         pixel <-> normalized math       (pure, heavily tested)
   input/keys.rs           VK <-> scan code, extended bit  (pure)
   input/win.rs            SendInput + DPI + monitors      (unsafe)
@@ -294,6 +300,16 @@ Mostly carried over from Kanbini, whose renderer this UI copies the look of:
   (1623, 638)", "A random 50 to 75 ms each time") and short warnings or reasons ("Only in
   'Run once per press' mode"). Keep labels self-explanatory and help to two or three
   sentences. `ToggleRow` labels its switch by id, so the "?" never takes the switch's label.
+- **Motion, the Kanbini way**: 200 to 220 ms on one curve, `ease-smooth`
+  (`cubic-bezier(0.22, 1, 0.36, 1)`), `animate-pop` (springy) for small confirmations like
+  starring. Expand / collapse uses `Collapse` (grid-template-rows 0fr to 1fr, Kanbini's
+  technique). Lists that change by a click (sort, star, menus, add, duplicate, delete,
+  import) glide with `useFlip()`: give items `data-flip`, call `prepare()` right before the
+  state change. Drag drops do not call it; dnd-kit animates those. Screens fade in on
+  arrival. **Not View Transitions**: while one runs, Chromium sends every click to the page
+  root, so quick repeated clicks were swallowed (an e2e test guards this). Windows'
+  "Animation effects" off (prefers-reduced-motion) turns all of it off: a global rule in
+  `index.css`, plus `useFlip` and `motion-reduce:` checks.
 - **Quiet chrome**: secondary actions that also live in a menu (a step's move / duplicate /
   delete buttons) show on hover or keyboard focus only. Facts about a macro go on the line
   under its name, so the right side of every row stays aligned columns.
@@ -308,8 +324,8 @@ Mostly carried over from Kanbini, whose renderer this UI copies the look of:
 
 ## Testing
 
-`cargo test` is the gate: 124 tests, no Windows APIs required for most of them. The UI has
-`npm run e2e` (24 Playwright tests), run locally before every release.
+`cargo test` is the gate: 139 tests, no Windows APIs required for most of them. The UI has
+`npm run e2e` (40 Playwright tests), run locally before every release.
 
 - `input/coords.rs` walks **every pixel** of six virtual-desktop layouts (including negative
   origins and odd sizes) through the round trip, and has an explicit regression test that
@@ -335,6 +351,8 @@ Mostly carried over from Kanbini, whose renderer this UI copies the look of:
     grabs it a third of the way across (the star and buttons never start a drag).
   - dnd-kit swallows clicks for 50 ms after a drop; Radix leaves `pointer-events: none` on the
     body for a moment after a Select closes. The helpers wait for both.
+  - Export / Import dialogs: test mode answers them with `POCHINI_E2E_DIALOG_FILE`; specs
+    set it with `test.use({ seed: { dialog: "<file in the data folder>", files: {...} } })`.
   - Locate rows and steps by `data-macro-id` / `data-step-id`; a step header's accessible
     name contains its buttons' names, so use `exact: true` for "Move up" and friends.
 - Anything that needs a real desktop session belongs in `tools/m0-probe` or the

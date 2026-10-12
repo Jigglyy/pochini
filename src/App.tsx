@@ -35,13 +35,15 @@ export default function App() {
   const [editorDirty, setEditorDirty] = useState(false);
   const [pendingNav, setPendingNav] = useState<Route | null>(null);
 
+  const go = (to: Route) => setRoute(to);
+
   /** Navigate, but ask first if the editor has unsaved changes. */
   const navigate = (to: Route) => {
     if (route.kind === "editor" && editorDirty) {
       setPendingNav(to);
       return;
     }
-    setRoute(to);
+    go(to);
   };
 
   useEffect(() => {
@@ -81,7 +83,7 @@ export default function App() {
             <span aria-hidden className="h-5 w-px bg-border" />
             <button
               type="button"
-              onClick={() => (route.kind === "settings" ? setRoute(route.back) : goHome())}
+              onClick={() => (route.kind === "settings" ? go(route.back) : goHome())}
               className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
             >
               <ChevronLeft className="size-4" />
@@ -143,28 +145,34 @@ export default function App() {
       {/* Both-edges gutter keeps the column centred under the header whether
           or not the page scrolls, so nothing shifts sideways. */}
       <main className="flex-1 overflow-y-auto px-6 py-8 [scrollbar-gutter:stable_both-edges]">
-        {route.kind === "home" && (
-          <MacroList
-            settings={settings}
-            onOpen={(id) => {
-              setEditorName("");
-              setRoute({ kind: "editor", id });
-            }}
-            onRun={onRun}
-          />
-        )}
-        {route.kind === "editor" && (
-          <MacroEditor
-            key={route.id}
-            id={route.id}
-            onName={setEditorName}
-            onRun={onRun}
-            onDirtyChange={setEditorDirty}
-          />
-        )}
-        {route.kind === "settings" && (
-          <Settings settings={settings} onSettings={setSettings} theme={theme} onTheme={setTheme} />
-        )}
+        {/* Each screen fades in when you arrive (keyed, so it replays). */}
+        <div
+          key={route.kind === "editor" ? `editor-${route.id}` : route.kind}
+          className="animate-in duration-200 fade-in-0 slide-in-from-bottom-1"
+        >
+          {route.kind === "home" && (
+            <MacroList
+              settings={settings}
+              onOpen={(id) => {
+                setEditorName("");
+                setRoute({ kind: "editor", id });
+              }}
+              onRun={onRun}
+            />
+          )}
+          {route.kind === "editor" && (
+            <MacroEditor
+              key={route.id}
+              id={route.id}
+              onName={setEditorName}
+              onRun={onRun}
+              onDirtyChange={setEditorDirty}
+            />
+          )}
+          {route.kind === "settings" && (
+            <Settings settings={settings} onSettings={setSettings} theme={theme} onTheme={setTheme} />
+          )}
+        </div>
       </main>
 
       <RunIndicator pending={pending} onDone={onRunDone} />
@@ -185,7 +193,7 @@ export default function App() {
                 const to = pendingNav;
                 setPendingNav(null);
                 setEditorDirty(false);
-                if (to) setRoute(to);
+                if (to) go(to);
               }}
             >
               Discard

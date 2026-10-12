@@ -32,6 +32,7 @@ import { JitterField } from "./JitterField";
 import { KeyCapture } from "./KeyCapture";
 import { Field, Segmented } from "./layout";
 import { useSortableItem, type DragHandle } from "./sortable";
+import { Collapse } from "./Collapse";
 import { colorName, KIND_ICONS, KindChip, SwatchGrid } from "./StepColors";
 
 const MODS: Modifier[] = ["ctrl", "alt", "shift", "win"];
@@ -239,8 +240,9 @@ export function StepRow({
     <div
       ref={itemRef}
       data-step-id={step.id}
+      data-flip={step.id}
       style={{ ...style, ...outlineStyle(tone(color)) }}
-      className="group/step rounded-lg border border-l-[3px] border-border bg-card text-card-foreground"
+      className="group/step rounded-lg border border-l-[3px] border-border bg-card text-card-foreground transition-[border-color,box-shadow] duration-200 ease-smooth"
     >
       <ContextMenu>
         <ContextMenuTrigger asChild>
@@ -285,7 +287,10 @@ export function StepRow({
               </IconAction>
             </div>
             <ChevronRight
-              className={cn("size-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-90")}
+              className={cn(
+                "size-4 shrink-0 text-muted-foreground transition-transform duration-200 ease-smooth",
+                open && "rotate-90",
+              )}
             />
           </div>
         </ContextMenuTrigger>
@@ -299,7 +304,7 @@ export function StepRow({
         />
       </ContextMenu>
 
-      {open && (
+      <Collapse open={open}>
         <div className="flex flex-col gap-4 border-t border-border px-4 py-4">
           {(step.type === "click" || step.type === "move") && (
             <>
@@ -482,7 +487,7 @@ export function StepRow({
 
           {step.type === "wait" && <JitterField label="Wait" value={step.ms} onChange={(ms) => set({ ms })} />}
         </div>
-      )}
+      </Collapse>
     </div>
   );
 }

@@ -27,7 +27,7 @@ and the type is Windows 11's Segoe UI Variable. Labels stay short; each explanat
 ## Screen 1: Macros (home)
 
 ```
-Your macros                          Sort [Custom order  v]   [+ New macro]
+Your macros                Sort [Custom order  v]  [^ Import]  [+ New macro]
 
 | :: * Demo                              Space   [o==]  [> Run]  [...] |
 |      3 steps, 480 ms to 705 ms   [] Only in game.exe   Queues ...  |
@@ -40,6 +40,10 @@ Panic stop [Esc] stops a running macro at once.
 - The line under the name says what the macro is: step count and duration, "Only in
   <app>" for App only, "Queues presses", and a warning "Hotkey clash". The right side is
   fixed columns (hotkey, switch, Run, menu) so they line up down the list.
+- **Import** (header, and in the empty state) reads a `.pochini.json` file; **Export...** is in
+  each row's menu and right-click menu. A green line confirms ("Exported "Fill form" to ...",
+  "Imported 2 macros. Their hotkeys are off until you turn them on."), with a dismiss button;
+  a file that is not an export shows the reason in the error line.
 - **Colors**: right-click a row (or its menu > Color) for the same 14-accent palette as steps,
   plus "No color". A colored row is outlined in the accent (Kanbini's colored lists and
   boards), with a thicker left edge and a faint wash, whether or not its hotkey is on. The right-click menu also has Edit,
@@ -157,6 +161,14 @@ A floating pill at the bottom centre whenever something is running or counting d
   it shows "· N queued" and the button becomes **Stop all** (it also clears the queue).
 
 The user must always be able to tell that something is driving their mouse, and stop it.
+
+## Motion
+
+Kanbini's feel: 200 to 220 ms, `ease-smooth`. Step bodies and toggle options (App only picker,
+Queue choice, warnings) open and close by animating their height. Rows and steps glide when a
+click reorders, adds or removes them (FLIP; drags are dnd-kit's). Screens fade in, the run
+pill and confirmations ease in, colored rows ease between colors, the star pops when set.
+Nothing ever blocks a click. All of it is off when Windows' "Animation effects" is off.
 
 ## Not built yet
 
