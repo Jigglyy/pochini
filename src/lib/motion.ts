@@ -35,6 +35,51 @@ export function reveal(el: HTMLElement, grow = 0): void {
   box.scrollBy({ top: delta, behavior: reduced() ? "auto" : "smooth" });
 }
 
+/** Keep `el` in view while it grows (an opening card): every frame, scroll
+ *  just enough that its bottom stays visible, never pushing its top off,
+ *  until it has stopped growing (at least `ms`, at most four times that).
+ *  Scrolling once when the opening starts is not enough: the page is not
+ *  taller yet, so the browser caps the scroll at the old bottom, and a tall
+ *  step (a click step) stayed half off-screen. A fixed duration was not
+ *  enough either: on a busy machine the opening starts a few frames late.
+ *  Stops early if the user scrolls. Returns a cancel function. */
+export function follow(el: HTMLElement, ms: number): () => void {
+  const box = scrollParent(el);
+  if (!box) return () => {};
+  const margin = 16;
+  const start = performance.now();
+  let raf = 0;
+  let first = true;
+  let lastHeight = -1;
+  let still = 0;
+  const stop = () => {
+    cancelAnimationFrame(raf);
+    box.removeEventListener("wheel", stop);
+    box.removeEventListener("keydown", stop);
+  };
+  const tick = () => {
+    const view = box.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    const top = view.top + margin;
+    const bottom = view.bottom - margin;
+    let delta = 0;
+    if (first && r.top < top) delta = r.top - top; // a card opened while half above the view
+    else if (r.bottom > bottom) delta = Math.min(r.bottom - bottom, r.top - top);
+    first = false;
+    if (Math.abs(delta) >= 0.5) box.scrollTop += delta;
+    still = Math.abs(r.height - lastHeight) < 0.5 ? still + 1 : 0;
+    lastHeight = r.height;
+    const elapsed = performance.now() - start;
+    const done = (elapsed >= ms && still >= 3) || elapsed >= ms * 4;
+    if (done) stop();
+    else raf = requestAnimationFrame(tick);
+  };
+  box.addEventListener("wheel", stop, { passive: true });
+  box.addEventListener("keydown", stop);
+  raf = requestAnimationFrame(tick);
+  return stop;
+}
+
 /** For a menu's onCloseAutoFocus: give focus back to `ref`'s element without
  *  scrolling to it. Radix's own focus return scrolls the menu's button into
  *  view, which undid the scroll to a row the menu had just added (Duplicate). */

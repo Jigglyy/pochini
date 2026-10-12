@@ -27,7 +27,7 @@ this app owns.
 
 Implemented and building. `src-tauri/` has the full Rust core (model, storage, input,
 hotkey, engine, IPC) with **141 passing unit tests**; `src/` is a ShadCN + Tailwind v4 UI
-styled after Kanbini (macro list, step editor, settings), covered by **45 Playwright e2e
+styled after Kanbini (macro list, step editor, settings), covered by **53 Playwright e2e
 tests** against the real app. `npm run tauri dev` opens the app.
 
 The M0/M1 Win32 assumptions were measured before being ported; see
@@ -307,9 +307,14 @@ Mostly carried over from Kanbini, whose renderer this UI copies the look of:
   import) glide with `useFlip()`: give items `data-flip`, call `prepare()` right before the
   state change. Drag drops do not call it; dnd-kit animates those. Screens fade in on
   arrival.
-- **Nothing opens or appears out of view.** `Collapse` scrolls its card into view as it opens
-  (`reveal()`: bottom into view, top never pushed off, alongside the animation; not on a
-  screen's first render unless `revealOnMount`). `useFlip` reveals the first new item, or
+- **Nothing opens or appears out of view.** `Collapse` moves the screen with its card as it
+  opens (`follow()`: every frame until the card stops growing, its bottom into view, its top
+  never pushed off; not on a screen's first render unless `revealOnMount`). Two lessons:
+  scrolling once at the start is capped by the browser because the page is not taller yet
+  (a tall click step stayed half hidden, while a test with small wait steps passed); and the
+  opening must start only after React has drawn the box, or on a busy machine there is
+  nothing to animate or follow. `e2e/reveal.spec.ts` covers both with click steps at two
+  window sizes. `useFlip` reveals the first new item, or
   the one passed to `prepare(key)` (a step being moved). Confirmations and errors on the
   list are sticky. Menus that add or move things give focus back without scrolling
   (`refocusWithoutScroll`), or Radix's focus return undoes the reveal. **Not View Transitions**: while one runs, Chromium sends every click to the page
@@ -331,7 +336,7 @@ Mostly carried over from Kanbini, whose renderer this UI copies the look of:
 ## Testing
 
 `cargo test` is the gate: 141 tests, no Windows APIs required for most of them. The UI has
-`npm run e2e` (45 Playwright tests), run locally before every release.
+`npm run e2e` (53 Playwright tests), run locally before every release.
 
 - `input/coords.rs` walks **every pixel** of six virtual-desktop layouts (including negative
   origins and odd sizes) through the round trip, and has an explicit regression test that

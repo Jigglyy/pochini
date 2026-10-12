@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { reveal } from "@/lib/motion";
+import { follow } from "@/lib/motion";
 
 const DURATION = 220;
 
@@ -8,9 +8,9 @@ const DURATION = 220;
  *  the close animates too, is inert while closed, and lets focus rings show
  *  past its edges once fully open.
  *
- *  Opening scrolls the page so the whole card it belongs to (its parent
- *  element) ends up in view, alongside the animation; content that opens
- *  below the fold never stays hidden. Not on first render, so a screen does
+ *  Opening moves the screen with it, so the whole card it belongs to (its
+ *  parent element) ends up in view; content that opens below the fold never
+ *  stays hidden (see `follow`). Not on first render, so a screen does
  *  not jump when it loads with something already open, unless
  *  `revealOnMount` (a step that was just added). */
 export function Collapse({
@@ -32,35 +32,16 @@ export function Collapse({
   // effect run in development, which a "first run" flag would not.
   const prevOpen = useRef<boolean | null>(null);
   const revealed = useRef(false);
+  const pendingReveal = useRef(false);
 
+  // Opening is two steps. First mount the box (closed)...
   useEffect(() => {
     const was = prevOpen.current;
     prevOpen.current = open;
     if (open) {
+      pendingReveal.current = was === false || (revealOnMount && !revealed.current);
       setMounted(true);
-      const wantReveal = was === false || (revealOnMount && !revealed.current);
-      // Two frames: paint the closed state first, so the opening animates.
-      // A timer (not transitionend, which never fires with animations off)
-      // marks it fully open.
-      let inner = 0;
-      let settle = 0;
-      const outer = requestAnimationFrame(() => {
-        inner = requestAnimationFrame(() => {
-          setShown(true);
-          settle = window.setTimeout(() => setSettled(true), DURATION);
-          const owner = box.current?.parentElement;
-          if (wantReveal && owner && innerEl.current) {
-            revealed.current = true;
-            // The content's full height, which the card is about to gain.
-            reveal(owner, innerEl.current.scrollHeight - (box.current?.offsetHeight ?? 0));
-          }
-        });
-      });
-      return () => {
-        cancelAnimationFrame(outer);
-        cancelAnimationFrame(inner);
-        window.clearTimeout(settle);
-      };
+      return;
     }
     setSettled(false);
     setShown(false);
@@ -69,6 +50,38 @@ export function Collapse({
     // revealOnMount only matters on the first run.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // ...then, once it is really on the page, animate it open and move the
+  // screen along. Doing both in one effect raced on a busy machine: the
+  // frames came before React had drawn the box, so there was nothing to
+  // animate or follow and the step opened half off-screen.
+  useEffect(() => {
+    if (!open || !mounted) return;
+    // Two frames: paint the closed state first, so the opening animates.
+    // A timer (not transitionend, which never fires with animations off)
+    // marks it fully open.
+    let inner = 0;
+    let settle = 0;
+    let unfollow = () => {};
+    const outer = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() => {
+        setShown(true);
+        settle = window.setTimeout(() => setSettled(true), DURATION);
+        const owner = box.current?.parentElement;
+        if (pendingReveal.current && owner) {
+          pendingReveal.current = false;
+          revealed.current = true;
+          unfollow = follow(owner, DURATION + 80);
+        }
+      });
+    });
+    return () => {
+      cancelAnimationFrame(outer);
+      cancelAnimationFrame(inner);
+      window.clearTimeout(settle);
+      unfollow();
+    };
+  }, [open, mounted]);
 
   if (!mounted) return null;
   return (

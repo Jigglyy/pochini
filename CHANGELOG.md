@@ -4,6 +4,15 @@ All notable changes to Pochini. Versions follow [semantic versioning](https://se
 while the major version is 0, a minor bump may change behaviour or the macro file format.
 Each version is built with `npm run release` into `release/Pochini-<version>.exe`.
 
+## 0.10.2 - 2026-10-12
+
+### Fixed
+
+- Expanding a tall step near the bottom (a Click step) still left part of it off-screen. The
+  screen now moves along with the step as it opens, frame by frame, until all of it shows.
+  It also no longer misses when the PC is busy (with a game running, say). If you scroll
+  yourself while it opens, it stops following.
+
 ## 0.10.1 - 2026-10-12
 
 ### Fixed
