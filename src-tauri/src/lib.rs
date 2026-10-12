@@ -17,6 +17,7 @@ pub mod engine;
 pub mod hotkey;
 pub mod input;
 pub mod model;
+pub mod share;
 pub mod storage;
 
 use std::sync::{Arc, Mutex};
@@ -74,6 +75,7 @@ pub fn run() {
     }
 
     builder
+        .plugin(tauri_plugin_dialog::init())
         .setup(move |app| {
             #[cfg(debug_assertions)]
             let test_dir = e2e.as_ref().map(|t| t.data_dir.clone());
@@ -174,6 +176,8 @@ pub fn run() {
             commands::set_macro_enabled,
             commands::set_macro_favorite,
             commands::set_macro_color,
+            commands::export_macro,
+            commands::import_macros,
             commands::delete_macro,
             commands::duplicate_macro,
             commands::reorder_macros,

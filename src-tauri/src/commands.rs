@@ -175,32 +175,71 @@ pub fn delete_macro(state: State<'_, Arc<AppState>>, id: String) -> R<()> {
 #[tauri::command]
 pub fn duplicate_macro(state: State<'_, Arc<AppState>>, id: String) -> R<Macro> {
     let mut m = state.find(&id).ok_or_else(|| format!("no macro with id {id}"))?;
-    m.id = ulid::Ulid::new().to_string();
+    m.fresh_ids();
     m.name = format!("{} (copy)", m.name);
     // A duplicate must not inherit the hotkey, or both fire at once.
     m.trigger = None;
     m.favorite = false;
     m.created_at = now_iso8601();
     m.updated_at = m.created_at.clone();
-    for s in m.steps.iter_mut() {
-        reassign_step_id(s);
-    }
     state.macros.lock().unwrap().macros.push(m.clone());
     state.persist()?;
     state.refresh_bindings();
     Ok(m)
 }
 
-fn reassign_step_id(s: &mut Step) {
-    let new = ulid::Ulid::new().to_string();
-    match s {
-        Step::Click { id, .. }
-        | Step::Move { id, .. }
-        | Step::Scroll { id, .. }
-        | Step::Key { id, .. }
-        | Step::Text { id, .. }
-        | Step::Wait { id, .. } => *id = new,
+/// Where to save or read a shared macro file: the system dialog, or in the
+/// e2e test mode the file the test named (Playwright cannot drive native
+/// dialogs). `None` when the user cancels.
+fn pick_file(app: &tauri::AppHandle, save_as: Option<&str>) -> Option<std::path::PathBuf> {
+    #[cfg(debug_assertions)]
+    if let Some(p) = crate::e2e::dialog_file() {
+        return Some(p);
     }
+    use tauri_plugin_dialog::DialogExt;
+    let dialog = app.dialog().file().add_filter("Pochini macros", &["json"]);
+    let picked = match save_as {
+        Some(name) => dialog.set_file_name(name).blocking_save_file(),
+        None => dialog.blocking_pick_file(),
+    };
+    picked.and_then(|p| p.into_path().ok())
+}
+
+/// "Export...": write one macro to a .pochini.json file of the user's choice.
+/// Returns where it went, or `None` if the dialog was cancelled. Async so the
+/// blocking dialog never runs on the main thread.
+#[tauri::command]
+pub async fn export_macro(app: tauri::AppHandle, state: State<'_, Arc<AppState>>, id: String) -> R<Option<String>> {
+    let m = state.find(&id).ok_or_else(|| format!("no macro with id {id}"))?;
+    let Some(path) = pick_file(&app, Some(&crate::share::file_name(&m.name))) else {
+        return Ok(None);
+    };
+    std::fs::write(&path, crate::share::export(&[m])).map_err(|e| format!("Could not write {}: {e}", path.display()))?;
+    Ok(Some(path.display().to_string()))
+}
+
+/// "Import...": read a shared macro file and add its macros, hotkeys off.
+/// Returns the names added (empty if the dialog was cancelled).
+#[tauri::command]
+pub async fn import_macros(app: tauri::AppHandle, state: State<'_, Arc<AppState>>) -> R<Vec<String>> {
+    let Some(path) = pick_file(&app, None) else {
+        return Ok(Vec::new());
+    };
+    let meta = std::fs::metadata(&path).map_err(|e| format!("Could not open {}: {e}", path.display()))?;
+    if meta.len() > crate::share::MAX_BYTES as u64 {
+        return Err(crate::share::ShareError::TooBig.to_string());
+    }
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("Could not read {}: {e}", path.display()))?;
+    let added = {
+        let mut f = state.macros.lock().unwrap();
+        let names: Vec<String> = f.macros.iter().map(|m| m.name.clone()).collect();
+        let added = crate::share::import(&text, &names, &now_iso8601()).map_err(|e| e.to_string())?;
+        f.macros.extend(added.iter().cloned());
+        added
+    };
+    state.persist()?;
+    state.refresh_bindings();
+    Ok(added.into_iter().map(|m| m.name).collect())
 }
 
 /// A drag on the macro list: `ids` is the new order of all macros, or of one

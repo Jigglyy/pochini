@@ -206,6 +206,19 @@ pub enum Step {
     },
 }
 
+impl Step {
+    pub fn set_id(&mut self, new: String) {
+        match self {
+            Step::Click { id, .. }
+            | Step::Move { id, .. }
+            | Step::Scroll { id, .. }
+            | Step::Key { id, .. }
+            | Step::Text { id, .. }
+            | Step::Wait { id, .. } => *id = new,
+        }
+    }
+}
+
 fn default_hold() -> Jitter {
     Jitter {
         base: 25,
@@ -411,6 +424,15 @@ impl Macro {
             guard: None,
             created_at: now.clone(),
             updated_at: now,
+        }
+    }
+
+    /// Give this macro and every step new ids: a copy or an import is a new
+    /// macro, and step ids key the editor's list.
+    pub fn fresh_ids(&mut self) {
+        self.id = ulid::Ulid::new().to_string();
+        for s in self.steps.iter_mut() {
+            s.set_id(ulid::Ulid::new().to_string());
         }
     }
 

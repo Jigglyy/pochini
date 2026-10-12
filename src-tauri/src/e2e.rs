@@ -12,7 +12,9 @@
 //!   focused and never in the taskbar (`POCHINI_E2E_HEADED=1` shows it, for
 //!   watching a test),
 //! - gives WebView2 its own profile and a DevTools port
-//!   (`POCHINI_E2E_CDP_PORT`) that Playwright connects to.
+//!   (`POCHINI_E2E_CDP_PORT`) that Playwright connects to,
+//! - answers Export / Import file dialogs with `POCHINI_E2E_DIALOG_FILE`
+//!   instead of opening them (Playwright cannot drive native dialogs).
 
 use std::path::PathBuf;
 
@@ -37,6 +39,12 @@ pub fn from_env() -> Result<Option<E2e>, String> {
         .map_err(|e| format!("POCHINI_E2E_CDP_PORT: {e}"))?;
     let headed = std::env::var("POCHINI_E2E_HEADED").is_ok_and(|v| v == "1");
     Ok(Some(E2e { data_dir, cdp_port, headed }))
+}
+
+/// The file a test wants every save / open dialog to return.
+pub(crate) fn dialog_file() -> Option<PathBuf> {
+    std::env::var_os("POCHINI_E2E")?;
+    std::env::var_os("POCHINI_E2E_DIALOG_FILE").map(PathBuf::from)
 }
 
 impl E2e {

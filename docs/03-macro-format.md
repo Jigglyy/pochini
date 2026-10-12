@@ -258,6 +258,27 @@ after the queue has emptied starts a new chain. Implemented in the run thread of
 master switch going off, and switching the macro off (or deleting it) all clear its queued
 runs. Only meaningful for `"mode": "once"`; hold-to-repeat and toggle-mode macros never queue.
 
+## Sharing (export / import)
+
+Export (a macro's menu > Export...) writes one macro to a `.pochini.json` file:
+
+```jsonc
+{
+  "format": "pochini.macros",    // identifies the file
+  "version": 1,                  // bumped if the format changes; newer files are refused
+  "macros": [ /* Macro, as above */ ]
+}
+```
+
+The star (`favorite`) is personal and stays behind; everything else, including the color and
+the hotkey, travels. Import (the Import button) accepts that file, a bare macro object, or a
+`macros.json` backup. Every imported macro is a new macro: new macro and step ids, `created_at`
+and `updated_at` set to now, not a favorite, **`enabled: false`** (its hotkey stays off until
+the new owner turns it on, so someone else's macro never fires on Space by surprise), and a
+name made unique (" (imported)", " (imported 2)"...). Files over 2 MB or with more than 500
+macros are refused, as is anything that is not one of the three shapes, each with a plain
+reason. Rules and tests: `src-tauri/src/share.rs`.
+
 ## Design notes
 
 - **Coordinates are stored raw, not normalized.** Normalized 0..65535 values are a `SendInput`
