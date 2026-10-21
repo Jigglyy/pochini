@@ -1,6 +1,6 @@
 [package]
 name = "pochini"
-version = "0.10.2"
+version = "0.11.0"
 description = "Pochini: screen-coordinate click macros with global hotkeys"
 authors = ["Jigglyy"]
 edition = "2021"
