@@ -25,13 +25,14 @@ export function macro(name: string, o: Partial<Macro> = {}): Macro {
   };
 }
 
-export const wait = (ms: number): Step => ({ type: "wait", id: id("w"), ms: { base: ms, jitter: 0 } });
+export const wait = (ms: number): Step => ({ type: "wait", id: id("w"), shuffle: false, ms: { base: ms, jitter: 0 } });
 
 export type ClickStep = Extract<Step, { type: "click" }>;
 
 export const clickAt = (x: number, y: number): ClickStep => ({
   type: "click",
   id: id("c"),
+  shuffle: false,
   x,
   y,
   button: "left",
@@ -43,12 +44,15 @@ export const clickAt = (x: number, y: number): ClickStep => ({
   hold_ms: { base: 25, jitter: 0 },
   settle_ms: { base: 50, jitter: 0 },
   move_duration_ms: 0,
+  modifiers: [],
+  held_key: null,
   capture: null,
 });
 
 export const typeText = (value: string): Step => ({
   type: "text",
   id: id("t"),
+  shuffle: false,
   value,
   per_char_ms: { base: 20, jitter: 0 },
 });

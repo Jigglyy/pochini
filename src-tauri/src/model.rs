@@ -131,6 +131,10 @@ pub enum Anchor {
 pub enum Step {
     Click {
         id: String,
+        /// Every step has this. Marked steps trade places at random among the
+        /// slots they hold, a new order each pass; unmarked steps never move.
+        #[serde(default)]
+        shuffle: bool,
         x: i32,
         y: i32,
         button: MouseButton,
@@ -155,11 +159,21 @@ pub enum Step {
         settle_ms: Jitter,
         #[serde(default)]
         move_duration_ms: u32,
+        /// Held from when the cursor arrives until the release has settled
+        /// (Shift for a shift-click), so a frame-polling target sees them on
+        /// both sides of the click. This step only, like `Step::Key::modifiers`.
+        #[serde(default)]
+        modifiers: Vec<Modifier>,
+        /// Any other key held the same way, pressed after the modifiers.
+        #[serde(default)]
+        held_key: Option<KeyRef>,
         #[serde(default)]
         capture: Option<CaptureMeta>,
     },
     Move {
         id: String,
+        #[serde(default)]
+        shuffle: bool,
         x: i32,
         y: i32,
         #[serde(default)]
@@ -178,6 +192,8 @@ pub enum Step {
     },
     Scroll {
         id: String,
+        #[serde(default)]
+        shuffle: bool,
         /// Notches; multiplied by WHEEL_DELTA (120) on the way out.
         amount: i32,
         #[serde(default = "default_axis")]
@@ -187,6 +203,8 @@ pub enum Step {
     },
     Key {
         id: String,
+        #[serde(default)]
+        shuffle: bool,
         key: KeyRef,
         action: KeyAction,
         #[serde(default)]
@@ -196,17 +214,33 @@ pub enum Step {
     },
     Text {
         id: String,
+        #[serde(default)]
+        shuffle: bool,
         value: String,
         #[serde(default = "default_per_char")]
         per_char_ms: Jitter,
     },
     Wait {
         id: String,
+        #[serde(default)]
+        shuffle: bool,
         ms: Jitter,
     },
 }
 
 impl Step {
+    /// See `Step::Click::shuffle`.
+    pub fn is_shuffled(&self) -> bool {
+        match self {
+            Step::Click { shuffle, .. }
+            | Step::Move { shuffle, .. }
+            | Step::Scroll { shuffle, .. }
+            | Step::Key { shuffle, .. }
+            | Step::Text { shuffle, .. }
+            | Step::Wait { shuffle, .. } => *shuffle,
+        }
+    }
+
     pub fn set_id(&mut self, new: String) {
         match self {
             Step::Click { id, .. }
@@ -571,6 +605,7 @@ mod tests {
     fn step_roundtrips_through_json_by_tag() {
         let s = Step::Wait {
             id: "a".into(),
+            shuffle: false,
             ms: Jitter { base: 500, jitter: 200 },
         };
         let j = serde_json::to_string(&s).unwrap();
@@ -617,6 +652,35 @@ mod tests {
                 assert_eq!(settle_ms, default_settle());
             }
             other => panic!("wrong variant: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn steps_saved_before_hold_keys_and_shuffle_get_neither() {
+        let c: Step = serde_json::from_str(
+            r#"{"type":"click","id":"a","x":1,"y":2,"button":"left","action":"click"}"#,
+        )
+        .unwrap();
+        assert!(matches!(&c, Step::Click { modifiers, held_key: None, shuffle: false, .. } if modifiers.is_empty()));
+        let w: Step = serde_json::from_str(r#"{"type":"wait","id":"w","ms":{"base":5}}"#).unwrap();
+        assert!(!w.is_shuffled());
+    }
+
+    #[test]
+    fn hold_keys_and_shuffle_roundtrip() {
+        let s: Step = serde_json::from_str(
+            r#"{"type":"click","id":"a","x":1,"y":2,"button":"left","action":"click","shuffle":true,
+                "modifiers":["shift"],"held_key":{"vk":81,"scancode":16,"label":"Q"}}"#,
+        )
+        .unwrap();
+        assert!(s.is_shuffled());
+        let back: Step = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
+        match back {
+            Step::Click { modifiers, held_key: Some(k), .. } => {
+                assert_eq!(modifiers, vec![Modifier::Shift]);
+                assert_eq!(k.scancode, 16);
+            }
+            other => panic!("wrong shape: {other:?}"),
         }
     }
 
@@ -785,6 +849,7 @@ mod tests {
     fn duration_range_accounts_for_double_click_and_text_length() {
         let double = Step::Click {
             id: "a".into(),
+            shuffle: false,
             x: 0,
             y: 0,
             button: MouseButton::Left,
@@ -796,6 +861,8 @@ mod tests {
             hold_ms: Jitter { base: 10, jitter: 5 },
             settle_ms: Jitter { base: 3, jitter: 1 },
             move_duration_ms: 0,
+            modifiers: vec![],
+            held_key: None,
             capture: None,
         };
         // 2 presses of 10-15 plus settle before and after of 3-4 each
@@ -803,6 +870,7 @@ mod tests {
 
         let text = Step::Text {
             id: "b".into(),
+            shuffle: false,
             value: "abc".into(),
             per_char_ms: Jitter { base: 10, jitter: 2 },
         };
@@ -815,6 +883,7 @@ mod tests {
         let mut m = Macro::new("Harvest loop");
         m.steps.push(Step::Wait {
             id: "w".into(),
+            shuffle: false,
             ms: Jitter { base: 100, jitter: 50 },
         });
         f.macros.push(m);

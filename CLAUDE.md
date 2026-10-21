@@ -14,7 +14,9 @@ with optional randomness), you bind it to a hotkey, and pressing the hotkey anyw
 against whatever is on screen. A master switch (and a global toggle hotkey) turns every
 hotkey on or off; each macro also has its own switch, can **queue** repeated presses, and can
 be restricted to **one app** (the hotkey only fires while the mouse is over that app), and
-can **move the mouse back** to where it started when the run ends.
+can **move the mouse back** to where it started when the run ends. A click step can **hold
+keys** while it clicks (Shift for a shift-click), and steps marked **Shuffle** trade places
+at random on every pass while the others stay put.
 
 Macros can be **exported** to a `.pochini.json` file and **imported** from one, so people
 can share them; imported macros arrive with their hotkey off.
@@ -26,8 +28,8 @@ this app owns.
 ## Status
 
 Implemented and building. `src-tauri/` has the full Rust core (model, storage, input,
-hotkey, engine, IPC) with **141 passing unit tests**; `src/` is a ShadCN + Tailwind v4 UI
-styled after Kanbini (macro list, step editor, settings), covered by **53 Playwright e2e
+hotkey, engine, IPC) with **149 passing unit tests**; `src/` is a ShadCN + Tailwind v4 UI
+styled after Kanbini (macro list, step editor, settings), covered by **54 Playwright e2e
 tests** against the real app. `npm run tauri dev` opens the app.
 
 The M0/M1 Win32 assumptions were measured before being ported; see
@@ -335,8 +337,8 @@ Mostly carried over from Kanbini, whose renderer this UI copies the look of:
 
 ## Testing
 
-`cargo test` is the gate: 141 tests, no Windows APIs required for most of them. The UI has
-`npm run e2e` (53 Playwright tests), run locally before every release.
+`cargo test` is the gate: 149 tests, no Windows APIs required for most of them. The UI has
+`npm run e2e` (54 Playwright tests), run locally before every release.
 
 - `input/coords.rs` walks **every pixel** of six virtual-desktop layouts (including negative
   origins and odd sizes) through the round trip, and has an explicit regression test that

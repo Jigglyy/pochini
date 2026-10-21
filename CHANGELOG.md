@@ -4,6 +4,18 @@ All notable changes to Pochini. Versions follow [semantic versioning](https://se
 while the major version is 0, a minor bump may change behaviour or the macro file format.
 Each version is built with `npm run release` into `release/Pochini-<version>.exe`.
 
+## Unreleased
+
+### Added
+
+- **Hold keys while clicking.** A click step's "While holding" row holds Ctrl, Alt, Shift, Win
+  or any recorded key for that click (a shift-click, say). They go down once the cursor
+  arrives and come up after the release, with the settle pause on both sides, so games that
+  read input once per frame see them too.
+- **Shuffle.** Turn Shuffle on for some steps (in the step, or from its right-click menu) and
+  they run in a random order, a new one every pass, while the other steps keep their places.
+  Marked steps show a shuffle icon on their header.
+
 ## 0.10.2 - 2026-10-12
 
 ### Fixed

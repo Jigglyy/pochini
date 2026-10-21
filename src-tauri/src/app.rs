@@ -407,7 +407,7 @@ mod tests {
     fn long_wait(id: &str) -> Macro {
         let mut m = Macro::new(id);
         m.id = id.into();
-        m.steps.push(Step::Wait { id: "w".into(), ms: Jitter::exact(30_000) });
+        m.steps.push(Step::Wait { id: "w".into(), shuffle: false, ms: Jitter::exact(30_000) });
         m
     }
 
@@ -418,6 +418,7 @@ mod tests {
         m.queue = queue;
         m.steps.push(Step::Move {
             id: "mv".into(),
+            shuffle: false,
             x: 7,
             y: 7,
             anchor,
@@ -427,7 +428,7 @@ mod tests {
             move_duration_ms: 0,
             capture: None,
         });
-        m.steps.push(Step::Wait { id: "w".into(), ms: Jitter::exact(40) });
+        m.steps.push(Step::Wait { id: "w".into(), shuffle: false, ms: Jitter::exact(40) });
         m
     }
 
@@ -470,7 +471,7 @@ mod tests {
             mode: TriggerMode::HoldRepeat,
             swallow: false,
         });
-        m.steps.push(Step::Wait { id: "w".into(), ms: Jitter::exact(5) });
+        m.steps.push(Step::Wait { id: "w".into(), shuffle: false, ms: Jitter::exact(5) });
         let (st, _, _) = state_with(vec![m]);
         handle(&st, start("h"));
         std::thread::sleep(Duration::from_millis(60));
@@ -594,6 +595,7 @@ mod tests {
     fn start_and_two_clicks(id: &str, from: QueueFrom) -> Macro {
         let click = |anchor, x, y| Step::Click {
             id: "c".into(),
+            shuffle: false,
             x,
             y,
             button: crate::model::MouseButton::Left,
@@ -605,6 +607,8 @@ mod tests {
             hold_ms: Jitter::exact(5),
             settle_ms: Jitter::exact(5),
             move_duration_ms: 0,
+            modifiers: vec![],
+            held_key: None,
             capture: None,
         };
         let mut m = Macro::new(id);
@@ -735,6 +739,7 @@ mod tests {
         m.id = "c".into();
         m.steps.push(Step::Move {
             id: "mv".into(),
+            shuffle: false,
             x: 10,
             y: 10,
             anchor: Anchor::Fixed,

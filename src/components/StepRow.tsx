@@ -1,8 +1,9 @@
 import { useState, type CSSProperties, type ReactNode, type Ref } from "react";
-import { ArrowDown, ArrowUp, ChevronRight, Copy, GripVertical, RotateCcw, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronRight, Copy, GripVertical, RotateCcw, Shuffle, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
+  ContextMenuCheckboxItem,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuLabel,
@@ -64,6 +65,32 @@ function IconAction({ label, onClick, children, danger }: {
         </Button>
       </TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+function ModifierSwitches({ value, onChange }: { value: Modifier[]; onChange: (m: Modifier[]) => void }) {
+  return MODS.map((m) => (
+    <label key={m} className="flex cursor-pointer items-center gap-2 text-sm capitalize">
+      <Switch
+        checked={value.includes(m)}
+        onCheckedChange={(c) => onChange(c ? [...value, m] : value.filter((x) => x !== m))}
+      />
+      {m}
+    </label>
+  ));
+}
+
+/** On a step's header (and its drag copy) while it is marked to shuffle. */
+function ShuffleMark() {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span role="img" aria-label="Shuffled" className="shrink-0 text-muted-foreground">
+          <Shuffle className="size-4" />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>Trades places with the other shuffled steps</TooltipContent>
     </Tooltip>
   );
 }
@@ -133,6 +160,8 @@ type StepRowProps = {
   aim?: Aim | null;
   /** Some earlier step has a point, so "previous point" means that one. */
   hasEarlierPoint?: boolean;
+  /** How many steps of the macro are marked to shuffle, this one included. */
+  shuffled?: number;
 };
 
 /** A StepRow inside the editor's sortable list: drag its header to reorder. */
@@ -155,6 +184,7 @@ export function StepFace({ step, index }: { step: Step; index: number }) {
       <span className="w-5 text-right text-xs tabular-nums text-muted-foreground">{index + 1}</span>
       <KindChip kind={kind} color={color} />
       <span className="min-w-0 flex-1 truncate py-1.5 text-sm">{summarize(step)}</span>
+      {step.shuffle && <ShuffleMark />}
     </div>
   );
 }
@@ -165,15 +195,19 @@ function StepMenu({
   kind,
   first,
   last,
+  shuffle,
   onMove,
   onDuplicate,
+  onShuffle,
   onDelete,
 }: {
   kind: ColorKind;
   first: boolean;
   last: boolean;
+  shuffle: boolean;
   onMove: (delta: number) => void;
   onDuplicate: () => void;
+  onShuffle: (on: boolean) => void;
   onDelete: () => void;
 }) {
   const color = useStepColors()[kind];
@@ -204,6 +238,9 @@ function StepMenu({
         <Copy />
         Duplicate
       </ContextMenuItem>
+      <ContextMenuCheckboxItem checked={shuffle} onCheckedChange={onShuffle}>
+        Shuffle
+      </ContextMenuCheckboxItem>
       <ContextMenuSeparator />
       <ContextMenuItem variant="destructive" onSelect={onDelete}>
         <Trash2 />
@@ -224,6 +261,7 @@ export function StepRow({
   defaultOpen = false,
   aim,
   hasEarlierPoint = false,
+  shuffled = 0,
   itemRef,
   style,
   handle,
@@ -273,6 +311,7 @@ export function StepRow({
             <span className="w-5 text-right text-xs tabular-nums text-muted-foreground">{index + 1}</span>
             <KindChip kind={kind} color={color} />
             <span className="min-w-0 flex-1 truncate text-sm">{summarize(step)}</span>
+            {step.shuffle && <ShuffleMark />}
             {/* On hover or keyboard focus only; right-click has the same. */}
             <div className="flex items-center opacity-0 transition-opacity group-focus-within/step:opacity-100 group-hover/step:opacity-100">
               <IconAction label="Move up" onClick={() => onMove(-1)}>
@@ -300,8 +339,10 @@ export function StepRow({
           kind={kind}
           first={index === 0}
           last={index === count - 1}
+          shuffle={step.shuffle}
           onMove={onMove}
           onDuplicate={onDuplicate}
+          onShuffle={(shuffle) => set({ shuffle })}
           onDelete={onDelete}
         />
       </ContextMenu>
@@ -387,6 +428,18 @@ export function StepRow({
                   </SelectContent>
                 </Select>
               </Field>
+              <Field
+                label="While holding"
+                help="Keys held down for this click, like Shift for a shift-click. They go down once the cursor arrives and come up after the release, both a settle apart from the click. Record adds any other key."
+              >
+                <ModifierSwitches value={step.modifiers} onChange={(modifiers) => set({ modifiers })} />
+                <KeyCapture
+                  value={step.held_key ? { key: step.held_key, modifiers: [] } : null}
+                  onChange={(h) => set({ held_key: h?.key ?? null })}
+                  allowModifiers={false}
+                  emptyLabel="No other key"
+                />
+              </Field>
               <JitterField
                 label="Hold"
                 help="How long the button stays down."
@@ -444,17 +497,7 @@ export function StepRow({
                 </Select>
               </Field>
               <Field label="With" help="Modifier keys held down while the key is pressed.">
-                {MODS.map((m) => (
-                  <label key={m} className="flex cursor-pointer items-center gap-2 text-sm capitalize">
-                    <Switch
-                      checked={step.modifiers.includes(m)}
-                      onCheckedChange={(c) =>
-                        set({ modifiers: c ? [...step.modifiers, m] : step.modifiers.filter((x) => x !== m) })
-                      }
-                    />
-                    {m}
-                  </label>
-                ))}
+                <ModifierSwitches value={step.modifiers} onChange={(modifiers) => set({ modifiers })} />
               </Field>
               <JitterField
                 label="Hold"
@@ -488,6 +531,18 @@ export function StepRow({
           )}
 
           {step.type === "wait" && <JitterField label="Wait" value={step.ms} onChange={(ms) => set({ ms })} />}
+
+          <Field
+            label="Shuffle"
+            help='Shuffled steps trade places with each other at random, in a new order every pass. Steps with Shuffle off never move. A "Previous point" step measures from whichever step ran just before it.'
+            hint={
+              step.shuffle && shuffled < 2
+                ? "Turn Shuffle on for another step too; on its own this one has nothing to trade places with."
+                : undefined
+            }
+          >
+            <Switch aria-label="Shuffle" checked={step.shuffle} onCheckedChange={(shuffle) => set({ shuffle })} />
+          </Field>
         </div>
       </Collapse>
     </div>

@@ -34,6 +34,8 @@ export type Step =
   | {
       type: "click";
       id: string;
+      /** Trades places at random with the other marked steps, each pass. */
+      shuffle: boolean;
       x: number;
       y: number;
       button: MouseButton;
@@ -46,11 +48,16 @@ export type Step =
       hold_ms: Jitter;
       settle_ms: Jitter;
       move_duration_ms: number;
+      /** Held from the cursor's arrival until the release has settled. */
+      modifiers: Modifier[];
+      /** Any other key held the same way. */
+      held_key: KeyRef | null;
       capture: CaptureMeta | null;
     }
   | {
       type: "move";
       id: string;
+      shuffle: boolean;
       x: number;
       y: number;
       anchor: Anchor;
@@ -63,6 +70,7 @@ export type Step =
   | {
       type: "scroll";
       id: string;
+      shuffle: boolean;
       amount: number;
       axis: ScrollAxis;
       at: [number, number] | null;
@@ -70,13 +78,14 @@ export type Step =
   | {
       type: "key";
       id: string;
+      shuffle: boolean;
       key: KeyRef;
       action: KeyActionKind;
       modifiers: Modifier[];
       hold_ms: Jitter;
     }
-  | { type: "text"; id: string; value: string; per_char_ms: Jitter }
-  | { type: "wait"; id: string; ms: Jitter };
+  | { type: "text"; id: string; shuffle: boolean; value: string; per_char_ms: Jitter }
+  | { type: "wait"; id: string; shuffle: boolean; ms: Jitter };
 
 export type StepKind = Step["type"];
 

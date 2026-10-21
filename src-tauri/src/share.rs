@@ -142,8 +142,8 @@ mod tests {
         let mut m = Macro::new(name);
         m.favorite = true;
         m.color = Some("teal".into());
-        m.steps.push(Step::Wait { id: "w1".into(), ms: Jitter::exact(100) });
-        m.steps.push(Step::Wait { id: "w2".into(), ms: Jitter::exact(200) });
+        m.steps.push(Step::Wait { id: "w1".into(), shuffle: false, ms: Jitter::exact(100) });
+        m.steps.push(Step::Wait { id: "w2".into(), shuffle: false, ms: Jitter::exact(200) });
         m
     }
 

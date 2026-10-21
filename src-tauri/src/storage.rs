@@ -218,6 +218,7 @@ mod tests {
         let mut m = Macro::new("Harvest");
         m.steps.push(Step::Wait {
             id: "w".into(),
+            shuffle: false,
             ms: Jitter { base: 100, jitter: 25 },
         });
         f.macros.push(m);

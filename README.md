@@ -11,6 +11,9 @@ application: native apps, browsers, Electron apps, emulators.
 - Bind each macro to a hotkey; a master switch, and a global toggle hotkey (default
   Ctrl+Shift+F12), turn every hotkey on or off, and each macro has its own switch too.
 - Click a fixed position, or **click wherever the mouse is** when you press the hotkey.
+- **Hold keys while clicking**: Shift, Ctrl, Alt, Win or any recorded key, for shift-clicks and
+  the like.
+- **Shuffle** chosen steps: they trade places at random on every pass, the rest stay put.
 - Randomize any wait or click position; a panic key (Esc) stops a running macro at once.
 
 ## Running it

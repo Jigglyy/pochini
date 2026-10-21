@@ -18,6 +18,7 @@ export function blankStep(kind: NewStepKind): Step {
       return {
         type: "click",
         id,
+        shuffle: false,
         x: 0,
         y: 0,
         button: "left",
@@ -29,12 +30,15 @@ export function blankStep(kind: NewStepKind): Step {
         hold_ms: hold(),
         settle_ms: settle(),
         move_duration_ms: 0,
+        modifiers: [],
+        held_key: null,
         capture: null,
       };
     case "move":
       return {
         type: "move",
         id,
+        shuffle: false,
         x: 0,
         y: 0,
         anchor: "fixed",
@@ -45,20 +49,21 @@ export function blankStep(kind: NewStepKind): Step {
         capture: null,
       };
     case "scroll":
-      return { type: "scroll", id, amount: -3, axis: "vertical", at: null };
+      return { type: "scroll", id, shuffle: false, amount: -3, axis: "vertical", at: null };
     case "key":
       return {
         type: "key",
         id,
+        shuffle: false,
         key: { vk: 0x41, scancode: 0x1e, extended: false, label: "A" },
         action: "press",
         modifiers: [],
         hold_ms: hold(),
       };
     case "text":
-      return { type: "text", id, value: "", per_char_ms: { base: 20, jitter: 15 } };
+      return { type: "text", id, shuffle: false, value: "", per_char_ms: { base: 20, jitter: 15 } };
     case "wait":
-      return { type: "wait", id, ms: { base: 500, jitter: 0 } };
+      return { type: "wait", id, shuffle: false, ms: { base: 500, jitter: 0 } };
   }
 }
 
@@ -121,7 +126,8 @@ export function summarize(s: Step): string {
       const btn = s.button === "left" ? "" : ` ${s.button}`;
       const where = s.anchor === "fixed" ? `at (${s.x}, ${s.y})` : aimPhrase(s.anchor, s.dx, s.dy);
       const jit = s.coord_jitter_px ? ` ±${s.coord_jitter_px}px` : "";
-      return `${verb}${btn} ${where}${jit}`;
+      const keys = [...s.modifiers.map(modLabel), ...(s.held_key ? [s.held_key.label] : [])];
+      return `${verb}${btn} ${where}${jit}${keys.length ? ` holding ${keys.join("+")}` : ""}`;
     }
     case "move": {
       const where =

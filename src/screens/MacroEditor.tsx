@@ -140,6 +140,7 @@ export function MacroEditor({
 
   const draggingIndex = m.steps.findIndex((s) => s.id === draggingStep);
   const aims = aimPoints(m.steps);
+  const shuffled = m.steps.filter((s) => s.shuffle).length;
   const dropStep = ({ active, over }: DragEndEvent) => {
     setDraggingStep(null);
     if (!over || active.id === over.id) return;
@@ -377,6 +378,7 @@ export function MacroEditor({
             <span className="text-xs text-muted-foreground">
               Takes {fmtRange(est)}
               {m.repeat.kind === "count" ? `, ${m.repeat.n} times` : ""}
+              {shuffled > 1 ? `, ${shuffled} steps shuffled` : ""}
             </span>
           )
         }
@@ -403,6 +405,7 @@ export function MacroEditor({
                     count={m.steps.length}
                     aim={aims[i]}
                     hasEarlierPoint={aims.slice(0, i).some((a) => a !== null)}
+                    shuffled={shuffled}
                     defaultOpen={s.id === justAdded}
                     onChange={(ns) => setStep(i, ns)}
                     onDelete={() => {

@@ -73,6 +73,14 @@ independent); `vk` and `label` exist so the UI can show something readable.
 A tagged union on `"type"`. Every step carries an `"id"` (ULID) so the UI can key list rows
 and reorder without re-rendering the world.
 
+Every step also carries `"shuffle"` (default `false`). On each pass the engine takes the slots
+the marked steps occupy and deals those steps back into them in a random order; unmarked steps
+never move. So in click / wait / click / wait with only the clicks marked, the waits stay
+between them. A new order is drawn every pass and every run (from the run's RNG, so a seeded
+run is reproducible). One marked step has nothing to trade with and stays put. A `"previous"`
+anchor follows execution order, so after a shuffle it measures from whichever pointer step ran
+just before it; the editor's "Lands at" readout shows the unshuffled first pass.
+
 ### `click`
 
 ```jsonc
@@ -87,6 +95,8 @@ and reorder without re-rendering the world.
   "hold_ms": { "base": 25, "jitter": 15 },   // gap between down and up
   "settle_ms": { "base": 50, "jitter": 25 }, // pause before the press AND after the release
   "move_duration_ms": 0,         // 0 = teleport; >0 = interpolated move, see below
+  "modifiers": ["shift"],        // held while clicking (any of ctrl | alt | shift | win)
+  "held_key": null,              // or a key object like `key` steps use, held the same way
   "capture": {                   // metadata from when the coordinate was picked
     "monitor": "\\\\.\\DISPLAY2",
     "monitor_rect": [1920, 0, 3840, 1080],
@@ -107,6 +117,15 @@ release happen over the *next* target and dropped the click - it looked like the
 held and abandoned. The 50–75 ms default spans at least two frames at 60 fps. Files written
 before this field existed pick up the default on load; no schema bump, since it is an
 additive field with a serde default.
+
+`modifiers` and `held_key` are held for this step only ("While holding" in the editor): pressed
+after the cursor arrives (so nothing sees Shift+move), held through the settle on both sides of
+the press, and released after the second settle, `held_key` first, then the modifiers in
+reverse. A frame-polling target therefore sees Shift down before the press and still down at
+the release. A `held_key` that an earlier step is already holding down (a `key` step with
+`action: "down"`) is left alone, so the click never releases it early. On cancellation the
+release pass lets go of all of them. Both fields default to empty on files written before
+they existed.
 
 `move_duration_ms > 0` interpolates the cursor over that many milliseconds instead of jumping.
 Some targets only register hover state on real movement, and some reject a click that arrives

@@ -9,12 +9,13 @@ pub mod timer;
 use std::sync::Arc;
 
 use rand::rngs::StdRng;
+use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 
 use crate::input::coords::jitter_point;
 use crate::input::{InputBackend, InputError};
 use crate::model::{
-    Anchor, ClickAction, Jitter, KeyAction, Macro, Modifier, MouseButton, Repeat, Step,
+    Anchor, ClickAction, Jitter, KeyAction, KeyRef, Macro, Modifier, MouseButton, Repeat, Step,
 };
 
 pub use timer::CancelToken;
@@ -58,6 +59,10 @@ impl HeldState {
         } else {
             self.keys.retain(|(s, _)| *s != scan);
         }
+    }
+
+    fn has_key(&self, scan: u16) -> bool {
+        self.keys.iter().any(|(s, _)| *s == scan)
     }
 
     fn modifier(&mut self, m: Modifier, down: bool) {
@@ -158,17 +163,30 @@ impl Engine {
                     return Ok(());
                 }
             }
-            for step in &m.steps {
+            for i in self.pass_order(&m.steps) {
                 if cancel.is_cancelled() {
                     return Err(EngineError::Cancelled);
                 }
-                self.run_step(step, cancel, held)?;
+                self.run_step(&m.steps[i], cancel, held)?;
             }
             pass = pass.saturating_add(1);
             if passes.is_none() && cancel.is_cancelled() {
                 return Err(EngineError::Cancelled);
             }
         }
+    }
+
+    /// The step indices of one pass: steps marked `shuffle` trade places at
+    /// random among the slots they hold, every other step keeps its own.
+    fn pass_order(&mut self, steps: &[Step]) -> Vec<usize> {
+        let mut order: Vec<usize> = (0..steps.len()).collect();
+        let slots: Vec<usize> = order.iter().copied().filter(|&i| steps[i].is_shuffled()).collect();
+        let mut drawn = slots.clone();
+        drawn.shuffle(&mut self.rng);
+        for (slot, from) in slots.into_iter().zip(drawn) {
+            order[slot] = from;
+        }
+        order
     }
 
     fn wait(&self, ms: u64, cancel: &CancelToken) -> Result<()> {
@@ -253,10 +271,15 @@ impl Engine {
                 hold_ms,
                 settle_ms,
                 move_duration_ms,
+                modifiers,
+                held_key,
                 ..
             } => {
                 let p = self.resolve_point(*anchor, (*x, *y), (*dx, *dy), *coord_jitter_px);
                 self.glide(p, *move_duration_ms, cancel)?;
+                // Held keys go down after the travel, so nothing reacts to
+                // Shift+move, and stay down through both settles.
+                let pressed = self.hold_keys(modifiers, held_key.as_ref(), held)?;
                 // Let the target see the cursor at rest before the press...
                 let s = self.sample(*settle_ms);
                 self.wait(s, cancel)?;
@@ -283,6 +306,11 @@ impl Engine {
                 // registers the release somewhere else.
                 let s = self.sample(*settle_ms);
                 self.wait(s, cancel)?;
+                if let Some((scan, extended)) = pressed {
+                    self.input.key(scan, extended, false)?;
+                    held.key(scan, extended, false);
+                }
+                self.release_modifiers(modifiers, held)?;
             }
 
             Step::Scroll { amount, axis, at, .. } => {
@@ -356,6 +384,24 @@ impl Engine {
         Ok(())
     }
 
+    /// Presses a click's "while holding" keys. Returns the extra key only if
+    /// this step pressed it: a key an earlier step holds down is left to that
+    /// step, so the click cannot release it early.
+    fn hold_keys(&self, modifiers: &[Modifier], key: Option<&KeyRef>, held: &mut HeldState) -> Result<Option<(u16, bool)>> {
+        for m in modifiers {
+            self.input.modifier(*m, true)?;
+            held.modifier(*m, true);
+        }
+        match key {
+            Some(k) if !held.has_key(k.scancode) => {
+                self.input.key(k.scancode, k.extended, true)?;
+                held.key(k.scancode, k.extended, true);
+                Ok(Some((k.scancode, k.extended)))
+            }
+            _ => Ok(None),
+        }
+    }
+
     fn release_modifiers(&self, modifiers: &[Modifier], held: &mut HeldState) -> Result<()> {
         for m in modifiers.iter().rev() {
             self.input.modifier(*m, false)?;
@@ -407,6 +453,7 @@ mod tests {
         let (f, mut e) = engine();
         let m = mac(vec![Step::Click {
             id: "1".into(),
+            shuffle: false,
             x: 100,
             y: 200,
             button: MouseButton::Left,
@@ -418,6 +465,8 @@ mod tests {
             hold_ms: Jitter::exact(1),
             settle_ms: Jitter::exact(0),
             move_duration_ms: 0,
+            modifiers: vec![],
+            held_key: None,
             capture: None,
         }]);
         e.run(&m, &CancelToken::new()).unwrap();
@@ -431,6 +480,150 @@ mod tests {
         );
     }
 
+    fn click_holding(settle: u32, modifiers: Vec<Modifier>, held_key: Option<KeyRef>) -> Step {
+        Step::Click {
+            id: "held".into(),
+            shuffle: false,
+            x: 100,
+            y: 200,
+            button: MouseButton::Left,
+            action: ClickAction::Click,
+            anchor: Anchor::Fixed,
+            dx: 0,
+            dy: 0,
+            coord_jitter_px: 0,
+            hold_ms: Jitter::exact(1),
+            settle_ms: Jitter::exact(settle),
+            move_duration_ms: 0,
+            modifiers,
+            held_key,
+            capture: None,
+        }
+    }
+
+    #[test]
+    fn a_click_holds_its_keys_around_the_press_and_lets_go_in_reverse() {
+        let (f, mut e) = engine();
+        let m = mac(vec![click_holding(0, vec![Modifier::Ctrl, Modifier::Shift], Some(key(0x10)))]);
+        e.run(&m, &CancelToken::new()).unwrap();
+        assert_eq!(
+            f.events(),
+            vec![
+                Event::Move(100, 200),
+                Event::Modifier(Modifier::Ctrl, true),
+                Event::Modifier(Modifier::Shift, true),
+                Event::Key { scan: 0x10, extended: false, down: true },
+                Event::Button(MouseButton::Left, true),
+                Event::Button(MouseButton::Left, false),
+                Event::Key { scan: 0x10, extended: false, down: false },
+                Event::Modifier(Modifier::Shift, false),
+                Event::Modifier(Modifier::Ctrl, false),
+            ]
+        );
+    }
+
+    /// A target that polls once per frame must see Shift down before the
+    /// press and still down at the release, so the settle sits inside the hold.
+    #[test]
+    fn held_keys_span_the_settle_on_both_sides_of_the_click() {
+        let (f, mut e) = engine();
+        e.run(&mac(vec![click_holding(40, vec![Modifier::Shift], None)]), &CancelToken::new()).unwrap();
+        let tl = f.timeline();
+        let at = |ev: Event| tl.iter().position(|(_, x)| *x == ev).unwrap();
+        let gap = |a: usize, b: usize| tl[b].0.duration_since(tl[a].0).as_secs_f64() * 1000.0;
+        let shift_down = at(Event::Modifier(Modifier::Shift, true));
+        let press = at(Event::Button(MouseButton::Left, true));
+        let release = at(Event::Button(MouseButton::Left, false));
+        let shift_up = at(Event::Modifier(Modifier::Shift, false));
+        assert!(gap(shift_down, press) >= 38.0, "Shift only {:.2} ms before the press", gap(shift_down, press));
+        assert!(gap(release, shift_up) >= 38.0, "Shift let go {:.2} ms after the release", gap(release, shift_up));
+    }
+
+    #[test]
+    fn cancelling_during_a_held_click_releases_its_keys() {
+        let (f, mut e) = engine();
+        let m = mac(vec![click_holding(30_000, vec![Modifier::Shift], Some(key(0x10)))]);
+        let cancel = CancelToken::new();
+        let c2 = cancel.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(40));
+            c2.cancel();
+        });
+        assert!(matches!(e.run(&m, &cancel), Err(EngineError::Cancelled)));
+        assert!(f.still_held().is_empty(), "{:?}", f.still_held());
+    }
+
+    /// "Hold down Q", then a click holding Q: the click must not let go of
+    /// the Q the earlier step is holding.
+    #[test]
+    fn a_click_leaves_a_key_an_earlier_step_holds_down_alone() {
+        let (f, mut e) = engine();
+        let m = mac(vec![
+            Step::Key {
+                id: "q".into(),
+                shuffle: false,
+                key: key(0x10),
+                action: KeyAction::Down,
+                modifiers: vec![],
+                hold_ms: Jitter::exact(0),
+            },
+            click_holding(0, vec![], Some(key(0x10))),
+        ]);
+        e.run(&m, &CancelToken::new()).unwrap();
+        let q = |down| Event::Key { scan: 0x10, extended: false, down };
+        assert_eq!(
+            f.events(),
+            vec![
+                q(true),
+                Event::Move(100, 200),
+                Event::Button(MouseButton::Left, true),
+                Event::Button(MouseButton::Left, false),
+                q(false), // the release pass at the end of the run
+            ]
+        );
+    }
+
+    fn marked(x: i32, shuffle: bool) -> Step {
+        let mut s = to(x, 0);
+        if let Step::Move { shuffle: on, .. } = &mut s {
+            *on = shuffle;
+        }
+        s
+    }
+
+    #[test]
+    fn marked_steps_trade_places_each_pass_and_unmarked_ones_stay_put() {
+        let (f, mut e) = engine();
+        let mut m = mac(vec![marked(1, true), marked(500, false), marked(2, true), marked(3, true)]);
+        m.repeat = Repeat::Count { n: 40 };
+        e.run(&m, &CancelToken::new()).unwrap();
+        let xs: Vec<i32> = f
+            .events()
+            .into_iter()
+            .map(|ev| match ev {
+                Event::Move(x, _) => x,
+                other => panic!("expected a move, got {other:?}"),
+            })
+            .collect();
+        let mut orders = std::collections::HashSet::new();
+        for pass in xs.chunks(4) {
+            assert_eq!(pass[1], 500, "an unmarked step moved: {pass:?}");
+            let mut shuffled = [pass[0], pass[2], pass[3]];
+            orders.insert(shuffled);
+            shuffled.sort();
+            assert_eq!(shuffled, [1, 2, 3], "a marked step was lost or repeated: {pass:?}");
+        }
+        assert_eq!(orders.len(), 6, "40 passes should hit every order of 3: {orders:?}");
+    }
+
+    #[test]
+    fn one_marked_step_has_nothing_to_trade_with() {
+        let (f, mut e) = engine();
+        let m = mac(vec![marked(1, false), marked(2, true), marked(3, false)]);
+        e.run(&m, &CancelToken::new()).unwrap();
+        assert_eq!(f.events(), vec![Event::Move(1, 0), Event::Move(2, 0), Event::Move(3, 0)]);
+    }
+
     /// Regression for a real report: a click held, then the macro moved on and
     /// the target never registered the click. Traced with
     /// `cargo run --example trace_macro`: the cursor left the target 0.05 ms
@@ -442,6 +635,7 @@ mod tests {
         let (f, mut e) = engine();
         let click = |id: &str, x: i32| Step::Click {
             id: id.into(),
+            shuffle: false,
             x,
             y: 100,
             button: MouseButton::Left,
@@ -453,6 +647,8 @@ mod tests {
             hold_ms: Jitter::exact(1),
             settle_ms: Jitter::exact(40),
             move_duration_ms: 0,
+            modifiers: vec![],
+            held_key: None,
             capture: None,
         };
         let m = mac(vec![click("a", 100), click("b", 500)]);
@@ -483,6 +679,7 @@ mod tests {
             // a fixed click first, so the cursor is somewhere else by step 2
             Step::Click {
                 id: "fixed".into(),
+                shuffle: false,
                 x: 100,
                 y: 100,
                 button: MouseButton::Left,
@@ -494,10 +691,13 @@ mod tests {
                 hold_ms: Jitter::exact(0),
                 settle_ms: Jitter::exact(0),
                 move_duration_ms: 0,
+                modifiers: vec![],
+                held_key: None,
                 capture: None,
             },
             Step::Click {
                 id: "here".into(),
+                shuffle: false,
                 x: 0,
                 y: 0, // ignored for an activation anchor
                 button: MouseButton::Left,
@@ -509,6 +709,8 @@ mod tests {
                 hold_ms: Jitter::exact(0),
                 settle_ms: Jitter::exact(0),
                 move_duration_ms: 0,
+                modifiers: vec![],
+                held_key: None,
                 capture: None,
             },
         ]);
@@ -527,6 +729,7 @@ mod tests {
         let mut e = Engine::new(f.clone(), Some(1));
         let m = mac(vec![Step::Move {
             id: "m".into(),
+            shuffle: false,
             x: 0,
             y: 0,
             anchor: Anchor::Activation,
@@ -543,6 +746,7 @@ mod tests {
     fn to(x: i32, y: i32) -> Step {
         Step::Move {
             id: "to".into(),
+            shuffle: false,
             x,
             y,
             anchor: Anchor::Fixed,
@@ -592,6 +796,7 @@ mod tests {
         let mut e = Engine::new(f.clone(), Some(1));
         let mut m = mac(vec![Step::Click {
             id: "hold".into(),
+            shuffle: false,
             x: 50,
             y: 50,
             button: MouseButton::Left,
@@ -603,6 +808,8 @@ mod tests {
             hold_ms: Jitter::exact(0),
             settle_ms: Jitter::exact(0),
             move_duration_ms: 0,
+            modifiers: vec![],
+            held_key: None,
             capture: None,
         }]);
         m.return_to_start = true;
@@ -614,7 +821,7 @@ mod tests {
     fn stopped_after_40ms(soft: bool) -> Vec<Event> {
         let f = Arc::new(FakeInput::with_cursor(7, 8));
         let mut e = Engine::new(f.clone(), Some(1));
-        let mut m = mac(vec![Step::Wait { id: "w".into(), ms: Jitter::exact(30_000) }]);
+        let mut m = mac(vec![Step::Wait { id: "w".into(), shuffle: false, ms: Jitter::exact(30_000) }]);
         m.return_to_start = true;
         let cancel = CancelToken::new();
         let c2 = cancel.clone();
@@ -643,6 +850,7 @@ mod tests {
     fn aim(anchor: Anchor, x: i32, y: i32, dx: i32, dy: i32) -> Step {
         Step::Move {
             id: "aim".into(),
+            shuffle: false,
             x,
             y,
             anchor,
@@ -690,7 +898,7 @@ mod tests {
     fn previous_follows_a_fixed_step_and_ignores_steps_without_a_point() {
         let m = mac(vec![
             aim(Anchor::Fixed, 1000, 400, 99, 99), // offsets ignored when fixed
-            Step::Wait { id: "w".into(), ms: Jitter::exact(0) },
+            Step::Wait { id: "w".into(), shuffle: false, ms: Jitter::exact(0) },
             aim(Anchor::Previous, 0, 0, -10, 0),
         ]);
         assert_eq!(landed(&m, (0, 0)), vec![Event::Move(1000, 400), Event::Move(990, 400)]);
@@ -760,6 +968,7 @@ mod tests {
             let mut e = Engine::new(f.clone(), Some(seed));
             let m = mac(vec![Step::Move {
                 id: "m".into(),
+                shuffle: false,
                 x: 0,
                 y: 0,
                 anchor: Anchor::Activation,
@@ -787,6 +996,7 @@ mod tests {
         let mut m = mac(vec![
             Step::Move {
                 id: "away".into(),
+                shuffle: false,
                 x: 900,
                 y: 900,
                 anchor: Anchor::Fixed,
@@ -798,6 +1008,7 @@ mod tests {
             },
             Step::Move {
                 id: "back".into(),
+                shuffle: false,
                 x: 0,
                 y: 0,
                 anchor: Anchor::Activation,
@@ -826,6 +1037,7 @@ mod tests {
         let (f, mut e) = engine();
         let m = mac(vec![Step::Click {
             id: "1".into(),
+            shuffle: false,
             x: 0,
             y: 0,
             button: MouseButton::Left,
@@ -837,6 +1049,8 @@ mod tests {
             hold_ms: Jitter::exact(1),
             settle_ms: Jitter::exact(0),
             move_duration_ms: 0,
+            modifiers: vec![],
+            held_key: None,
             capture: None,
         }]);
         e.run(&m, &CancelToken::new()).unwrap();
@@ -850,6 +1064,7 @@ mod tests {
         let (f, mut e) = engine();
         let m = mac(vec![Step::Key {
             id: "1".into(),
+            shuffle: false,
             key: key(0x1E),
             action: KeyAction::Press,
             modifiers: vec![Modifier::Ctrl, Modifier::Shift],
@@ -876,6 +1091,7 @@ mod tests {
         let m = mac(vec![
             Step::Key {
                 id: "down".into(),
+                shuffle: false,
                 key: key(0x2A),
                 action: KeyAction::Down,
                 modifiers: vec![],
@@ -883,6 +1099,7 @@ mod tests {
             },
             Step::Click {
                 id: "hold".into(),
+                shuffle: false,
                 x: 10,
                 y: 10,
                 button: MouseButton::Left,
@@ -894,9 +1111,11 @@ mod tests {
                 hold_ms: Jitter::exact(0),
                 settle_ms: Jitter::exact(0),
                 move_duration_ms: 0,
+                modifiers: vec![],
+                held_key: None,
                 capture: None,
             },
-            Step::Wait { id: "w".into(), ms: Jitter::exact(30_000) },
+            Step::Wait { id: "w".into(), shuffle: false, ms: Jitter::exact(30_000) },
         ]);
 
         let cancel = CancelToken::new();
@@ -922,6 +1141,7 @@ mod tests {
         let (f, mut e) = engine();
         let m = mac(vec![Step::Key {
             id: "1".into(),
+            shuffle: false,
             key: key(0x1E),
             action: KeyAction::Press,
             modifiers: vec![Modifier::Shift],
@@ -942,6 +1162,7 @@ mod tests {
         let (f, mut e) = engine();
         let mut m = mac(vec![Step::Scroll {
             id: "s".into(),
+            shuffle: false,
             amount: -1,
             axis: ScrollAxis::Vertical,
             at: None,
@@ -954,7 +1175,7 @@ mod tests {
     #[test]
     fn repeat_forever_stops_only_on_cancel() {
         let (f, mut e) = engine();
-        let mut m = mac(vec![Step::Wait { id: "w".into(), ms: Jitter::exact(5) }]);
+        let mut m = mac(vec![Step::Wait { id: "w".into(), shuffle: false, ms: Jitter::exact(5) }]);
         m.repeat = Repeat::Forever;
         let cancel = CancelToken::new();
         let c2 = cancel.clone();
@@ -971,6 +1192,7 @@ mod tests {
         let (f, mut e) = engine();
         let m = mac(vec![Step::Text {
             id: "t".into(),
+            shuffle: false,
             value: "hi\u{1F600}".into(), // 2 BMP chars + 1 surrogate pair
             per_char_ms: Jitter::exact(0),
         }]);
@@ -995,6 +1217,7 @@ mod tests {
             let mut e = Engine::new(f.clone(), Some(seed));
             let m = mac(vec![Step::Move {
                 id: "m".into(),
+                shuffle: false,
                 x: 1000,
                 y: 700,
                 anchor: Anchor::Fixed,
@@ -1037,6 +1260,7 @@ mod tests {
             let mut e = Engine::new(f.clone(), Some(99));
             let m = mac(vec![Step::Move {
                 id: "m".into(),
+                shuffle: false,
                 x: 500,
                 y: 500,
                 anchor: Anchor::Fixed,
@@ -1057,6 +1281,7 @@ mod tests {
         let (f, mut e) = engine();
         let m = mac(vec![Step::Move {
             id: "m".into(),
+            shuffle: false,
             x: 999_999,
             y: -999_999,
             anchor: Anchor::Fixed,
@@ -1076,6 +1301,7 @@ mod tests {
         let (f, mut e) = engine();
         let m = mac(vec![Step::Move {
             id: "m".into(),
+            shuffle: false,
             x: 300,
             y: 400,
             anchor: Anchor::Fixed,
@@ -1097,6 +1323,7 @@ mod tests {
         let mut e = Engine::new(f.clone(), Some(1));
         let m = mac(vec![Step::Key {
             id: "1".into(),
+            shuffle: false,
             key: key(0x1E),
             action: KeyAction::Down,
             modifiers: vec![],

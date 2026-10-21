@@ -131,15 +131,21 @@ STEPS                                              Takes 480 ms to 705 ms
     - Summaries read "Click 20 px right of where the mouse started", "Click 20 px right and
       5 px up from the previous point".
     - Then Jitter (px), Travel (ms).
-  - Click also has Button, Action (click / double / press and hold / release), Hold, and
+  - Click also has Button, Action (click / double / press and hold / release), **While
+    holding** (Ctrl / Alt / Shift / Win switches plus Record for any other key, held from the
+    cursor's arrival until after the release; the summary ends "holding Shift+Q"), Hold, and
     **Settle** (pause before the press and after the release; raise it if clicks get
     dropped).
   - Key: record the key, action, modifier switches, Hold.
   - Type text: the text and a per-character delay (Unicode; games usually ignore it).
   - Wait: a duration.
+  - Every step ends with a **Shuffle** switch (also a checkbox in the step's right-click
+    menu). Shuffled steps trade places at random each pass; their headers show a shuffle
+    icon. A lone shuffled step says it has nothing to trade places with.
   - Every duration is a number plus a "Random extra" switch that reveals the maximum added,
     with the resulting range spelled out underneath.
-- The Steps heading shows the estimated run time (and "N times" for a counted repeat).
+- The Steps heading shows the estimated run time (and "N times" for a counted repeat, and
+  "N steps shuffled" once two or more are).
 
 ## Screen 3: Settings
 

@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Page } from "@playwright/test";
 import { drag, expect, test } from "./_launch";
-import { macro, wait } from "./data";
+import { clickAt, macro, wait } from "./data";
 
 // The step editor: dragging steps, the arrow buttons, and offset targets.
 
@@ -119,5 +119,50 @@ test.describe("offset targets", () => {
     await move.getByRole("button", { name: "Previous point + offset" }).click();
     await move.getByRole("spinbutton", { name: "Offset X" }).fill("-10");
     await expect(move.getByTestId("lands-at")).toContainText("Lands at (990, 400)");
+  });
+});
+
+test.describe("held keys and shuffle", () => {
+  test.use({
+    seed: {
+      macros: [
+        macro("Mixed", {
+          steps: [{ ...clickAt(10, 20), id: "c1" }, { ...wait(100), id: "w1" }, { ...clickAt(30, 40), id: "c2" }],
+        }),
+      ],
+    },
+  });
+
+  test("a click holds Shift and a recorded key, and two steps shuffle", async ({ app: { page, dataDir } }) => {
+    await page.getByRole("button", { name: /^Mixed/ }).click();
+    await header(page, "c1").click();
+    const c1 = step(page, "c1");
+    await c1.getByRole("switch", { name: /^shift$/i }).click();
+    await c1.getByRole("button", { name: "Record" }).click();
+    await page.keyboard.press("KeyQ");
+    await expect(header(page, "c1")).toContainText("Click at (10, 20) holding Shift+Q");
+
+    // One shuffled step has nothing to trade with, and says so.
+    await c1.getByRole("switch", { name: "Shuffle" }).click();
+    await expect(c1.getByText("nothing to trade places with")).toBeVisible();
+    await expect(header(page, "c1").getByRole("img", { name: "Shuffled" })).toBeVisible();
+
+    // The second one from the right-click menu.
+    await header(page, "c2").click({ button: "right" });
+    await page.getByRole("menuitemcheckbox", { name: "Shuffle" }).click();
+    await expect(header(page, "c2").getByRole("img", { name: "Shuffled" })).toBeVisible();
+    await expect(c1.getByText("nothing to trade places with")).toHaveCount(0);
+    await expect(page.getByText("2 steps shuffled")).toBeVisible();
+
+    await save(page);
+    const steps = await savedSteps(dataDir);
+    expect(steps.map((s) => [s.id, s.shuffle])).toEqual([
+      ["c1", true],
+      ["w1", false],
+      ["c2", true],
+    ]);
+    expect(steps[0].modifiers).toEqual(["shift"]);
+    expect((steps[0].held_key as { label: string }).label).toBe("Q");
+    expect([steps[2].modifiers, steps[2].held_key]).toEqual([[], null]);
   });
 });
