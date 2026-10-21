@@ -1,5 +1,8 @@
+import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
 import {
   defaultDropAnimationSideEffects,
+  DragOverlay,
   PointerSensor,
   useSensor,
   useSensors,
@@ -26,6 +29,15 @@ export const DROP_ANIMATION: DropAnimation = {
 
 /** The listeners that start a drag, spread on a card's drag handle. */
 export type DragHandle = ReturnType<typeof useSortable>["listeners"];
+
+/** The lifted copy that follows the pointer, rendered at the top of the page.
+ *  Inside the page, a CSS transform on an ancestor (each screen slides in
+ *  for 200 ms) makes it the containing block of this fixed-position copy: it
+ *  drew and measured one row low, so a drag started as a screen appeared
+ *  dropped a slot short. A portal to <body> has no such ancestor. */
+export function FloatingOverlay({ children }: { children: ReactNode }) {
+  return createPortal(<DragOverlay dropAnimation={DROP_ANIMATION}>{children}</DragOverlay>, document.body);
+}
 
 /** One item of a sortable list. Spread `handle` on whatever should start a
  *  drag; `style` makes the item follow the sort and hides it while its

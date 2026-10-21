@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent, type Ref } from "react";
-import { closestCenter, DndContext, DragOverlay, type DragEndEvent } from "@dnd-kit/core";
+import { closestCenter, DndContext, type DragEndEvent } from "@dnd-kit/core";
 import { arrayMove, SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import {
   AppWindow,
@@ -57,7 +57,7 @@ import { Swatch, SwatchGrid } from "@/components/StepColors";
 import { asColor, outlineStyle, tone, type StepColor } from "@/lib/colors";
 import { refocusWithoutScroll, useFlip } from "@/lib/motion";
 import { comboLabel } from "@/components/KeyCapture";
-import { DROP_ANIMATION, useDragSensors, useSortableItem, type DragHandle } from "@/components/sortable";
+import { FloatingOverlay, useDragSensors, useSortableItem, type DragHandle } from "@/components/sortable";
 import {
   createMacro,
   deleteMacro,
@@ -442,13 +442,13 @@ function MacroGroup({
           <SortableContext items={rows.map((r) => r.id)} strategy={verticalListSortingStrategy}>
             {list}
           </SortableContext>
-          <DragOverlay dropAnimation={DROP_ANIMATION}>
+          <FloatingOverlay>
             {lifted && (
               <ul>
                 <MacroRow r={lifted} actions={actions} lifted />
               </ul>
             )}
-          </DragOverlay>
+          </FloatingOverlay>
         </DndContext>
       ) : (
         list

@@ -4,7 +4,7 @@ All notable changes to Pochini. Versions follow [semantic versioning](https://se
 while the major version is 0, a minor bump may change behaviour or the macro file format.
 Each version is built with `npm run release` into `release/Pochini-<version>.exe`.
 
-## Unreleased
+## 0.11.0 - 2026-10-21
 
 ### Added
 
@@ -15,6 +15,11 @@ Each version is built with `npm run release` into `release/Pochini-<version>.exe
 - **Shuffle.** Turn Shuffle on for some steps (in the step, or from its right-click menu) and
   they run in a random order, a new one every pass, while the other steps keep their places.
   Marked steps show a shuffle icon on their header.
+
+### Fixed
+
+- Dragging a step or macro right as a screen appeared could drop it one place off, because
+  the dragged copy was drawn one row low while the screen slid in.
 
 ## 0.10.2 - 2026-10-12
 

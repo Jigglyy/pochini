@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { closestCenter, DndContext, DragOverlay, type DragEndEvent } from "@dnd-kit/core";
+import { closestCenter, DndContext, type DragEndEvent } from "@dnd-kit/core";
 import { arrayMove, SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import {
   ArrowUpDown,
@@ -19,7 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { AppPicker } from "@/components/AppPicker";
 import { KeyCapture } from "@/components/KeyCapture";
 import { SortableStepRow, StepFace } from "@/components/StepRow";
-import { DROP_ANIMATION, useDragSensors } from "@/components/sortable";
+import { FloatingOverlay, useDragSensors } from "@/components/sortable";
 import { HelpTip } from "@/components/HelpTip";
 import { Field, Notice, Section, Segmented, ToggleRow } from "@/components/layout";
 import { getMacro, saveMacro, testSteps } from "@/lib/ipc";
@@ -423,9 +423,9 @@ export function MacroEditor({
                 ))}
               </div>
             </SortableContext>
-            <DragOverlay dropAnimation={DROP_ANIMATION}>
+            <FloatingOverlay>
               {draggingIndex >= 0 && <StepFace step={m.steps[draggingIndex]} index={draggingIndex} />}
-            </DragOverlay>
+            </FloatingOverlay>
           </DndContext>
         )}
 

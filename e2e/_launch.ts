@@ -147,6 +147,8 @@ export { expect } from "@playwright/test";
  *  never start a drag). Drops on the centre of `to`, offset by `dy`. */
 export async function drag(page: Page, from: Locator, to: Locator, dy = 0): Promise<void> {
   // Raw mouse moves do not scroll, so bring the pair into the window first.
+  // Centred, so neither end of the drag sits at an edge of the view, where
+  // dnd-kit would start auto-scrolling under the pointer.
   await from.evaluate((el) => el.scrollIntoView({ block: "center" }));
   const a = await from.boundingBox();
   const b = await to.boundingBox();
@@ -156,6 +158,10 @@ export async function drag(page: Page, from: Locator, to: Locator, dy = 0): Prom
   await page.mouse.down();
   await page.mouse.move(start.x + 8, start.y + 8, { steps: 4 });
   await page.mouse.move(start.x, b.y + b.height / 2 + dy, { steps: 20 });
+  // Hold still for two frames before letting go, as a person does. Releasing
+  // in the same frame as the last move dropped on a busy machine before
+  // dnd-kit had registered it, one slot short of the target.
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
   await page.mouse.up();
   // dnd-kit swallows clicks for 50 ms after a drop, so the release that ends
   // a drag cannot also press a button. Let that pass before the next click.
