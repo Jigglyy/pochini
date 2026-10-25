@@ -3,6 +3,13 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "./_launch";
 
+/** settings.json, or null until it exists: a poll must wait for the file,
+ *  not fail on the first read (that failed on a slow CI runner). */
+const settingsFile = (dataDir: string) =>
+  readFile(join(dataDir, "settings.json"), "utf8")
+    .then((t) => JSON.parse(t) as Record<string, unknown>)
+    .catch(() => null);
+
 // The basics, and that test mode really is isolated.
 
 test("starts empty, in its own data folder", async ({ app: { page, dataDir } }) => {
@@ -91,7 +98,7 @@ test.describe("first run", () => {
     await expect(dialog).toContainText("The keyboard hook keeps nothing");
     await dialog.getByRole("button", { name: "Got it" }).click();
     await expect(dialog).toHaveCount(0);
-    await expect.poll(async () => JSON.parse(await readFile(join(dataDir, "settings.json"), "utf8")).welcomed).toBe(true);
+    await expect.poll(() => settingsFile(dataDir).then((s) => s?.welcomed)).toBe(true);
     await page.reload();
     await expect(page.getByText("No macros yet")).toBeVisible();
     await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -125,7 +132,7 @@ test("Settings > Window: tray, start with Windows, administrator", async ({ app:
   await expect(page.getByText("Pochini asks the first time you close the window.")).toBeVisible();
   await page.getByRole("switch", { name: /^Keep running in the tray/ }).click();
   await expect
-    .poll(async () => JSON.parse(await readFile(join(dataDir, "settings.json"), "utf8")).close_to_tray)
+    .poll(() => settingsFile(dataDir).then((s) => s?.close_to_tray))
     .toBe(true);
 
   // Test mode keeps "start with Windows" in a file, never in the registry.

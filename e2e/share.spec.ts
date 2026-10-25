@@ -43,7 +43,9 @@ test.describe("export", () => {
   test("the right-click menu exports too", async ({ app: { page, dataDir } }) => {
     await row(page, "Fill form").click({ button: "right" });
     await page.getByRole("menu").getByRole("menuitem", { name: "Export..." }).click();
-    await expect.poll(async () => JSON.parse(await readFile(join(dataDir, "out.pochini.json"), "utf8")).macros[0].name).toBe("Fill form");
+    // Waits for the file to appear rather than failing on the first read.
+    const exported = () => readFile(join(dataDir, "out.pochini.json"), "utf8").then(JSON.parse).catch(() => null);
+    await expect.poll(async () => (await exported())?.macros[0].name).toBe("Fill form");
   });
 });
 

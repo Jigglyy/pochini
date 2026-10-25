@@ -3,9 +3,6 @@ import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { ErrorBoundary } from "./ErrorBoundary";
 
-// React's act() wants to know it is in a test.
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-
 let broken = true;
 function Screen() {
   if (broken) throw new Error("the screen fell over");
@@ -13,7 +10,6 @@ function Screen() {
 }
 
 afterEach(() => {
-  document.body.innerHTML = "";
   broken = true;
 });
 

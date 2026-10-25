@@ -28,9 +28,9 @@ this app owns.
 ## Status
 
 Implemented and building. `src-tauri/` has the full Rust core (model, storage, input,
-hotkey, engine, IPC) with **202 passing unit tests**; `src/` is a ShadCN + Tailwind v4 UI
-styled after Kanbini (macro list, step editor, settings), with **36 Vitest unit tests** for its
-helpers and **85 Playwright e2e tests** against the real app. `npm run tauri dev` opens the app.
+hotkey, engine, IPC) with **208 passing unit tests**; `src/` is a ShadCN + Tailwind v4 UI
+styled after Kanbini (macro list, step editor, settings), with **61 Vitest tests** for its
+helpers and components, and **97 Playwright e2e tests** against the real app. `npm run tauri dev` opens the app.
 
 The M0/M1 Win32 assumptions were measured before being ported; see
 [tools/m0-probe/README.md](tools/m0-probe/README.md). That harness found three errors in the
@@ -393,14 +393,21 @@ Mostly carried over from Kanbini, whose renderer this UI copies the look of:
 
 ## Testing
 
-`cargo test` is the gate: 202 tests, no Windows APIs required for most of them. The UI has
-`npm test` (35 Vitest tests of the pure helpers in `src/lib` and the error boundary, in
-jsdom) and `npm run e2e` (85 Playwright tests), all run locally before every release and by
+`cargo test` is the gate: 208 tests, no Windows APIs required for most of them. The UI has
+`npm test` (61 Vitest tests: the pure helpers in `src/lib`, and components with their IPC
+mocked, in jsdom) and `npm run e2e` (97 Playwright tests), all run locally before every release and by
 CI on pull requests.
 
 - Vitest is for logic that needs no app: summaries and estimates (`lib/steps.ts`, which
   mirrors `Step::duration_range` and has the same test), sorting, colors, undo history,
   shortcut matching, the import review. New pure helpers get a `*.test.ts` beside them.
+- Components are tested with `src/test/render.tsx` (render, `settle`, `text`, `button`,
+  `click`; no Testing Library) and `vi.mock("@/lib/ipc", ...)` standing in for the backend:
+  the run pill against hand-fired run events, Pick's cancel-on-leave, the magnifier, hotkey
+  recording, the import review, the storage notice. `src/test/setup.ts` cleans up and stubs
+  what jsdom lacks (matchMedia, ResizeObserver).
+- To shake out timing flakes before they reach CI: `npx playwright test --repeat-each=2
+  --workers=5` (still headless).
 
 - `input/coords.rs` walks **every pixel** of six virtual-desktop layouts (including negative
   origins and odd sizes) through the round trip, and has an explicit regression test that
@@ -435,6 +442,9 @@ CI on pull requests.
     out of the way; `test.use({ seed: { welcome: true } })` shows it.
   - Copy as text and Paste use `clipboard.txt` in the data folder in test mode, never the
     real clipboard.
+  - A poll that reads a file the app is about to write must treat "not there yet" as a value
+    (`.catch(() => null)`), not throw: `expect.poll` fails at once on an exception, which on a
+    slow runner looked like a bug in the app.
   - Content under a switch opens with `Collapse` and is `inert` until it has; wait for it
     (no `[inert]` ancestor) before typing into it.
   - CI shows the windows (`POCHINI_E2E_HEADED=1` in `ci.yml`): on a runner, a hidden window's
