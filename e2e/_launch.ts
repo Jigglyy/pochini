@@ -174,3 +174,12 @@ export async function drag(page: Page, from: Locator, to: Locator, dy = 0): Prom
   // a drag cannot also press a button. Let that pass before the next click.
   await page.waitForTimeout(100);
 }
+
+/** Open Settings, and one of its sections from the sidebar (Settings opens on
+ *  the section used last, Hotkeys the first time). */
+export async function openSettings(page: Page, section?: string): Promise<void> {
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  if (section) {
+    await page.getByRole("navigation", { name: "Settings sections" }).getByRole("button", { name: section, exact: true }).click();
+  }
+}

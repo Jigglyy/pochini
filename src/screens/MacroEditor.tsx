@@ -258,9 +258,9 @@ export function MacroEditor({
   }, [m]);
 
   if (err && !m) {
-    return <p className="mx-auto max-w-4xl text-sm text-destructive">{err}</p>;
+    return <p className="page-column text-sm text-destructive">{err}</p>;
   }
-  if (!m) return <p className="mx-auto max-w-4xl text-sm text-muted-foreground">Loading...</p>;
+  if (!m) return <p className="page-column text-sm text-muted-foreground">Loading...</p>;
 
   /** `key` names what changed ("name", a step id) so typing into one field
    *  undoes as one step; see lib/history.ts. */
@@ -514,7 +514,7 @@ export function MacroEditor({
   );
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-8">
+    <div className="page-column flex flex-col gap-8">
       <div className="flex flex-wrap items-center gap-3">
         <Input
           value={m.name}
@@ -591,186 +591,189 @@ export function MacroEditor({
         </Notice>
       )}
 
-      <Section title="Trigger" fold={{ ...fold("trigger"), summary: triggerSummary(m) }}>
-        <Field
-          label="Hotkey"
-          help="Press Record, then the key or combination. The macro runs whenever you press it, in any app, even inside a game."
-        >
-          <KeyCapture
-            clashFor={{ macroId: m.id, guard: m.guard?.process || null }}
-            value={t ? { key: t.key, modifiers: t.modifiers } : null}
-            onChange={(h) =>
-              edit({
-                trigger: h
-                  ? { key: h.key, modifiers: h.modifiers, mode: t?.mode ?? "once", swallow: t?.swallow ?? false }
-                  : null,
-              })
-            }
-          />
-        </Field>
-
-        {t && (
+      {/* Side by side on a wide window; one above the other otherwise. */}
+      <div className="grid items-start gap-8 xl:grid-cols-2">
+        <Section title="Trigger" fold={{ ...fold("trigger"), summary: triggerSummary(m) }}>
           <Field
-            label="Mode"
-            help={
-              <div className="flex flex-col gap-1.5">
-                <p>
-                  <span className="font-medium">Run once per press</span>: one run for each press.
-                </p>
-                <p>
-                  <span className="font-medium">Repeat while held</span>: runs again and again until you let go.
-                </p>
-                <p>
-                  <span className="font-medium">Press to start, press again to stop</span>: a toggle.
-                </p>
-              </div>
-            }
+            label="Hotkey"
+            help="Press Record, then the key or combination. The macro runs whenever you press it, in any app, even inside a game."
+          >
+            <KeyCapture
+              clashFor={{ macroId: m.id, guard: m.guard?.process || null }}
+              value={t ? { key: t.key, modifiers: t.modifiers } : null}
+              onChange={(h) =>
+                edit({
+                  trigger: h
+                    ? { key: h.key, modifiers: h.modifiers, mode: t?.mode ?? "once", swallow: t?.swallow ?? false }
+                    : null,
+                })
+              }
+            />
+          </Field>
+
+          {t && (
+            <Field
+              label="Mode"
+              help={
+                <div className="flex flex-col gap-1.5">
+                  <p>
+                    <span className="font-medium">Run once per press</span>: one run for each press.
+                  </p>
+                  <p>
+                    <span className="font-medium">Repeat while held</span>: runs again and again until you let go.
+                  </p>
+                  <p>
+                    <span className="font-medium">Press to start, press again to stop</span>: a toggle.
+                  </p>
+                </div>
+              }
+            >
+              <Select
+                value={t.mode}
+                onValueChange={(v) => edit({ trigger: { ...t, mode: v as TriggerMode } })}
+              >
+                <SelectTrigger className="w-72">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="once">Run once per press</SelectItem>
+                  <SelectItem value="hold_repeat">Repeat while held</SelectItem>
+                  <SelectItem value="toggle">Press to start, press again to stop</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+          )}
+
+          <ToggleRow
+            label="Hotkey on"
+            help="When off, this macro ignores its hotkey. Run and Test still work."
+            checked={m.enabled}
+            onChange={(enabled) => edit({ enabled })}
+          />
+          {t && (
+            <ToggleRow
+              label="Block the key from other apps"
+              help="The app or game you're in never sees the key press. Off by default, so the key keeps working there too."
+              checked={t.swallow}
+              onChange={(swallow) => edit({ trigger: { ...t, swallow } })}
+            >
+              {risky && (
+                <Notice>
+                  {t.key.label} is a key you type all the time. With blocking on, it stops working in every
+                  other app while macros are on.
+                </Notice>
+              )}
+            </ToggleRow>
+          )}
+          <ToggleRow
+            label="App only"
+            help="The hotkey only works while the mouse is over the chosen app. Anywhere else the key behaves normally and is never blocked."
+            checked={m.guard !== null}
+            onChange={(on) => edit({ guard: on ? (m.guard ?? { process: "", label: "" }) : null })}
+          >
+            <AppPicker value={m.guard?.process ? m.guard : null} onChange={(guard) => edit({ guard })} />
+            {m.guard && !m.guard.process && (
+              <p className="text-xs text-warning">Choose an app, or this hotkey will never fire.</p>
+            )}
+          </ToggleRow>
+        </Section>
+
+        <Section title="When it runs" fold={{ ...fold("runs"), summary: runSummary(m) }}>
+          <Field
+            label="Repeat"
+            help="How many times the steps run each time the macro starts."
+            hint={m.repeat.kind === "forever" ? "Stop it with the panic key, or a toggle hotkey's second press." : undefined}
           >
             <Select
-              value={t.mode}
-              onValueChange={(v) => edit({ trigger: { ...t, mode: v as TriggerMode } })}
+              value={m.repeat.kind}
+              onValueChange={(v) => {
+                const k = v as Repeat["kind"];
+                edit({ repeat: k === "count" ? { kind: "count", n: 10 } : { kind: k } });
+              }}
             >
-              <SelectTrigger className="w-72">
+              <SelectTrigger className="w-56">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="once">Run once per press</SelectItem>
-                <SelectItem value="hold_repeat">Repeat while held</SelectItem>
-                <SelectItem value="toggle">Press to start, press again to stop</SelectItem>
+                <SelectItem value="once">Once</SelectItem>
+                <SelectItem value="count">A set number of times</SelectItem>
+                <SelectItem value="forever">Until stopped</SelectItem>
               </SelectContent>
             </Select>
-          </Field>
-        )}
-
-        <ToggleRow
-          label="Hotkey on"
-          help="When off, this macro ignores its hotkey. Run and Test still work."
-          checked={m.enabled}
-          onChange={(enabled) => edit({ enabled })}
-        />
-        {t && (
-          <ToggleRow
-            label="Block the key from other apps"
-            help="The app or game you're in never sees the key press. Off by default, so the key keeps working there too."
-            checked={t.swallow}
-            onChange={(swallow) => edit({ trigger: { ...t, swallow } })}
-          >
-            {risky && (
-              <Notice>
-                {t.key.label} is a key you type all the time. With blocking on, it stops working in every
-                other app while macros are on.
-              </Notice>
+            {m.repeat.kind === "count" && (
+              <>
+                <Input
+                  type="number"
+                  min={1}
+                  className="w-24 tabular-nums"
+                  value={m.repeat.n}
+                  onChange={(e) => edit({ repeat: { kind: "count", n: Math.max(1, +e.target.value || 1) } })}
+                />
+                <span className="text-xs text-muted-foreground">times</span>
+              </>
             )}
-          </ToggleRow>
-        )}
-        <ToggleRow
-          label="App only"
-          help="The hotkey only works while the mouse is over the chosen app. Anywhere else the key behaves normally and is never blocked."
-          checked={m.guard !== null}
-          onChange={(on) => edit({ guard: on ? (m.guard ?? { process: "", label: "" }) : null })}
-        >
-          <AppPicker value={m.guard?.process ? m.guard : null} onChange={(guard) => edit({ guard })} />
-          {m.guard && !m.guard.process && (
-            <p className="text-xs text-warning">Choose an app, or this hotkey will never fire.</p>
-          )}
-        </ToggleRow>
-      </Section>
-
-      <Section title="When it runs" fold={{ ...fold("runs"), summary: runSummary(m) }}>
-        <Field
-          label="Repeat"
-          help="How many times the steps run each time the macro starts."
-          hint={m.repeat.kind === "forever" ? "Stop it with the panic key, or a toggle hotkey's second press." : undefined}
-        >
-          <Select
-            value={m.repeat.kind}
-            onValueChange={(v) => {
-              const k = v as Repeat["kind"];
-              edit({ repeat: k === "count" ? { kind: "count", n: 10 } : { kind: k } });
-            }}
+          </Field>
+          <ToggleRow
+            label="Queue presses"
+            hint={t && t.mode !== "once" ? 'Only in "Run once per press" mode.' : undefined}
+            help="Pressing the hotkey while this macro runs queues another run instead of ignoring the press. Runs follow one after another. Panic stop clears the queue."
+            checked={m.queue}
+            disabled={!!t && t.mode !== "once"}
+            // Turning the queue on starts from the first press: with a macro that
+            // moves the mouse, "each press" almost never aims where you meant.
+            onChange={(queue) => edit(queue ? { queue, queue_from: "first_press" } : { queue })}
           >
-            <SelectTrigger className="w-56">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="once">Once</SelectItem>
-              <SelectItem value="count">A set number of times</SelectItem>
-              <SelectItem value="forever">Until stopped</SelectItem>
-            </SelectContent>
-          </Select>
-          {m.repeat.kind === "count" && (
-            <>
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="text-muted-foreground">Queued runs start from</span>
+              <Segmented
+                label="Queued runs start from"
+                value={m.queue_from}
+                options={QUEUE_FROM}
+                onChange={(queue_from) => edit({ queue_from })}
+              />
+              <HelpTip about="where queued runs start">
+                <div className="flex flex-col gap-1.5">
+                  <p>
+                    <span className="font-medium">The first press</span>: every queued run starts where the first
+                    press was, so "Click where the mouse started" keeps clicking that spot. A press after the queue
+                    has emptied starts a new chain.
+                  </p>
+                  <p>
+                    <span className="font-medium">Each press</span>: where the mouse was at that press. A press made
+                    while the macro runs catches the mouse wherever the macro moved it.
+                  </p>
+                </div>
+              </HelpTip>
+            </div>
+          </ToggleRow>
+          <ToggleRow
+            label="Stop after a while"
+            help="A safety limit: the run ends on its own after this long, whatever its repeat or hotkey mode. It ends normally, so the mouse still moves back if that is on."
+            hint={m.stop_after_ms === null && (m.repeat.kind === "forever" || t?.mode === "hold_repeat" || t?.mode === "toggle") ? "Useful here: this macro can run until stopped." : undefined}
+            checked={m.stop_after_ms !== null}
+            onChange={(on) => edit({ stop_after_ms: on ? 10 * 60_000 : null })}
+          >
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-muted-foreground">Stop after</span>
               <Input
                 type="number"
                 min={1}
+                aria-label="Minutes"
                 className="w-24 tabular-nums"
-                value={m.repeat.n}
-                onChange={(e) => edit({ repeat: { kind: "count", n: Math.max(1, +e.target.value || 1) } })}
+                value={m.stop_after_ms === null ? 10 : Math.max(1, Math.round(m.stop_after_ms / 60_000))}
+                onChange={(e) => edit({ stop_after_ms: Math.max(1, Math.round(+e.target.value || 1)) * 60_000 }, "stop_after")}
               />
-              <span className="text-xs text-muted-foreground">times</span>
-            </>
-          )}
-        </Field>
-        <ToggleRow
-          label="Queue presses"
-          hint={t && t.mode !== "once" ? 'Only in "Run once per press" mode.' : undefined}
-          help="Pressing the hotkey while this macro runs queues another run instead of ignoring the press. Runs follow one after another. Panic stop clears the queue."
-          checked={m.queue}
-          disabled={!!t && t.mode !== "once"}
-          // Turning the queue on starts from the first press: with a macro that
-          // moves the mouse, "each press" almost never aims where you meant.
-          onChange={(queue) => edit(queue ? { queue, queue_from: "first_press" } : { queue })}
-        >
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            <span className="text-muted-foreground">Queued runs start from</span>
-            <Segmented
-              label="Queued runs start from"
-              value={m.queue_from}
-              options={QUEUE_FROM}
-              onChange={(queue_from) => edit({ queue_from })}
-            />
-            <HelpTip about="where queued runs start">
-              <div className="flex flex-col gap-1.5">
-                <p>
-                  <span className="font-medium">The first press</span>: every queued run starts where the first
-                  press was, so "Click where the mouse started" keeps clicking that spot. A press after the queue
-                  has emptied starts a new chain.
-                </p>
-                <p>
-                  <span className="font-medium">Each press</span>: where the mouse was at that press. A press made
-                  while the macro runs catches the mouse wherever the macro moved it.
-                </p>
-              </div>
-            </HelpTip>
-          </div>
-        </ToggleRow>
-        <ToggleRow
-          label="Stop after a while"
-          help="A safety limit: the run ends on its own after this long, whatever its repeat or hotkey mode. It ends normally, so the mouse still moves back if that is on."
-          hint={m.stop_after_ms === null && (m.repeat.kind === "forever" || t?.mode === "hold_repeat" || t?.mode === "toggle") ? "Useful here: this macro can run until stopped." : undefined}
-          checked={m.stop_after_ms !== null}
-          onChange={(on) => edit({ stop_after_ms: on ? 10 * 60_000 : null })}
-        >
-          <div className="flex items-center gap-2 text-sm">
-            <span className="text-muted-foreground">Stop after</span>
-            <Input
-              type="number"
-              min={1}
-              aria-label="Minutes"
-              className="w-24 tabular-nums"
-              value={m.stop_after_ms === null ? 10 : Math.max(1, Math.round(m.stop_after_ms / 60_000))}
-              onChange={(e) => edit({ stop_after_ms: Math.max(1, Math.round(+e.target.value || 1)) * 60_000 }, "stop_after")}
-            />
-            <span className="text-muted-foreground">minutes</span>
-          </div>
-        </ToggleRow>
-        <ToggleRow
-          label="Move mouse back to where it started"
-          help="When the macro ends, the cursor jumps back to where it was when the macro started. Also after releasing a hold-to-repeat key or pressing a toggle hotkey again, but not after Panic or Stop."
-          checked={m.return_to_start}
-          onChange={(return_to_start) => edit({ return_to_start })}
-        />
-      </Section>
+              <span className="text-muted-foreground">minutes</span>
+            </div>
+          </ToggleRow>
+          <ToggleRow
+            label="Move mouse back to where it started"
+            help="When the macro ends, the cursor jumps back to where it was when the macro started. Also after releasing a hold-to-repeat key or pressing a toggle hotkey again, but not after Panic or Stop."
+            checked={m.return_to_start}
+            onChange={(return_to_start) => edit({ return_to_start })}
+          />
+        </Section>
+      </div>
 
       <Section
         title="Steps"
@@ -954,7 +957,7 @@ export function MacroEditor({
             No steps yet. Add one below, or press Record steps and do it once yourself.
           </div>
         ) : view === "split" ? (
-          <div className="grid grid-cols-[minmax(0,20rem)_minmax(0,1fr)] items-start gap-4">
+          <div className="grid grid-cols-[minmax(0,20rem)_minmax(0,1fr)] items-start gap-4 xl:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
             {list}
             <aside
               aria-label={selecting ? "Selected steps' settings" : "Step settings"}
@@ -992,8 +995,7 @@ export function MacroEditor({
           list
         )}
 
-        {/* Stays at the bottom of the window while a long list scrolls. */}
-        <div className="sticky bottom-0 z-10 -mx-1 flex flex-wrap items-center gap-2 bg-background/90 px-1 py-2 backdrop-blur-sm">
+        <div role="group" aria-label="Add a step" className="flex flex-wrap items-center gap-2 pt-1">
           <span className="mr-1 text-sm text-muted-foreground">Add</span>
           {ADD.map(({ kind, label, Icon, hint }) => (
             <Button key={kind} variant="outline" size="sm" onClick={() => add(kind)} title={hint}>

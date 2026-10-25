@@ -141,6 +141,21 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
+/* The one column every screen and the header share, so they start at the
+   same x. It grows with the window, so a maximized window is not a narrow
+   strip with empty sides: 56rem, 72rem from xl, 80rem from 2xl. */
+@utility page-column {
+  margin-inline: auto;
+  width: 100%;
+  max-width: var(--container-4xl);
+  @variant xl {
+    max-width: var(--container-6xl);
+  }
+  @variant 2xl {
+    max-width: var(--container-7xl);
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

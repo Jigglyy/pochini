@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { expect, test } from "./_launch";
+import { expect, openSettings, test } from "./_launch";
 
 /** settings.json, or null until it exists: a poll must wait for the file,
  *  not fail on the first read (that failed on a slow CI runner). */
@@ -15,7 +15,7 @@ const settingsFile = (dataDir: string) =>
 test("starts empty, in its own data folder", async ({ app: { page, dataDir } }) => {
   await expect(page.getByText("No macros yet")).toBeVisible();
 
-  await page.getByRole("button", { name: "Settings" }).click();
+  await openSettings(page, "Backup");
   await expect(page.getByText(dataDir, { exact: true })).toBeVisible();
 });
 
@@ -45,7 +45,7 @@ test("leaving with unsaved changes asks first", async ({ app: { page } }) => {
 });
 
 test("theme switches to light and back", async ({ app: { page } }) => {
-  await page.getByRole("button", { name: "Settings" }).click();
+  await openSettings(page, "Appearance");
   await page.getByText("Light", { exact: true }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await page.getByText("Dark", { exact: true }).click();
@@ -79,7 +79,7 @@ test("runs under a content security policy, and the app breaks none of it", asyn
 });
 
 test("Settings > About shows the third-party licenses built into the app", async ({ app: { page } }) => {
-  await page.getByRole("button", { name: "Settings" }).click();
+  await openSettings(page, "About");
   await page.getByRole("button", { name: "Third-party licenses" }).click();
   const dialog = page.getByRole("dialog", { name: "Third-party licenses" });
   await expect(dialog).toContainText("# Third-party notices");
@@ -106,7 +106,7 @@ test.describe("first run", () => {
 });
 
 test("Settings lists the app shortcuts", async ({ app: { page } }) => {
-  await page.getByRole("button", { name: "Settings" }).click();
+  await openSettings(page, "Shortcuts");
   await expect(page.getByText("Paste a copied macro")).toBeVisible();
   await page.keyboard.press("Alt+ArrowLeft");
   await expect(page.getByText("No macros yet")).toBeVisible();
@@ -128,7 +128,7 @@ test("--smoke starts, checks itself and exits cleanly", async () => {
 });
 
 test("Settings > Window: tray, start with Windows, administrator", async ({ app: { page, dataDir } }) => {
-  await page.getByRole("button", { name: "Settings" }).click();
+  await openSettings(page, "Window and startup");
   await expect(page.getByText("Pochini asks the first time you close the window.")).toBeVisible();
   await page.getByRole("switch", { name: /^Keep running in the tray/ }).click();
   await expect

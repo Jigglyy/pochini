@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Page } from "@playwright/test";
-import { drag, expect, test } from "./_launch";
+import { drag, expect, openSettings, test } from "./_launch";
 import { clickAt, macro, wait } from "./data";
 
 // Flows that cross screens, and edges the screen-by-screen specs leave out.
@@ -42,7 +42,7 @@ test.describe("backup", () => {
   });
 
   test("Export all writes every macro to one file that Import reads", async ({ app: { page, dataDir } }) => {
-    await page.getByRole("button", { name: "Settings" }).click();
+    await openSettings(page, "Backup");
     await page.getByRole("button", { name: "Export all macros..." }).click();
     await expect(page.getByRole("status").filter({ hasText: "Saved to" })).toContainText("all.pochini.json");
     const file = await json(dataDir, "all.pochini.json");
@@ -54,7 +54,7 @@ test.describe("backup", () => {
 
 test.describe("an empty library", () => {
   test("Export all says there is nothing to export", async ({ app: { page } }) => {
-    await page.getByRole("button", { name: "Settings" }).click();
+    await openSettings(page, "Backup");
     await page.getByRole("button", { name: "Export all macros..." }).click();
     await expect(page.getByText("There are no macros to export yet.")).toBeVisible();
   });
@@ -84,7 +84,7 @@ test.describe("run history", () => {
     await page.getByRole("button", { name: /^Quick/ }).click();
     await page.getByRole("button", { name: "Test", exact: true }).click();
     await expect(page.getByRole("status").filter({ hasText: "Finished" })).toBeVisible({ timeout: 8_000 });
-    await page.getByRole("button", { name: "Settings" }).click();
+    await openSettings(page, "Run history");
     const history = page.locator("section").filter({ has: page.getByRole("heading", { name: "Run history" }) });
     await expect(history).toContainText("Quick (test)");
     await history.getByRole("button", { name: "Clear" }).click();

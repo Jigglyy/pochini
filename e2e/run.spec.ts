@@ -1,4 +1,4 @@
-import { expect, test } from "./_launch";
+import { expect, openSettings, test } from "./_launch";
 import { macro, wait } from "./data";
 
 // Running a macro. Test mode runs it against the fake mouse and keyboard, so
@@ -46,7 +46,7 @@ test.describe("waiting for a color", () => {
       await expect(page.getByRole("status").filter({ hasText: "Finished" })).toContainText("Finished Watch (test)", {
         timeout: 8_000,
       });
-      await page.getByRole("button", { name: "Settings" }).click();
+      await openSettings(page, "Run history");
       const history = page.locator("section").filter({ has: page.getByRole("heading", { name: "Run history" }) });
       await expect(history).toContainText("Watch (test)");
       await expect(history).toContainText("Finished");

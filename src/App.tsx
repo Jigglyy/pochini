@@ -84,7 +84,7 @@ export default function App() {
       {/* The header shares the pages' column, so the logo, page titles and
           panels all start at the same x. */}
       <header className="border-b border-border px-6">
-        <div className="mx-auto flex h-14 w-full max-w-4xl items-center gap-3">
+        <div className="page-column flex h-14 items-center gap-3">
         <img src={logo} alt="" aria-hidden draggable={false} className="size-8 shrink-0" />
         <h1 className="font-display text-lg font-semibold tracking-tight">Pochini</h1>
 

@@ -37,7 +37,7 @@ export function StorageNotice() {
   return (
     <div
       role="alert"
-      className="mx-auto mb-6 flex w-full max-w-4xl flex-col gap-3 rounded-md border border-destructive/50 bg-destructive/10 p-4 text-sm"
+      className="page-column mb-6 flex flex-col gap-3 rounded-md border border-destructive/50 bg-destructive/10 p-4 text-sm"
     >
       <p className="flex items-start gap-2 font-medium text-destructive">
         <TriangleAlert className="mt-0.5 size-4 shrink-0" />

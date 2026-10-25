@@ -7,13 +7,17 @@ import { useEffect, useRef } from "react";
 // precedence. No bare letters, which macros often use, and no Escape for
 // "back": Escape is the default panic key.
 
-export type Shortcut = { keys: string; action: string; where: string };
+/** Where a shortcut works; Settings > Shortcuts lists them under these. */
+export type ShortcutPlace = "Macro list" | "Editor" | "Anywhere in the window";
+
+export type Shortcut = { keys: string; action: string; where: ShortcutPlace };
 
 export const SHORTCUTS: readonly Shortcut[] = [
   { keys: "Ctrl+N", action: "New macro", where: "Macro list" },
   { keys: "Ctrl+F", action: "Find a macro", where: "Macro list" },
   { keys: "Ctrl+V", action: "Paste a copied macro", where: "Macro list" },
-  { keys: "Ctrl+Z", action: "Undo", where: "Editor, and a deleted macro on the list" },
+  { keys: "Ctrl+Z", action: "Bring back a deleted macro", where: "Macro list" },
+  { keys: "Ctrl+Z", action: "Undo", where: "Editor" },
   { keys: "Ctrl+Y", action: "Redo", where: "Editor" },
   { keys: "Ctrl+S", action: "Save", where: "Editor" },
   { keys: "Ctrl+Enter", action: "Test the steps", where: "Editor" },
@@ -22,7 +26,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
   { keys: "Ctrl+D", action: "Duplicate the focused step", where: "Editor" },
   { keys: "Up", action: "Go to the step above (Down: below)", where: "Editor" },
   { keys: "Alt+Up", action: "Move the focused step up (Alt+Down: down)", where: "Editor" },
-  { keys: "Alt+Left", action: "Back", where: "Editor, Settings" },
+  { keys: "Alt+Left", action: "Back, from the editor or Settings", where: "Anywhere in the window" },
 ];
 
 const KEY_NAMES: Record<string, string> = { Left: "ArrowLeft", Right: "ArrowRight", Up: "ArrowUp", Down: "ArrowDown" };

@@ -22,7 +22,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode; onHome: () =
     const { error } = this.state;
     if (!error) return this.props.children;
     return (
-      <div role="alert" className="mx-auto flex w-full max-w-4xl flex-col gap-4">
+      <div role="alert" className="page-column flex flex-col gap-4">
         <h2 className="flex items-center gap-2 font-display text-xl font-semibold tracking-tight text-destructive">
           <TriangleAlert className="size-5" />
           This screen ran into a problem

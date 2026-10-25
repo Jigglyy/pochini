@@ -315,7 +315,7 @@ export function MacroList({
   const shown = rows?.filter((r) => rowMatches(r, query)) ?? null;
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
+    <div className="page-column flex flex-col gap-6">
       {off && (
         <div className="flex animate-in flex-wrap items-center gap-2 rounded-md border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground fade-in-0 slide-in-from-top-1">
           <span className="font-medium text-foreground">Macros are off.</span>

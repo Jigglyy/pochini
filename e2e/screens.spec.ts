@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { expect, test } from "./_launch";
+import { expect, openSettings, test } from "./_launch";
 import { clickAt, macro, typeText, wait, type ClickStep } from "./data";
 
 // Not a test: screenshots of every screen for design review. Skipped unless
@@ -65,7 +65,7 @@ for (const theme of ["dark", "light"] as const) {
   test(`screens ${theme}`, async ({ app: { page } }) => {
     // Tall enough for whole pages (the app scrolls inside <main>).
     await page.setViewportSize({ width: 1000, height: 1700 });
-    await page.getByRole("button", { name: "Settings" }).click();
+    await openSettings(page, "Appearance");
     await page.getByText(theme === "light" ? "Light" : "Dark", { exact: true }).click();
     await page.getByRole("button", { name: "Macros", exact: true }).click();
     await expect(page.getByText("Fill the order form")).toBeVisible();
@@ -115,16 +115,28 @@ for (const theme of ["dark", "light"] as const) {
     await page.getByRole("button", { name: "Trigger" }).click();
     await page.getByRole("button", { name: "When it runs" }).click();
 
+    // A maximized window: the column grows, the option sections pair up.
+    await page.setViewportSize({ width: 1536, height: 1100 });
+    await shot(page, `${theme}-12-editor-wide`);
+    await page.setViewportSize({ width: 1000, height: 1700 });
+
     await page.getByRole("button", { name: "Settings" }).click();
     await shot(page, `${theme}-5-settings`);
+    for (const section of ["Hotkeys", "Shortcuts", "Window and startup", "About"]) {
+      await openSettingsSection(page, section);
+      await shot(page, `${theme}-5-settings-${section.split(" ")[0].toLowerCase()}`);
+    }
   });
 }
+
+const openSettingsSection = (page: Page, section: string) =>
+  page.getByRole("navigation", { name: "Settings sections" }).getByRole("button", { name: section, exact: true }).click();
 
 // The README pictures (docs/images/): window-sized, not whole pages.
 for (const theme of ["dark", "light"] as const) {
   test(`readme ${theme}`, async ({ app: { page } }) => {
     await page.setViewportSize({ width: 1100, height: 700 });
-    await page.getByRole("button", { name: "Settings" }).click();
+    await openSettings(page, "Appearance");
     await page.getByText(theme === "light" ? "Light" : "Dark", { exact: true }).click();
     await page.getByRole("button", { name: "Macros", exact: true }).click();
     await expect(page.getByText("Fill the order form")).toBeVisible();
