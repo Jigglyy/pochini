@@ -118,7 +118,9 @@ behaviour or the macro file format.
    `gh release view vX.Y.Z`. Other pushes to main skip both jobs. A manual run (Actions tab)
    is a dry run with the files as an artifact.
    - Every action is pinned to a commit SHA with the version in a comment; Dependabot bumps
-     them. Never go back to `@v7` style tags.
+     them. Never go back to `@v7` style tags: the repository settings require SHA pinning and
+     allow only GitHub's own actions, verified ones, `dtolnay/rust-toolchain` and
+     `Swatinem/rust-cache`. A new third-party action needs adding there first.
    - Releases build from main, not from a tag, because GitHub scopes the build cache per
      ref: tag runs could never reuse a cache and compiled everything (~20 minutes).
    - The release profile uses thin LTO: an incremental release build is 30 s instead of

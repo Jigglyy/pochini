@@ -131,6 +131,10 @@ test("Settings > Window: tray, start with Windows, administrator", async ({ app:
   await page.getByRole("switch", { name: /^Start with Windows/ }).click();
   await expect.poll(async () => (await readFile(join(dataDir, "autostart.txt"), "utf8").catch(() => ""))).toBe("on");
 
-  await expect(page.getByText("Not running as administrator")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Restart as administrator" })).toBeVisible();
+  // Whichever is true here: CI runners run as administrator, a normal desktop does not.
+  const status = page.getByText(/^(Not running|Running) as administrator$/);
+  await expect(status).toBeVisible();
+  const restart = page.getByRole("button", { name: "Restart as administrator" });
+  if ((await status.textContent())?.startsWith("Not")) await expect(restart).toBeVisible();
+  else await expect(restart).toHaveCount(0);
 });
