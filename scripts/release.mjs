@@ -108,7 +108,7 @@ if (stuck.length) {
 }
 console.log(`
 Then publish it on GitHub (the Release workflow builds the same exe there):
-  1. add a "## ${next} - <date>" section to CHANGELOG.md (it becomes the release notes)
-  2. git commit -am "chore(release): ${next}"
+  1. in CHANGELOG.md, rename "## Unreleased" to "## ${next} - <date>" (the release notes)
+  2. run cargo test and npm run e2e, then git commit -am "chore(release): ${next}"
   3. git push origin main   (the workflow tags v${next} and publishes the release)
 `);

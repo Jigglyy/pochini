@@ -29,7 +29,7 @@ const root = path.resolve(import.meta.dirname, "..");
 const out = path.join(root, "THIRD_PARTY_NOTICES.md");
 const check = process.argv.includes("--check");
 
-const sh = (cmd) => execSync(cmd, { cwd: root, encoding: "utf8", maxBuffer: 256 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] });
+const sh = (cmd) => execSync(cmd, { cwd: root, encoding: "utf8", maxBuffer: 256 * 1024 * 1024, stdio: ["ignore", "pipe", "inherit"] });
 
 const LICENSE_FILE = /^(licen[cs]e|copying|notice|copyright|unlicense)([-._].*)?$/i;
 
@@ -47,7 +47,9 @@ function licenseTexts(dir, expr) {
 
 // --- Rust ---------------------------------------------------------------
 const meta = JSON.parse(
-  sh("cargo metadata --format-version 1 --locked --filter-platform x86_64-pc-windows-msvc --manifest-path src-tauri/Cargo.toml"),
+  // Not --locked: right after a version bump Cargo.lock still has the old
+  // version of Pochini itself, and cargo updates that one line.
+  sh("cargo metadata --format-version 1 --filter-platform x86_64-pc-windows-msvc --manifest-path src-tauri/Cargo.toml"),
 );
 const pkgs = new Map(meta.packages.map((p) => [p.id, p]));
 const nodes = new Map(meta.resolve.nodes.map((n) => [n.id, n]));
