@@ -107,8 +107,13 @@ jobs:
           Start-Process "$env:RUNNER_TEMP\wv2.exe" -ArgumentList '/silent','/install' -Wait
 
       # `npm run e2e` type-checks the specs and builds the debug app first.
+      # The windows are shown here (nobody watches a runner): a hidden window
+      # on a runner's desktop got its timers stopped mid-test, while hidden
+      # windows on a real desktop do not.
       - name: Playwright
         run: npm run e2e
+        env:
+          POCHINI_E2E_HEADED: "1"
 
       - name: Keep traces and screenshots of failures
         if: failure()

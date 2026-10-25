@@ -34,6 +34,8 @@ test("expanding a step animates its height", async ({ app: { page } }) => {
 });
 
 test("moving a step glides it, and quick repeated clicks all count", async ({ app: { page } }) => {
+  // Whatever this machine's "Animation effects" setting is (CI runners turn it off).
+  await page.emulateMedia({ reducedMotion: "no-preference" });
   await page.getByRole("button", { name: /^Steps/ }).click();
   const down = step(page, "s1").getByRole("button", { name: "Move down", exact: true });
   await down.click();
