@@ -6,6 +6,8 @@ Each version is built with `npm run release` into `release/Pochini-<version>.exe
 
 ## Unreleased
 
+## 0.15.0 - 2026-10-26
+
 ### Added
 
 - **Change many steps at once.** Press Select above the steps (or Ctrl+A, or Ctrl+click a
