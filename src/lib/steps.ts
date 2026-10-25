@@ -134,8 +134,10 @@ export function summarize(s: Step): string {
         s.anchor === "fixed" ? `(${s.x}, ${s.y})` : aimPhrase(s.anchor, s.dx, s.dy).replace(/^at /, "");
       return `Move to ${where}${s.move_duration_ms ? ` over ${s.move_duration_ms} ms` : ""}`;
     }
-    case "scroll":
-      return `Scroll ${s.amount > 0 ? "up" : "down"} ${Math.abs(s.amount)}`;
+    case "scroll": {
+      const way = s.axis === "horizontal" ? (s.amount > 0 ? "right" : "left") : s.amount > 0 ? "up" : "down";
+      return `Scroll ${way} ${Math.abs(s.amount)}`;
+    }
     case "key": {
       const combo = [...s.modifiers.map(modLabel), s.key.label].join("+");
       const verb = s.action === "down" ? "Hold" : s.action === "up" ? "Release" : "Press";
@@ -157,14 +159,16 @@ export function stepRange(s: Step): [number, number] {
     case "click": {
       const [a, b] = j(s.hold_ms);
       const [sa, sb] = j(s.settle_ms);
-      const n = s.action === "double" ? 2 : 1;
+      // A double click holds, waits a hold's length, and holds again.
+      const n = s.action === "double" ? 3 : s.action === "click" ? 1 : 0;
       return [a * n + 2 * sa + s.move_duration_ms, b * n + 2 * sb + s.move_duration_ms];
     }
     case "key":
       return j(s.hold_ms);
     case "text": {
       const [a, b] = j(s.per_char_ms);
-      const n = [...s.value].length;
+      // One wait per UTF-16 unit, as the engine types them.
+      const n = s.value.length;
       return [a * n, b * n];
     }
     case "move":

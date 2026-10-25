@@ -28,8 +28,8 @@ this app owns.
 ## Status
 
 Implemented and building. `src-tauri/` has the full Rust core (model, storage, input,
-hotkey, engine, IPC) with **149 passing unit tests**; `src/` is a ShadCN + Tailwind v4 UI
-styled after Kanbini (macro list, step editor, settings), covered by **54 Playwright e2e
+hotkey, engine, IPC) with **165 passing unit tests**; `src/` is a ShadCN + Tailwind v4 UI
+styled after Kanbini (macro list, step editor, settings), covered by **61 Playwright e2e
 tests** against the real app. `npm run tauri dev` opens the app.
 
 The M0/M1 Win32 assumptions were measured before being ported; see
@@ -202,6 +202,9 @@ These are the things that silently break this category of app. Full reasoning in
    key-down/key-up events goes permanently wrong the first time a key-up is hidden from the
    hook (released in an elevated window, on the secure desktop, or held when the app
    started), and then every hotkey with exact modifiers stops matching. Reproduced live.
+   `GetAsyncKeyState` also reports modifiers our own macro holds (a shift-click), so the
+   hook leaves out the ones in `input::INJECTED`, which the Win32 backend updates as it
+   sends them (`hotkey::logic::held_modifiers`).
 
 6. **Tag our own injected input and ignore it in the hook.** Set a magic constant in
    `MOUSEINPUT.dwExtraInfo` / `KEYBDINPUT.dwExtraInfo` and skip those events, or a macro that
@@ -337,8 +340,8 @@ Mostly carried over from Kanbini, whose renderer this UI copies the look of:
 
 ## Testing
 
-`cargo test` is the gate: 149 tests, no Windows APIs required for most of them. The UI has
-`npm run e2e` (54 Playwright tests), run locally before every release.
+`cargo test` is the gate: 165 tests, no Windows APIs required for most of them. The UI has
+`npm run e2e` (61 Playwright tests), run locally before every release.
 
 - `input/coords.rs` walks **every pixel** of six virtual-desktop layouts (including negative
   origins and odd sizes) through the round trip, and has an explicit regression test that
@@ -375,9 +378,13 @@ Mostly carried over from Kanbini, whose renderer this UI copies the look of:
 ## Conventions
 
 - Rust: `thiserror` for error enums, string errors only at the command boundary. No
-  `unwrap()` in `engine/` or `hotkey/`: a panic in the hook thread takes the hook down.
-- All `unsafe` Win32 calls live in `input/` and `hotkey/`, each with a `// SAFETY:` comment.
-  The rest of the codebase is safe Rust.
+  `unwrap()` or `expect()` in `engine/` or `hotkey/`: a panic in the hook thread takes the
+  hook down. The release profile unwinds (`panic = "unwind"`), so `Engine::run_at` can catch
+  a panic in a step and still run the release pass; never switch it back to `abort`.
+- All `unsafe` Win32 calls live in `input/`, `hotkey/` and the waitable timer in
+  `engine/timer.rs`, each with a `// SAFETY:` comment. The rest of the codebase is safe Rust.
+- `macros.json` is never written over when it could not be read: see "When macros.json
+  cannot be read" in [docs/03-macro-format.md](docs/03-macro-format.md).
 - The macro JSON schema is versioned. Removing or changing the meaning of a field means
   bumping `schema_version` and adding a migration in `storage.rs`; an additive field with a
   serde default does not. See [docs/03-macro-format.md](docs/03-macro-format.md).

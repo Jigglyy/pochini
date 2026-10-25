@@ -210,6 +210,13 @@ export function MacroEditor({
         </p>
       )}
 
+      {m.review && (
+        <Notice>
+          Imported from a file, so someone else wrote it. Check every step below before you use it; saving it
+          marks it as checked.
+        </Notice>
+      )}
+
       <Section title="Trigger">
         <Field
           label="Hotkey"

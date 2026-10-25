@@ -241,6 +241,14 @@ impl Step {
         }
     }
 
+    /// Forget where the step's point was picked (monitor name and layout):
+    /// the sender's desktop is nobody else's business.
+    pub fn clear_capture(&mut self) {
+        if let Step::Click { capture, .. } | Step::Move { capture, .. } = self {
+            *capture = None;
+        }
+    }
+
     pub fn set_id(&mut self, new: String) {
         match self {
             Step::Click { id, .. }
@@ -309,10 +317,12 @@ impl Step {
             } => {
                 let (a, b) = of(hold_ms);
                 let (sa, sb) = of(settle_ms);
-                let n = if matches!(action, ClickAction::Double) {
-                    2
-                } else {
-                    1
+                // A double click holds, waits a hold's length, and holds
+                // again; a lone press or release does not hold at all.
+                let n = match action {
+                    ClickAction::Double => 3,
+                    ClickAction::Click => 1,
+                    ClickAction::Down | ClickAction::Up => 0,
                 };
                 let travel = *move_duration_ms as u64;
                 (a * n + 2 * sa + travel, b * n + 2 * sb + travel)
@@ -322,7 +332,8 @@ impl Step {
                 value, per_char_ms, ..
             } => {
                 let (a, b) = of(per_char_ms);
-                let n = value.chars().count() as u64;
+                // One wait per UTF-16 unit, as the engine types them.
+                let n = value.encode_utf16().count() as u64;
                 (a * n, b * n)
             }
             Step::Move {
@@ -388,6 +399,11 @@ pub struct Macro {
     /// palette (src/lib/colors.ts), or none. Display only.
     #[serde(default)]
     pub color: Option<String>,
+    /// Imported from someone else's file and not looked at yet. A shared
+    /// macro is a program that types and clicks, so it cannot be switched on
+    /// or run until its new owner has seen its steps (see share.rs).
+    #[serde(default)]
+    pub review: bool,
     pub trigger: Option<Trigger>,
     #[serde(default)]
     pub repeat: Repeat,
@@ -449,6 +465,7 @@ impl Macro {
             enabled: true,
             favorite: false,
             color: None,
+            review: false,
             trigger: None,
             repeat: Repeat::Once,
             queue: false,
@@ -865,15 +882,23 @@ mod tests {
             held_key: None,
             capture: None,
         };
-        // 2 presses of 10-15 plus settle before and after of 3-4 each
-        assert_eq!(double.duration_range(), (26, 38));
+        // 2 presses of 10-15 with a hold-long gap between them (the engine
+        // waits three holds), plus settle before and after of 3-4 each.
+        // Regression: the estimate counted two holds.
+        assert_eq!(double.duration_range(), (36, 53));
+        let mut press_only = double.clone();
+        if let Step::Click { action, .. } = &mut press_only {
+            *action = ClickAction::Down;
+        }
+        assert_eq!(press_only.duration_range(), (6, 8), "a lone press does not hold");
 
         let text = Step::Text {
             id: "b".into(),
             shuffle: false,
-            value: "abc".into(),
+            value: "a\u{1F600}".into(),
             per_char_ms: Jitter { base: 10, jitter: 2 },
         };
+        // The emoji is two UTF-16 units, typed (and waited for) one by one.
         assert_eq!(text.duration_range(), (30, 36));
     }
 

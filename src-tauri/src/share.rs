@@ -8,11 +8,15 @@
 //!
 //! Import also accepts a bare macro object and a `macros.json` backup, so a
 //! hand-copied macro or a whole library comes in the same way. Imported
-//! macros are new macros: fresh ids, and their **hotkey switched off**, so a
-//! macro someone else wrote never fires on a key until its new owner has
-//! looked at it and turned it on.
+//! macros are new macros: fresh ids, their **hotkey switched off**, and marked
+//! for **review**: a shared macro is a program that types and clicks, so it
+//! cannot be switched on or run until its new owner has seen its steps.
+//!
+//! An export leaves out what is about the sender rather than the macro: the
+//! star, the window title its app was picked from, and the monitor each point
+//! was picked on.
 
-use crate::model::{Macro, MacroFile};
+use crate::model::{normalize_color, Macro, MacroFile, Step};
 
 pub const FORMAT: &str = "pochini.macros";
 pub const VERSION: u32 = 1;
@@ -43,7 +47,7 @@ pub enum ShareError {
     Invalid(String),
 }
 
-/// The file for `macros`. Personal list state (the star) stays behind.
+/// The file for `macros`. Personal state stays behind (see the module docs).
 pub fn export(macros: &[Macro]) -> String {
     let file = ShareFile {
         format: FORMAT.into(),
@@ -53,6 +57,11 @@ pub fn export(macros: &[Macro]) -> String {
             .cloned()
             .map(|mut m| {
                 m.favorite = false;
+                m.review = false;
+                if let Some(g) = m.guard.as_mut() {
+                    g.label = String::new();
+                }
+                m.steps.iter_mut().for_each(Step::clear_capture);
                 m
             })
             .collect(),
@@ -110,7 +119,9 @@ pub fn import(text: &str, existing_names: &[String], now: &str) -> Result<Vec<Ma
         .map(|mut m| {
             m.fresh_ids();
             m.enabled = false;
+            m.review = true;
             m.favorite = false;
+            m.color = normalize_color(m.color.take());
             m.created_at = now.into();
             m.updated_at = now.into();
             m.name = unique_name(m.name.trim(), &taken);
@@ -161,8 +172,41 @@ mod tests {
         assert_eq!(m.color.as_deref(), Some("teal"), "the color travels with it");
         assert_ne!(m.id, original.id, "a new macro, not the same one");
         assert!(!m.enabled, "hotkey off until its new owner turns it on");
+        assert!(m.review, "and it must be looked at first");
         assert!(!m.favorite);
         assert_eq!(m.created_at, NOW);
+    }
+
+    #[test]
+    fn an_export_leaves_out_the_senders_window_titles_and_monitors() {
+        let mut m = sample("Fill");
+        m.guard = Some(crate::model::Guard { process: "game.exe".into(), label: "My private window title".into() });
+        m.steps.push(Step::Move {
+            id: "mv".into(),
+            shuffle: false,
+            x: 1,
+            y: 2,
+            anchor: crate::model::Anchor::Fixed,
+            dx: 0,
+            dy: 0,
+            coord_jitter_px: 0,
+            move_duration_ms: 0,
+            capture: Some(crate::model::CaptureMeta { monitor: "DISPLAY2".into(), monitor_rect: [0, 0, 1, 1], dpi: 96 }),
+        });
+        let text = export(&[m]);
+        assert!(!text.contains("My private window title"), "{text}");
+        assert!(!text.contains("DISPLAY2"), "{text}");
+        assert!(text.contains("game.exe"), "the app restriction itself travels");
+    }
+
+    #[test]
+    fn an_imported_color_is_normalized() {
+        let mut m = sample("Fill");
+        m.color = Some("  url(javascript:alert(1))  ".into());
+        assert_eq!(import(&export(&[m]), &[], NOW).unwrap()[0].color, None);
+        let mut m = sample("Fill");
+        m.color = Some(" Teal ".into());
+        assert_eq!(import(&export(&[m]), &[], NOW).unwrap()[0].color.as_deref(), Some("teal"));
     }
 
     #[test]

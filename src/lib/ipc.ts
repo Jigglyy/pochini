@@ -4,6 +4,7 @@ import type {
   AppWindow,
   HotkeyDiagnostics,
   KeyRef,
+  LoadProblem,
   Macro,
   MacroSummary,
   Monitor,
@@ -24,6 +25,8 @@ export const setMacroEnabled = (id: string, enabled: boolean) =>
   invoke<void>("set_macro_enabled", { id, enabled });
 export const setMacroFavorite = (id: string, favorite: boolean) =>
   invoke<void>("set_macro_favorite", { id, favorite });
+/** An imported macro's review is done: it may be switched on and run. */
+export const markReviewed = (id: string) => invoke<void>("mark_reviewed", { id });
 /** `null` clears it. */
 export const setMacroColor = (id: string, color: string | null) =>
   invoke<void>("set_macro_color", { id, color });
@@ -49,6 +52,11 @@ export const onSettingsChanged = (cb: (s: Settings) => void): Promise<UnlistenFn
 
 export type AppInfo = { version: string; data_dir: string };
 export const appInfo = () => invoke<AppInfo>("app_info");
+
+export const storageProblem = () => invoke<LoadProblem | null>("storage_problem");
+/** Dismiss the notice; for a locked library, "Start fresh". */
+export const clearStorageProblem = () => invoke<void>("clear_storage_problem");
+export const openDataDir = () => invoke<void>("open_data_dir");
 
 export const listMonitors = () => invoke<Monitor[]>("list_monitors");
 export const cursorPos = () => invoke<[number, number]>("cursor_pos");

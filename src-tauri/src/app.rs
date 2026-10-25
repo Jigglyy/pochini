@@ -10,7 +10,7 @@ use crate::hotkey::logic::{Seen, SeenResult, Via};
 use crate::hotkey::{BindingTable, TriggerEvent};
 use crate::input::InputBackend;
 use crate::model::{Macro, MacroFile, QueueFrom, Repeat, Settings, TriggerMode};
-use crate::storage::Store;
+use crate::storage::{LoadProblem, Store};
 
 /// How many presses can wait behind a running macro. A cap rather than
 /// unlimited, so a held-down or repeatedly mashed key cannot line up an hour
@@ -38,6 +38,9 @@ pub struct AppState {
     /// Newest first; the Settings "Hotkey check".
     pub recent_keys: Mutex<VecDeque<RecentKey>>,
     pub notify: Option<Box<dyn Notify>>,
+    /// Set when `macros.json` could not be read at startup (see
+    /// `Store::open_macros`). While it is `locked`, nothing is saved.
+    pub storage_problem: Mutex<Option<LoadProblem>>,
 }
 
 pub struct RunHandle {
@@ -87,6 +90,10 @@ pub struct RunStatus {
 
 static NEXT_RUN: AtomicU64 = AtomicU64::new(1);
 
+/// What a save says while an unreadable library is locked.
+pub const LOCKED: &str =
+    "Not saved: your macros file could not be read, and Pochini will not write over it until you choose Start fresh.";
+
 impl AppState {
     pub fn binding_table(&self) -> Arc<BindingTable> {
         let macros = self.macros.lock().unwrap();
@@ -99,6 +106,9 @@ impl AppState {
     }
 
     pub fn persist(&self) -> Result<(), String> {
+        if self.storage_problem.lock().unwrap().as_ref().is_some_and(|p| p.locked) {
+            return Err(LOCKED.into());
+        }
         let m = self.macros.lock().unwrap();
         self.store.save_macros(&m).map_err(|e| e.to_string())
     }
@@ -396,6 +406,7 @@ mod tests {
             queue: Mutex::new(VecDeque::new()),
             recent_keys: Mutex::new(VecDeque::new()),
             notify: Some(Box::new(rec.clone())),
+            storage_problem: Mutex::new(None),
         });
         (st, input, rec)
     }
@@ -854,6 +865,26 @@ mod tests {
         assert!(wait_until(|| st.running_id().is_none(), 500));
         std::thread::sleep(Duration::from_millis(80));
         assert!(input.events().is_empty(), "{:?}", input.events());
+    }
+
+    /// Regression: an unreadable library started empty, and the next save
+    /// wrote that empty library over the file (and the one after, over its
+    /// backup). While locked, nothing may reach the disk.
+    #[test]
+    fn a_locked_library_is_never_saved_over() {
+        let (st, _, _) = state_with(vec![]);
+        std::fs::write(st.store.macros_path(), br#"{"schema_version": 99, "macros": []}"#).unwrap();
+        let opened = st.store.open_macros();
+        *st.storage_problem.lock().unwrap() = opened.problem;
+
+        st.macros.lock().unwrap().macros.push(Macro::new("made while locked"));
+        assert_eq!(st.persist(), Err(LOCKED.to_string()));
+        assert!(std::fs::read_to_string(st.store.macros_path()).unwrap().contains("99"));
+
+        // Start fresh: saving works again.
+        *st.storage_problem.lock().unwrap() = None;
+        st.persist().unwrap();
+        assert_eq!(st.store.load_macros().unwrap().macros[0].name, "made while locked");
     }
 
     #[test]

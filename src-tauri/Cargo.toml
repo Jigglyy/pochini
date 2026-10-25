@@ -21,7 +21,6 @@ tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
-anyhow = "1"
 rand = "0.8"
 ulid = { version = "1", features = ["serde"] }
 arc-swap = "1"
@@ -44,5 +43,7 @@ features = [
 [profile.release]
 lto = "thin"
 opt-level = 3
-panic = "abort"
+# Unwind, not abort: a panic in a macro run is caught so the release pass can
+# let go of every key and button it held (engine::Engine::run_at).
+panic = "unwind"
 strip = true

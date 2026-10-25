@@ -30,6 +30,16 @@ pub struct BindingTable {
     pub toggle: Option<(u16, Vec<Modifier>)>,
 }
 
+/// Why a macro's hotkey cannot work as set.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Clash {
+    PanicKey,
+    ToggleHotkey,
+    /// An earlier macro has the same hotkey, and the first one wins.
+    SameAs { macro_id: String },
+}
+
 /// What the callback decided.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Match {
@@ -149,29 +159,44 @@ impl BindingTable {
         self.bindings.iter().any(|b| b.vk == vk && same_modifiers(&b.modifiers, held))
     }
 
-    /// Macro ids whose hotkey collides with an earlier one. Surfaced as a
-    /// warning badge in the list; the first binding wins at runtime. The same
-    /// key restricted to different apps is not a clash.
-    pub fn conflicts(&self) -> Vec<String> {
-        let mut seen: Vec<(u16, Vec<Modifier>, Option<String>)> = Vec::new();
-        let mut out = Vec::new();
-        for b in &self.bindings {
-            let key = (
-                b.vk,
-                {
-                    let mut m = b.modifiers.clone();
-                    m.sort_by_key(|x| format!("{x:?}"));
-                    m
-                },
-                b.guard.clone(),
-            );
-            if seen.contains(&key) {
-                out.push(b.macro_id.clone());
-            } else {
-                seen.push(key);
+    /// Macros whose hotkey cannot work as set, and why: the panic key or the
+    /// on/off hotkey (both matched before any macro, so the macro never
+    /// fires), or the same hotkey as an earlier macro (the first one wins).
+    /// The same key restricted to different apps is not a clash.
+    pub fn conflicts(&self) -> Vec<(String, Clash)> {
+        self.bindings
+            .iter()
+            .enumerate()
+            .filter_map(|(i, b)| {
+                self.clash_with(b.vk, &b.modifiers, b.guard.as_deref(), &self.bindings[..i])
+                    .map(|c| (b.macro_id.clone(), c))
+            })
+            .collect()
+    }
+
+    /// Would a hotkey of `vk` + `modifiers` (in `guard`'s app, if any) work,
+    /// for the macro `except` (its own binding does not count)? For a warning
+    /// while the user records a hotkey.
+    pub fn clash_for(&self, vk: u16, modifiers: &[Modifier], guard: Option<&str>, except: &str) -> Option<Clash> {
+        let guard = guard.map(str::to_lowercase);
+        let others: Vec<Binding> = self.bindings.iter().filter(|b| b.macro_id != except).cloned().collect();
+        self.clash_with(vk, modifiers, guard.as_deref(), &others)
+    }
+
+    fn clash_with(&self, vk: u16, modifiers: &[Modifier], guard: Option<&str>, others: &[Binding]) -> Option<Clash> {
+        // The panic key matches whatever modifiers are held.
+        if vk == self.panic_vk {
+            return Some(Clash::PanicKey);
+        }
+        if let Some((tvk, tmods)) = &self.toggle {
+            if *tvk == vk && same_modifiers(tmods, modifiers) {
+                return Some(Clash::ToggleHotkey);
             }
         }
-        out
+        others
+            .iter()
+            .find(|o| o.vk == vk && same_modifiers(&o.modifiers, modifiers) && o.guard.as_deref() == guard)
+            .map(|o| Clash::SameAs { macro_id: o.macro_id.clone() })
     }
 }
 
@@ -363,7 +388,7 @@ mod tests {
             0x1B,
             true,
         );
-        assert_eq!(t.conflicts(), vec!["c".to_string()]);
+        assert_eq!(t.conflicts(), vec![("c".to_string(), Clash::SameAs { macro_id: "a".into() })]);
     }
 
     #[test]
@@ -377,6 +402,43 @@ mod tests {
             0x1B,
             true,
         );
-        assert_eq!(t.conflicts(), vec!["b".to_string()]);
+        assert_eq!(t.conflicts(), vec![("b".to_string(), Clash::SameAs { macro_id: "a".into() })]);
+    }
+
+    /// Regression: a macro on the panic key (with any modifiers) or on the
+    /// on/off hotkey never fires, because those are matched first, and the
+    /// list showed no warning.
+    #[test]
+    fn the_panic_key_and_the_on_off_hotkey_are_clashes() {
+        let t = BindingTable::build(
+            &[
+                m("esc", 0x1B, vec![], false),
+                m("shift-esc", 0x1B, vec![Modifier::Shift], false),
+                m("toggle", 0x7B, vec![Modifier::Ctrl, Modifier::Shift], false),
+                m("ctrl-f12", 0x7B, vec![Modifier::Ctrl], false),
+            ],
+            0x1B,
+            true,
+        )
+        .with_toggle(0x7B, vec![Modifier::Shift, Modifier::Ctrl]);
+        assert_eq!(
+            t.conflicts(),
+            vec![
+                ("esc".to_string(), Clash::PanicKey),
+                ("shift-esc".to_string(), Clash::PanicKey),
+                ("toggle".to_string(), Clash::ToggleHotkey),
+            ],
+            "Ctrl+F12 alone is not the toggle"
+        );
+    }
+
+    #[test]
+    fn clash_for_checks_a_hotkey_being_recorded() {
+        let t = BindingTable::build(&[m("a", 0x20, vec![], false)], 0x1B, true);
+        assert_eq!(t.clash_for(0x20, &[], None, "b"), Some(Clash::SameAs { macro_id: "a".into() }));
+        assert_eq!(t.clash_for(0x20, &[], None, "a"), None, "its own hotkey is no clash");
+        assert_eq!(t.clash_for(0x20, &[Modifier::Ctrl], None, "b"), None);
+        assert_eq!(t.clash_for(0x20, &[], Some("Game.exe"), "b"), None, "another app's key is fine");
+        assert_eq!(t.clash_for(0x1B, &[Modifier::Alt], None, "b"), Some(Clash::PanicKey));
     }
 }

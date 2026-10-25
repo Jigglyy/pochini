@@ -22,6 +22,30 @@ pub enum StorageError {
 
 pub type Result<T> = std::result::Result<T, StorageError>;
 
+/// The library as startup found it.
+pub struct Opened {
+    pub file: MacroFile,
+    pub problem: Option<LoadProblem>,
+}
+
+/// Why `macros.json` could not be read, for the banner in the UI.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct LoadProblem {
+    pub reason: String,
+    /// Where the unreadable file was copied, untouched.
+    pub kept_at: Option<String>,
+    /// The library came from `macros.bak`, the version before the last save.
+    pub from_backup: bool,
+    /// Nothing could be read: saving is refused until the user chooses to
+    /// start over, so the file they may still want is never written over.
+    pub locked: bool,
+}
+
+fn read_macros(path: &Path) -> Result<MacroFile> {
+    let text = fs::read_to_string(path)?;
+    migrate(serde_json::from_str::<serde_json::Value>(&text)?)
+}
+
 pub fn now_iso8601() -> String {
     time::OffsetDateTime::now_utc()
         .format(&time::format_description::well_known::Rfc3339)
@@ -49,11 +73,50 @@ impl Store {
         self.dir.join("settings.json")
     }
 
+    /// Open the library at startup. Never fails: when `macros.json` cannot be
+    /// read, the reason comes back as a [`LoadProblem`] for the UI, a copy of
+    /// the file is kept beside it, and the backup from before the last save is
+    /// loaded if that one reads. If nothing reads, the library starts empty
+    /// and `locked`: the app must not save until the user says so, or the next
+    /// two saves would replace both the file and its backup with nothing.
+    pub fn open_macros(&self) -> Opened {
+        let path = self.macros_path();
+        let err = match self.load_macros() {
+            Ok(file) => return Opened { file, problem: None },
+            Err(e) => e,
+        };
+        let kept_at = path.exists().then(|| self.keep_unreadable(&path)).flatten();
+        let reason = err.to_string();
+        // A library from a newer Pochini is not damaged, and its backup is
+        // most likely from that version too: never fall back past it.
+        if !matches!(err, StorageError::TooNew { .. }) {
+            let bak = path.with_extension("bak");
+            if let Ok(file) = read_macros(&bak) {
+                return Opened {
+                    file,
+                    problem: Some(LoadProblem { reason, kept_at, from_backup: true, locked: false }),
+                };
+            }
+        }
+        Opened {
+            file: MacroFile::default(),
+            problem: Some(LoadProblem { reason, kept_at, from_backup: false, locked: true }),
+        }
+    }
+
+    /// Copy an unreadable library aside as `macros.json.unreadable-<time>`.
+    fn keep_unreadable(&self, path: &Path) -> Option<String> {
+        let kept = self
+            .dir
+            .join(format!("macros.json.unreadable-{}", now_iso8601().replace(':', "-")));
+        fs::copy(path, &kept).ok().map(|_| kept.display().to_string())
+    }
+
     /// Load macros, migrating older schema versions forward.
     ///
-    /// A missing file is an empty library, not an error. A *corrupt* file is
-    /// preserved as `.corrupt-<timestamp>` rather than overwritten, because the
-    /// user may be able to salvage it by hand.
+    /// A missing file is an empty library, not an error; a missing file with a
+    /// backup beside it is recovered from the backup. Anything unreadable is
+    /// an error: see [`Store::open_macros`] for what startup does with it.
     pub fn load_macros(&self) -> Result<MacroFile> {
         let mut path = self.macros_path();
         if !path.exists() {
@@ -65,17 +128,7 @@ impl Store {
             }
             path = bak;
         }
-        let text = fs::read_to_string(&path)?;
-        match serde_json::from_str::<serde_json::Value>(&text) {
-            Ok(v) => migrate(v),
-            Err(e) => {
-                let quarantine = self
-                    .dir
-                    .join(format!("macros.json.corrupt-{}", now_iso8601().replace(':', "-")));
-                let _ = fs::copy(&path, &quarantine);
-                Err(StorageError::Json(e))
-            }
-        }
+        read_macros(&path)
     }
 
     pub fn save_macros(&self, f: &MacroFile) -> Result<()> {
@@ -298,20 +351,83 @@ mod tests {
         assert_eq!(s.load_macros().unwrap().macros[0].name, "v199");
     }
 
+    fn kept_copies(d: &Path) -> Vec<PathBuf> {
+        fs::read_dir(d)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.to_string_lossy().contains("unreadable-"))
+            .collect()
+    }
+
     #[test]
-    fn a_corrupt_file_is_quarantined_rather_than_silently_replaced() {
+    fn a_corrupt_file_is_kept_rather_than_silently_replaced() {
         let d = tmpdir("corrupt");
         let s = Store::new(&d);
         fs::write(s.macros_path(), b"{ this is not json").unwrap();
         assert!(matches!(s.load_macros(), Err(StorageError::Json(_))));
-        let quarantined: Vec<_> = fs::read_dir(&d)
-            .unwrap()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.file_name().to_string_lossy().contains("corrupt-"))
-            .collect();
-        assert_eq!(quarantined.len(), 1, "the bad file should be preserved");
+        let o = s.open_macros();
+        let p = o.problem.expect("a problem to show");
+        assert!(p.locked, "no backup to fall back on, so nothing may be saved");
+        assert_eq!(kept_copies(&d).len(), 1, "the bad file should be preserved");
+        assert_eq!(p.kept_at.as_deref(), Some(kept_copies(&d)[0].to_string_lossy().as_ref()));
         // And the original is still there for the user to inspect.
         assert!(s.macros_path().exists());
+    }
+
+    /// Regression: only a JSON syntax error used to be kept. A file that was
+    /// valid JSON but not a library this build understands (an unknown step
+    /// type, a bad field) started an empty library with no copy, and two
+    /// saves later the file and its backup were both empty.
+    #[test]
+    fn a_library_with_a_step_this_build_cannot_read_is_kept_and_the_backup_loads() {
+        let d = tmpdir("unknown-step");
+        let s = Store::new(&d);
+        let mut f = MacroFile::default();
+        f.macros.push(Macro::new("from the backup"));
+        fs::write(d.join("macros.bak"), serde_json::to_vec(&f).unwrap()).unwrap();
+        fs::write(
+            s.macros_path(),
+            br#"{"schema_version":1,"macros":[{"id":"m","name":"x","steps":[{"type":"teleport","id":"s"}]}]}"#,
+        )
+        .unwrap();
+
+        let o = s.open_macros();
+        assert_eq!(o.file.macros[0].name, "from the backup");
+        let p = o.problem.expect("the UI must hear about it");
+        assert!(p.from_backup && !p.locked, "{p:?}");
+        assert_eq!(kept_copies(&d).len(), 1);
+        assert!(fs::read_to_string(&kept_copies(&d)[0]).unwrap().contains("teleport"));
+    }
+
+    #[test]
+    fn a_library_from_a_newer_version_locks_saving_and_never_uses_the_backup() {
+        let d = tmpdir("newer");
+        let s = Store::new(&d);
+        let mut old = MacroFile::default();
+        old.macros.push(Macro::new("older copy"));
+        fs::write(d.join("macros.bak"), serde_json::to_vec(&old).unwrap()).unwrap();
+        fs::write(s.macros_path(), br#"{"schema_version": 99, "macros": []}"#).unwrap();
+
+        let o = s.open_macros();
+        assert!(o.file.macros.is_empty());
+        let p = o.problem.unwrap();
+        assert!(p.locked && !p.from_backup, "{p:?}");
+        assert!(p.reason.contains("99"), "{}", p.reason);
+        assert_eq!(kept_copies(&d).len(), 1);
+    }
+
+    #[test]
+    fn a_readable_library_opens_without_a_problem() {
+        let d = tmpdir("fine");
+        let s = Store::new(&d);
+        let mut f = MacroFile::default();
+        f.macros.push(Macro::new("ok"));
+        s.save_macros(&f).unwrap();
+        let o = s.open_macros();
+        assert!(o.problem.is_none());
+        assert_eq!(o.file.macros.len(), 1);
+        assert!(kept_copies(&d).is_empty());
     }
 
     #[test]

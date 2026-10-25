@@ -78,27 +78,25 @@ pub fn wait(ms: u64, cancel: &CancelToken) -> bool {
         return true;
     }
     #[cfg(windows)]
-    {
-        win::wait_ms(ms, cancel)
+    if let Some(event) = cancel.event.0 {
+        return win::wait_ms(ms, cancel, event);
     }
-    #[cfg(not(windows))]
-    {
-        // Fallback for host-side tests: poll so cancellation still works.
-        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(ms);
-        while std::time::Instant::now() < deadline {
-            if cancel.is_cancelled() {
-                return false;
-            }
-            std::thread::sleep(
-                std::time::Duration::from_millis(1).min(deadline - std::time::Instant::now()),
-            );
+    // No cancel event (another OS, or Windows ran out of handles): poll, so
+    // cancellation still works, if less precisely.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(ms);
+    while std::time::Instant::now() < deadline {
+        if cancel.is_cancelled() {
+            return false;
         }
-        !cancel.is_cancelled()
+        std::thread::sleep(std::time::Duration::from_millis(1).min(deadline - std::time::Instant::now()));
     }
+    !cancel.is_cancelled()
 }
 
+/// The kernel event a cancel signals, so a wait ends at once. `None` if it
+/// could not be created; waits then poll instead.
 #[cfg(windows)]
-pub struct OwnedEvent(windows::Win32::Foundation::HANDLE);
+pub struct OwnedEvent(Option<windows::Win32::Foundation::HANDLE>);
 
 // SAFETY: a Win32 event handle is just a kernel handle; it is safe to signal
 // and wait on from any thread.
@@ -111,25 +109,28 @@ unsafe impl Sync for OwnedEvent {}
 impl OwnedEvent {
     fn new() -> Self {
         use windows::Win32::System::Threading::CreateEventW;
-        // SAFETY: all-default manual-reset, initially unsignalled, unnamed event.
-        let h = unsafe { CreateEventW(None, true, false, None) }
-            .expect("CreateEventW for a cancel token cannot fail short of handle exhaustion");
-        Self(h)
+        // SAFETY: all-default manual-reset, initially unsignalled, unnamed
+        // event; it only fails when the process is out of handles.
+        Self(unsafe { CreateEventW(None, true, false, None) }.ok())
     }
 
     fn set(&self) {
         use windows::Win32::System::Threading::SetEvent;
-        // SAFETY: self.0 is a live event handle owned by this struct.
-        let _ = unsafe { SetEvent(self.0) };
+        if let Some(h) = self.0 {
+            // SAFETY: `h` is a live event handle owned by this struct.
+            let _ = unsafe { SetEvent(h) };
+        }
     }
 }
 
 #[cfg(windows)]
 impl Drop for OwnedEvent {
     fn drop(&mut self) {
-        // SAFETY: handle is owned and not used after this point.
-        unsafe {
-            let _ = windows::Win32::Foundation::CloseHandle(self.0);
+        if let Some(h) = self.0 {
+            // SAFETY: the handle is owned and not used after this point.
+            unsafe {
+                let _ = windows::Win32::Foundation::CloseHandle(h);
+            }
         }
     }
 }
@@ -143,7 +144,7 @@ mod win {
         CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS,
     };
 
-    pub fn wait_ms(ms: u64, cancel: &CancelToken) -> bool {
+    pub fn wait_ms(ms: u64, cancel: &CancelToken, event: HANDLE) -> bool {
         // SAFETY: unnamed timer with default security; the handle is closed below.
         let timer: HANDLE = match unsafe {
             CreateWaitableTimerExW(
@@ -156,6 +157,7 @@ mod win {
             Ok(h) => h,
             Err(_) => {
                 // Pre-1803: fall back to a coarse timer rather than failing.
+                // SAFETY: as above, without the high-resolution flag.
                 match unsafe { CreateWaitableTimerExW(None, None, 0, TIMER_ALL_ACCESS.0) } {
                     Ok(h) => h,
                     Err(_) => {
@@ -179,7 +181,7 @@ mod win {
             return !cancel.is_cancelled();
         }
 
-        let handles = [timer, cancel.event.0];
+        let handles = [timer, event];
         // SAFETY: both handles are live for the duration of the wait.
         let r = unsafe { WaitForMultipleObjects(&handles, false, INFINITE) };
         // SAFETY: owned handle, not used again.

@@ -41,3 +41,28 @@ test("theme switches to light and back", async ({ app: { page } }) => {
   await page.getByText("Dark", { exact: true }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
 });
+
+// A page that can drive SendInput must not run script it did not ship.
+test("runs under a content security policy, and the app breaks none of it", async ({ app: { page } }) => {
+  const violations: string[] = [];
+  page.on("console", (m) => {
+    if (/Content Security Policy/i.test(m.text())) violations.push(m.text());
+  });
+
+  const injected = await page.evaluate(() => {
+    const s = document.createElement("script");
+    s.textContent = "window.__injected = true";
+    document.head.appendChild(s);
+    return (window as unknown as { __injected?: boolean }).__injected === true;
+  });
+  expect(injected, "an inline script ran").toBe(false);
+  violations.length = 0; // that refusal is the one we provoked
+
+  // The app's own styling (inline style props) and screens still work.
+  await page.getByRole("button", { name: "Create your first macro" }).click();
+  await page.getByRole("button", { name: "Click", exact: true }).click();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByRole("button", { name: "Settings" }).click();
+  await expect(page.getByText("Panic stop", { exact: true })).toBeVisible();
+  expect(violations).toEqual([]);
+});

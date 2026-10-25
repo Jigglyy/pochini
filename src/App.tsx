@@ -16,6 +16,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { comboLabel } from "@/components/KeyCapture";
 import { RunIndicator, type PendingRun } from "@/components/RunIndicator";
+import { StorageNotice } from "@/components/StorageNotice";
 import { getSettings, onSettingsChanged, setEnabled } from "@/lib/ipc";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
@@ -145,6 +146,7 @@ export default function App() {
       {/* Both-edges gutter keeps the column centred under the header whether
           or not the page scrolls, so nothing shifts sideways. */}
       <main className="flex-1 overflow-y-auto px-6 py-8 [scrollbar-gutter:stable_both-edges]">
+        <StorageNotice />
         {/* Each screen fades in when you arrive (keyed, so it replays). */}
         <div
           key={route.kind === "editor" ? `editor-${route.id}` : route.kind}

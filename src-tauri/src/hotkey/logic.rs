@@ -81,6 +81,28 @@ pub fn mod_bits(mods: &[Modifier]) -> u8 {
     })
 }
 
+/// The modifiers the user holds: those `down` (the OS key state, by virtual
+/// key) reports, minus the ones our own injected input holds (`injected`, in
+/// `mod_bits` form; see `input::INJECTED`). The OS cannot tell the two apart.
+/// If the user holds the same modifier a step is holding, it is not seen;
+/// that is the price, and far rarer than a step holding one. No allocation:
+/// it runs inside the hook callback.
+pub fn held_modifiers(buf: &mut [Modifier; 4], injected: u8, down: impl Fn(i32) -> bool) -> &[Modifier] {
+    let mut n = 0;
+    for (vks, m, bit) in [
+        (&[0x11][..], Modifier::Ctrl, 1),
+        (&[0x12][..], Modifier::Alt, 2),
+        (&[0x10][..], Modifier::Shift, 4),
+        (&[0x5B, 0x5C][..], Modifier::Win, 8),
+    ] {
+        if injected & bit == 0 && vks.iter().any(|&vk| down(vk)) {
+            buf[n] = m;
+            n += 1;
+        }
+    }
+    &buf[..n]
+}
+
 /// What the callback should do with the event it just saw.
 #[derive(Debug, Default, PartialEq)]
 pub struct Outcome {
@@ -214,6 +236,30 @@ impl KeyLogic {
             swallow: h.swallowed,
             seen: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod held_tests {
+    use super::*;
+
+    #[test]
+    fn the_os_key_state_is_read_per_modifier() {
+        let mut buf = [Modifier::Ctrl; 4];
+        let held = held_modifiers(&mut buf, 0, |vk| vk == 0x11 || vk == 0x5C);
+        assert_eq!(held, [Modifier::Ctrl, Modifier::Win]);
+    }
+
+    /// Regression: while a step held Shift (a shift-click), the user's own
+    /// hotkey press read as Shift+key and matched nothing.
+    #[test]
+    fn a_modifier_our_own_input_holds_is_not_the_users() {
+        let mut buf = [Modifier::Ctrl; 4];
+        let shift_down = |vk| vk == 0x10;
+        assert_eq!(held_modifiers(&mut buf, 4, shift_down), []);
+        let mut buf = [Modifier::Ctrl; 4];
+        let ctrl_and_shift = |vk| vk == 0x10 || vk == 0x11;
+        assert_eq!(held_modifiers(&mut buf, 4, ctrl_and_shift), [Modifier::Ctrl]);
     }
 }
 

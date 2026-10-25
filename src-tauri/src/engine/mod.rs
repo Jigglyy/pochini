@@ -26,9 +26,15 @@ pub enum EngineError {
     Input(#[from] InputError),
     #[error("cancelled")]
     Cancelled,
+    /// A bug in Pochini stopped the run (a panic, caught).
+    #[error("the macro stopped on an internal error")]
+    Internal,
 }
 
 pub type Result<T> = std::result::Result<T, EngineError>;
+
+/// The shortest a repeated pass may take.
+pub const MIN_PASS_MS: u64 = 1;
 
 /// Tracks what we have pressed and not yet released, so that aborting a macro
 /// mid-run cannot leave Shift stuck down across the whole OS. This is the worst
@@ -129,7 +135,10 @@ impl Engine {
         };
         self.previous = self.activation;
         let mut held = HeldState::default();
-        let result = self.run_inner(m, cancel, &mut held);
+        // A bug in a step must not leave a key held down across the whole OS:
+        // catch the panic, run the release pass, report it as an error.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.run_inner(m, cancel, &mut held)))
+            .unwrap_or(Err(EngineError::Internal));
         // The release pass runs on success, on error and on cancellation.
         // It comes before the return move, or a held button would drag.
         self.release_all(&mut held);
@@ -140,7 +149,7 @@ impl Engine {
         let ended_normally = match &result {
             Ok(()) => true,
             Err(EngineError::Cancelled) => cancel.is_soft_stop(),
-            Err(EngineError::Input(_)) => false,
+            Err(EngineError::Input(_) | EngineError::Internal) => false,
         };
         if m.return_to_start && ended_normally {
             let (x, y) = self.activation;
@@ -156,6 +165,10 @@ impl Engine {
             Repeat::Forever => None,
         };
 
+        // Nothing to do, however many times: "until stopped" would spin.
+        if m.steps.is_empty() {
+            return Ok(());
+        }
         let mut pass = 0u32;
         loop {
             if let Some(limit) = passes {
@@ -163,6 +176,7 @@ impl Engine {
                     return Ok(());
                 }
             }
+            let started = std::time::Instant::now();
             for i in self.pass_order(&m.steps) {
                 if cancel.is_cancelled() {
                     return Err(EngineError::Cancelled);
@@ -172,6 +186,12 @@ impl Engine {
             pass = pass.saturating_add(1);
             if passes.is_none() && cancel.is_cancelled() {
                 return Err(EngineError::Cancelled);
+            }
+            // A pass of instant steps (scrolls, instant moves) must not repeat
+            // as fast as the CPU allows and flood SendInput.
+            let more = passes.is_none_or(|limit| pass < limit);
+            if more && started.elapsed() < std::time::Duration::from_millis(MIN_PASS_MS) {
+                self.wait(MIN_PASS_MS, cancel)?;
             }
         }
     }
@@ -446,6 +466,53 @@ mod tests {
         let f = Arc::new(FakeInput::new());
         let e = Engine::new(f.clone(), Some(42));
         (f, e)
+    }
+
+    /// Passes everything to a FakeInput, but panics on a mouse button press:
+    /// a stand-in for a bug somewhere in a step.
+    struct PanicsOnClick(Arc<FakeInput>);
+
+    impl InputBackend for PanicsOnClick {
+        fn virtual_rect(&self) -> crate::input::VirtualRect {
+            self.0.virtual_rect()
+        }
+        fn monitors(&self) -> crate::input::Result<Vec<crate::input::Monitor>> {
+            self.0.monitors()
+        }
+        fn cursor_pos(&self) -> crate::input::Result<(i32, i32)> {
+            self.0.cursor_pos()
+        }
+        fn move_to(&self, x: i32, y: i32) -> crate::input::Result<()> {
+            self.0.move_to(x, y)
+        }
+        fn button(&self, button: MouseButton, down: bool) -> crate::input::Result<()> {
+            assert!(!down, "a bug in a step");
+            self.0.button(button, down)
+        }
+        fn scroll(&self, axis: ScrollAxis, notches: i32, at: Option<(i32, i32)>) -> crate::input::Result<()> {
+            self.0.scroll(axis, notches, at)
+        }
+        fn key(&self, scan: u16, extended: bool, down: bool) -> crate::input::Result<()> {
+            self.0.key(scan, extended, down)
+        }
+        fn modifier(&self, m: Modifier, down: bool) -> crate::input::Result<()> {
+            self.0.modifier(m, down)
+        }
+        fn unicode(&self, unit: u16, down: bool) -> crate::input::Result<()> {
+            self.0.unicode(unit, down)
+        }
+    }
+
+    /// Regression guard: with `panic = "abort"`, a panic mid-run ended the
+    /// process with Shift still held down by Windows; now the release build
+    /// unwinds and the release pass runs.
+    #[test]
+    fn a_panic_in_a_step_still_releases_every_held_key() {
+        let f = Arc::new(FakeInput::new());
+        let mut e = Engine::new(Arc::new(PanicsOnClick(f.clone())), Some(1));
+        let m = mac(vec![click_holding(0, vec![Modifier::Shift], Some(key(0x10)))]);
+        assert!(matches!(e.run(&m, &CancelToken::new()), Err(EngineError::Internal)));
+        assert!(f.still_held().is_empty(), "{:?}", f.still_held());
     }
 
     #[test]
@@ -1185,6 +1252,45 @@ mod tests {
         });
         assert!(matches!(e.run(&m, &cancel), Err(EngineError::Cancelled)));
         assert!(f.still_held().is_empty());
+    }
+
+    /// Regression: "Until stopped" with no steps looped with nothing to wait
+    /// on, spinning a CPU core until the panic key.
+    #[test]
+    fn an_empty_macro_set_to_repeat_forever_ends_at_once() {
+        let (_, mut e) = engine();
+        let mut m = mac(vec![]);
+        m.repeat = Repeat::Forever;
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(e.run(&m, &CancelToken::new()).is_ok());
+        });
+        assert_eq!(rx.recv_timeout(std::time::Duration::from_millis(500)), Ok(true));
+    }
+
+    /// Regression: a pass of instant steps (scrolls, instant moves) repeated
+    /// as fast as the CPU allowed, flooding SendInput. Each pass now takes at
+    /// least `MIN_PASS_MS`.
+    #[test]
+    fn a_pass_of_instant_steps_still_takes_at_least_a_millisecond() {
+        let (f, mut e) = engine();
+        let mut m = mac(vec![Step::Scroll {
+            id: "s".into(),
+            shuffle: false,
+            amount: -1,
+            axis: ScrollAxis::Vertical,
+            at: None,
+        }]);
+        m.repeat = Repeat::Forever;
+        let cancel = CancelToken::new();
+        let c2 = cancel.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            c2.cancel();
+        });
+        assert!(matches!(e.run(&m, &cancel), Err(EngineError::Cancelled)));
+        let n = f.events().len();
+        assert!((1..=60).contains(&n), "{n} scrolls in 50 ms");
     }
 
     #[test]

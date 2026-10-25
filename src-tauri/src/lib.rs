@@ -102,10 +102,8 @@ pub fn run() {
             std::fs::create_dir_all(&dir)?;
             let store = storage::Store::new(dir);
 
-            let macros = store.load_macros().unwrap_or_else(|e| {
-                eprintln!("could not load macros ({e}); starting with an empty library");
-                Default::default()
-            });
+            // Never just "start empty" on a read error: see Store::open_macros.
+            let opened = store.open_macros();
             let settings = store.load_settings().unwrap_or_default();
 
             #[cfg(all(windows, debug_assertions))]
@@ -122,7 +120,7 @@ pub fn run() {
 
             let state = Arc::new(AppState {
                 store,
-                macros: Mutex::new(macros),
+                macros: Mutex::new(opened.file),
                 settings: Mutex::new(settings),
                 input: backend,
                 tx: tx.clone(),
@@ -130,6 +128,7 @@ pub fn run() {
                 queue: Mutex::new(std::collections::VecDeque::new()),
                 recent_keys: Mutex::new(std::collections::VecDeque::new()),
                 notify: Some(Box::new(TauriNotify(app.handle().clone()))),
+                storage_problem: Mutex::new(opened.problem),
             });
 
             app::spawn_worker(state.clone(), rx);
@@ -175,6 +174,7 @@ pub fn run() {
             commands::save_macro,
             commands::set_macro_enabled,
             commands::set_macro_favorite,
+            commands::mark_reviewed,
             commands::set_macro_color,
             commands::export_macro,
             commands::import_macros,
@@ -195,6 +195,9 @@ pub fn run() {
             commands::list_apps,
             commands::hotkey_diagnostics,
             commands::test_steps,
+            commands::storage_problem,
+            commands::clear_storage_problem,
+            commands::open_data_dir,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

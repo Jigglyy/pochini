@@ -4,6 +4,42 @@ All notable changes to Pochini. Versions follow [semantic versioning](https://se
 while the major version is 0, a minor bump may change behaviour or the macro file format.
 Each version is built with `npm run release` into `release/Pochini-<version>.exe`.
 
+## 0.11.1 - 2026-10-25
+
+### Fixed
+
+- **A macros file Pochini cannot read is never saved over.** A file that was valid but not
+  readable by this version (a newer Pochini's, or a step type it does not know) used to start
+  an empty list, and the next two saves replaced both the file and its backup with it. Now the
+  file is copied aside untouched, the backup from before the last save loads if it can, and a
+  banner says what happened. If nothing can be read, nothing is saved until you choose Start
+  fresh. The banner can open the data folder.
+- **Imported macros are checked before they run.** A shared macro can type and press
+  shortcuts, so switching an imported macro on, or pressing Run, first lists every step in
+  plain words, with the ones that type text or press Ctrl/Alt/Win shortcuts flagged. Imported
+  rows say "Imported, check it before use" until then. Saving it from the editor counts too.
+- **Exports leave out what is about you**: the window title an "App only" app was picked from,
+  and the monitor each point was picked on.
+- A macro holding a key (a shift-click) no longer stops your own hotkeys from matching while it
+  holds it, so a toggle-mode macro's second press and queued presses work during those steps.
+- A macro on the panic key, or on the on/off hotkey, never runs; the list now shows "Hotkey
+  clash" for those too, and every clash says why when you point at it.
+- "Until stopped" (and repeat-while-held) with no steps, or with only instant steps such as
+  scrolls, no longer spins a CPU core; every pass takes at least a millisecond.
+- Escape can be recorded: a Key step can press Esc, and the panic key can be set back to it.
+  Cancel recording with the Cancel button.
+- If a step ever crashes, the keys and buttons the macro held are still let go, instead of
+  staying held down in Windows.
+- The time estimate for a double click was short by one hold; a lone press or release no
+  longer counts one. A horizontal scroll step reads "left" or "right", not "up" or "down".
+- The favorites group headings are no longer in capitals.
+
+### Security
+
+- The window runs under a strict content security policy and may only listen for events, so
+  script that was not shipped with the app cannot run, let alone move the mouse.
+- An imported file is read with a hard 2 MB limit, whatever size it claims to be.
+
 ## 0.11.0 - 2026-10-21
 
 ### Added

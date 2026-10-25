@@ -11,7 +11,8 @@ const MOD_VKS = new Set([0x10, 0x11, 0x12, 0x5b, 0x5c, 0xa0, 0xa1, 0xa2, 0xa3, 0
 export const comboLabel = (h: Hotkey) => [...h.modifiers.map(modLabel), h.key.label].join("+");
 
 /** Records a key (optionally with modifiers) from the next key press in this
- *  window. Escape cancels rather than binding Escape. */
+ *  window. Every key can be recorded, Escape included (a Key step that presses
+ *  it, or the panic key set back to it); the Cancel button cancels. */
 export function KeyCapture({
   value,
   onChange,
@@ -32,10 +33,6 @@ export function KeyCapture({
     const handler = async (e: KeyboardEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      if (e.key === "Escape") {
-        setRecording(false);
-        return;
-      }
       // Modifiers alone are not a binding; wait for a real key.
       if (MOD_VKS.has(e.keyCode)) return;
 

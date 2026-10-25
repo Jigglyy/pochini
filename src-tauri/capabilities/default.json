@@ -1,7 +1,11 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window",
-  "windows": ["main"],
-  "permissions": ["core:default"]
+  "description": "The main window: it only listens for events (invoke of the app's own commands needs no permission).",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:event:default"
+  ]
 }

@@ -14,6 +14,7 @@ import {
   Pencil,
   Play,
   Plus,
+  ShieldAlert,
   Star,
   Trash2,
   TriangleAlert,
@@ -53,6 +54,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { KeyCombo, Kbd } from "@/components/layout";
+import { ImportReview, type ReviewThen } from "@/components/ImportReview";
 import { Swatch, SwatchGrid } from "@/components/StepColors";
 import { asColor, outlineStyle, tone, type StepColor } from "@/lib/colors";
 import { refocusWithoutScroll, useFlip } from "@/lib/motion";
@@ -65,6 +67,7 @@ import {
   exportMacro,
   importMacros,
   listMacros,
+  markReviewed,
   reorderMacros,
   runMacro,
   setMacroColor,
@@ -96,6 +99,8 @@ export function MacroList({
   const [rows, setRows] = useState<MacroSummary[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<MacroSummary | null>(null);
+  /** An imported macro being switched on or run for the first time. */
+  const [reviewing, setReviewing] = useState<{ row: MacroSummary; then: ReviewThen } | null>(null);
   // Rows glide when sorting, starring, menus, duplicates, imports or deletes
   // move them; new rows fade in. Drag drops are animated by dnd-kit.
   const flip = useFlip<HTMLDivElement>();
@@ -132,6 +137,10 @@ export function MacroList({
   };
 
   const toggleRow = async (r: MacroSummary, enabled: boolean) => {
+    if (enabled && r.review) {
+      setReviewing({ row: r, then: "enable" });
+      return;
+    }
     setRows((rs) => rs?.map((x) => (x.id === r.id ? { ...x, enabled } : x)) ?? rs);
     try {
       await setMacroEnabled(r.id, enabled);
@@ -186,11 +195,32 @@ export function MacroList({
       setErr(null);
       setNote(
         names.length === 1
-          ? `Imported "${names[0]}". Its hotkey is off until you turn it on.`
-          : `Imported ${names.length} macros. Their hotkeys are off until you turn them on.`,
+          ? `Imported "${names[0]}". Its hotkey is off: you'll see its steps before you turn it on or run it.`
+          : `Imported ${names.length} macros. Their hotkeys are off: you'll see each one's steps before you turn it on or run it.`,
       );
     } catch (e) {
       setNote(null);
+      setErr(String(e));
+    }
+  };
+
+  const run = (r: MacroSummary) => {
+    onRun(r.name);
+    runMacro(r.id).catch((e) => setErr(String(e)));
+  };
+
+  /** "Looks good" in the import review: mark it, then do what was asked. */
+  const reviewed = async (id: string) => {
+    const job = reviewing;
+    setReviewing(null);
+    if (!job) return;
+    try {
+      await markReviewed(id);
+      const row = { ...job.row, review: false };
+      setRows((rs) => rs?.map((x) => (x.id === id ? row : x)) ?? rs);
+      if (job.then === "run") run(row);
+      else await toggleRow(row, true);
+    } catch (e) {
       setErr(String(e));
     }
   };
@@ -200,10 +230,7 @@ export function MacroList({
     onToggle: toggleRow,
     onFavorite: favorite,
     onColor: recolor,
-    onRun: (r) => {
-      onRun(r.name);
-      runMacro(r.id).catch((e) => setErr(String(e)));
-    },
+    onRun: (r) => (r.review ? setReviewing({ row: r, then: "run" }) : run(r)),
     onDuplicate: (r) =>
       duplicateMacro(r.id)
         .then(() => reload(true))
@@ -343,6 +370,17 @@ export function MacroList({
         </p>
       )}
 
+      <ImportReview
+        id={reviewing?.row.id ?? null}
+        then={reviewing?.then ?? "enable"}
+        onConfirm={reviewed}
+        onEdit={(id) => {
+          setReviewing(null);
+          onOpen(id);
+        }}
+        onClose={() => setReviewing(null)}
+      />
+
       <AlertDialog open={pendingDelete !== null} onOpenChange={(o) => !o && setPendingDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -426,7 +464,7 @@ function MacroGroup({
   return (
     <section className="flex flex-col gap-2">
       {title && (
-        <h3 className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <h3 className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
           {title === "Favorites" && <Star className="size-3.5 fill-current text-warning" />}
           {title}
         </h3>
@@ -577,11 +615,22 @@ function MacroRow({
               Queues presses
             </span>
           )}
-          {r.conflict && (
+          {r.review && (
             <span className="inline-flex items-center gap-1 text-warning">
-              <TriangleAlert className="size-3.5 shrink-0" />
-              Hotkey clash
+              <ShieldAlert className="size-3.5 shrink-0" />
+              Imported, check it before use
             </span>
+          )}
+          {r.conflict && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="inline-flex items-center gap-1 text-warning">
+                  <TriangleAlert className="size-3.5 shrink-0" />
+                  Hotkey clash
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>{r.conflict}</TooltipContent>
+            </Tooltip>
           )}
         </span>
       </button>

@@ -42,9 +42,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 use super::bindings::BindingTable;
-use super::logic::{mod_bits, KeyContext, KeyLogic, Seen, SeenResult, Via};
+use super::logic::{self, mod_bits, KeyContext, KeyLogic, Seen, SeenResult, Via};
 use super::{HookStatus, TriggerEvent};
-use crate::input::INJECT_STAMP;
+use crate::input::{INJECTED, INJECT_STAMP};
 use crate::model::Modifier;
 
 /// RegisterHotKey id for the on/off toggle.
@@ -80,27 +80,15 @@ impl KeyContext for LiveContext {
     }
 }
 
-/// The modifiers Windows considers held right now. Read fresh for every key
-/// rather than tracked from the event stream, which goes permanently wrong the
-/// first time a key-up is hidden from the hook (UIPI, secure desktop) or a
-/// modifier was already down when the app started. No allocation: it runs
-/// inside the hook callback.
+/// The modifiers the user holds right now. Read fresh from Windows for every
+/// key rather than tracked from the event stream, which goes permanently
+/// wrong the first time a key-up is hidden from the hook (UIPI, secure
+/// desktop) or a modifier was already down when the app started. Modifiers
+/// our own macro holds are left out (see `logic::held_modifiers`).
 fn held_modifiers(buf: &mut [Modifier; 4]) -> &[Modifier] {
     // SAFETY: GetAsyncKeyState takes a virtual key code and returns a state word.
     let down = |vk: i32| (unsafe { GetAsyncKeyState(vk) } as u16) & 0x8000 != 0;
-    let mut n = 0;
-    for (vks, m) in [
-        (&[0x11][..], Modifier::Ctrl),
-        (&[0x12][..], Modifier::Alt),
-        (&[0x10][..], Modifier::Shift),
-        (&[0x5B, 0x5C][..], Modifier::Win),
-    ] {
-        if vks.iter().any(|&vk| down(vk)) {
-            buf[n] = m;
-            n += 1;
-        }
-    }
-    &buf[..n]
+    logic::held_modifiers(buf, INJECTED.held(), down)
 }
 
 /// State the callback reaches through a `static`, because a Win32 hook callback
@@ -219,6 +207,7 @@ impl HookThread {
                                 register_toggle(&s.table.load());
                             }
                         }
+                        // SAFETY: `msg` was just filled in by GetMessageW.
                         _ => unsafe {
                             let _ = TranslateMessage(&msg);
                             DispatchMessageW(&msg);
@@ -302,6 +291,8 @@ unsafe extern "system" fn callback(code: i32, wparam: WPARAM, lparam: LPARAM) ->
         return CallNextHookEx(None, code, wparam, lparam);
     };
 
+    // SAFETY: for WH_KEYBOARD_LL with HC_ACTION, Windows passes a pointer to
+    // a KBDLLHOOKSTRUCT that is valid for the duration of this call.
     let k = &*(lparam.0 as *const KBDLLHOOKSTRUCT);
     let msg = wparam.0 as u32;
     let down = msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN;

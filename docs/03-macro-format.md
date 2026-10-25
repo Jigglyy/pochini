@@ -26,6 +26,7 @@ version.
   "enabled": true,
   "favorite": false,             // starred on the macro list; sorting only
   "color": null,                 // accent name for the macro list ("red", "teal"...), or null
+  "review": false,               // true: imported, steps not looked at yet (see Sharing)
   "trigger": { /* Trigger */ },
   "repeat": { "kind": "once" },  // or {"kind":"count","n":10} | {"kind":"forever"}
   "queue": false,                // true: presses while running are queued, not ignored
@@ -289,14 +290,38 @@ Export (a macro's menu > Export...) writes one macro to a `.pochini.json` file:
 }
 ```
 
-The star (`favorite`) is personal and stays behind; everything else, including the color and
-the hotkey, travels. Import (the Import button) accepts that file, a bare macro object, or a
-`macros.json` backup. Every imported macro is a new macro: new macro and step ids, `created_at`
-and `updated_at` set to now, not a favorite, **`enabled: false`** (its hotkey stays off until
-the new owner turns it on, so someone else's macro never fires on Space by surprise), and a
-name made unique (" (imported)", " (imported 2)"...). Files over 2 MB or with more than 500
-macros are refused, as is anything that is not one of the three shapes, each with a plain
-reason. Rules and tests: `src-tauri/src/share.rs`.
+What is about the sender rather than the macro stays behind: the star (`favorite`), the
+window title an "App only" app was picked from (`guard.label`), and the monitor each point was
+picked on (`capture`). Everything else, including the color and the hotkey, travels. Import
+(the Import button) accepts that file, a bare macro object, or a `macros.json` backup. Every
+imported macro is a new macro: new macro and step ids, `created_at` and `updated_at` set to
+now, not a favorite, its color checked against the palette, a name made unique
+(" (imported)", " (imported 2)"...), **`enabled: false`** (its hotkey stays off, so someone
+else's macro never fires on Space by surprise) and **`review: true`**.
+
+A shared macro is a small program: it can type into whatever has focus and press shortcuts
+that open things. While `review` is true it cannot be switched on or run (the backend refuses
+both); switching it on or pressing Run first shows every step in plain words, with the ones
+that type text or press Ctrl/Alt/Win shortcuts flagged. "Looks good" clears `review`, and so
+does saving it from the editor, which shows every step. Files over 2 MB (read with a hard
+limit, whatever size the file claims) or with more than 500 macros are refused, as is anything
+that is not one of the three shapes, each with a plain reason. Rules and tests:
+`src-tauri/src/share.rs`.
+
+## When macros.json cannot be read
+
+A missing file is an empty library. Anything else that cannot be read (damaged JSON, a step
+type this build does not know, a newer `schema_version`) is copied aside untouched as
+`macros.json.unreadable-<time>`, and the app says so in a banner instead of quietly showing an
+empty list:
+
+- If `macros.bak` (the version before the last save) reads, it is loaded, except for a newer
+  `schema_version`, whose backup is most likely from that newer version too.
+- Otherwise the library starts empty and **locked**: nothing is saved until the user chooses
+  Start fresh. Before this, the next two saves replaced both the file and its backup with an
+  empty library.
+
+`Store::open_macros` in `src-tauri/src/storage.rs`, with tests there and in `app.rs`.
 
 ## Design notes
 

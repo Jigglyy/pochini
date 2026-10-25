@@ -14,7 +14,8 @@
 //! - gives WebView2 its own profile and a DevTools port
 //!   (`POCHINI_E2E_CDP_PORT`) that Playwright connects to,
 //! - answers Export / Import file dialogs with `POCHINI_E2E_DIALOG_FILE`
-//!   instead of opening them (Playwright cannot drive native dialogs).
+//!   instead of opening them (Playwright cannot drive native dialogs),
+//! - never opens Explorer ("Open data folder").
 
 use std::path::PathBuf;
 
@@ -39,6 +40,11 @@ pub fn from_env() -> Result<Option<E2e>, String> {
         .map_err(|e| format!("POCHINI_E2E_CDP_PORT: {e}"))?;
     let headed = std::env::var("POCHINI_E2E_HEADED").is_ok_and(|v| v == "1");
     Ok(Some(E2e { data_dir, cdp_port, headed }))
+}
+
+/// In test mode: never open windows outside the app (Explorer, say).
+pub(crate) fn active() -> bool {
+    std::env::var_os("POCHINI_E2E").is_some()
 }
 
 /// The file a test wants every save / open dialog to return.

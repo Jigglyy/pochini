@@ -125,3 +125,36 @@ test.describe("deleting", () => {
     await expect.poll(() => saved(dataDir)).toEqual(["k"]);
   });
 });
+
+const hotkey = (vk: number, label: string, modifiers: ("ctrl" | "alt" | "shift" | "win")[] = []) => ({
+  key: { vk, scancode: 0, extended: false, label },
+  modifiers,
+  mode: "once" as const,
+  swallow: false,
+});
+
+test.describe("hotkey clashes", () => {
+  test.use({
+    seed: {
+      macros: [
+        macro("On the panic key", { id: "p", trigger: hotkey(0x1b, "Esc", ["shift"]) }),
+        macro("First Space", { id: "a", trigger: hotkey(0x20, "Space") }),
+        macro("Second Space", { id: "b", trigger: hotkey(0x20, "Space") }),
+      ],
+    },
+  });
+
+  test("say why the hotkey cannot work", async ({ app: { page } }) => {
+    await expect(row(page, "a")).not.toContainText("Hotkey clash");
+
+    const tip = (text: string) => page.getByRole("tooltip").filter({ hasText: text });
+    await row(page, "p").getByText("Hotkey clash").hover();
+    await expect(tip("Same key as the panic stop, so it never runs")).toBeVisible();
+    // Radix closes a tooltip on the pointer move after it leaves (help.spec.ts).
+    await page.mouse.move(0, 0, { steps: 5 });
+    await expect(page.getByRole("tooltip")).toHaveCount(0);
+
+    await row(page, "b").getByText("Hotkey clash").hover();
+    await expect(tip('Same hotkey as "First Space", which runs instead')).toBeVisible();
+  });
+});

@@ -122,6 +122,21 @@ test.describe("offset targets", () => {
   });
 });
 
+test.describe("recording keys", () => {
+  test.use({ seed: { macros: [macro("Keys")] } });
+
+  test("Escape can be recorded like any other key", async ({ app: { page, dataDir } }) => {
+    await page.getByRole("button", { name: /^Keys/ }).click();
+    await page.getByRole("button", { name: "Key", exact: true }).click();
+    const key = page.locator("[data-step-id]").nth(0);
+    await key.getByRole("button", { name: "Change" }).click();
+    await page.keyboard.press("Escape");
+    await expect(key.locator('[role="button"][aria-expanded]')).toContainText("Press Esc");
+    await save(page);
+    expect(((await savedSteps(dataDir))[0].key as { vk: number }).vk).toBe(0x1b);
+  });
+});
+
 test.describe("held keys and shuffle", () => {
   test.use({
     seed: {

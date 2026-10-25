@@ -114,6 +114,8 @@ export type Macro = {
   favorite: boolean;
   /** Accent name (lib/colors.ts) shown on the macro list, or null. */
   color: string | null;
+  /** Imported and not reviewed yet: cannot be switched on or run. */
+  review: boolean;
   trigger: Trigger | null;
   repeat: Repeat;
   /** Presses while running are queued instead of ignored. */
@@ -134,13 +136,15 @@ export type MacroSummary = {
   enabled: boolean;
   hotkey: string | null;
   step_count: number;
-  conflict: boolean;
+  /** Why the hotkey cannot work as set, or null when it can. */
+  conflict: string | null;
   duration_ms: [number, number];
   queue: boolean;
   /** "App only" executable, if set. */
   app: string | null;
   favorite: boolean;
   color: string | null;
+  review: boolean;
   /** RFC 3339. */
   created_at: string;
   updated_at: string;
@@ -156,6 +160,16 @@ export type Settings = {
 };
 
 export type AppWindow = { process: string; title: string };
+
+/** Why macros.json could not be read at startup (see Store::open_macros). */
+export type LoadProblem = {
+  reason: string;
+  kept_at: string | null;
+  /** Loaded from the backup made before the last save. */
+  from_backup: boolean;
+  /** Nothing could be read; saving is refused until Start fresh. */
+  locked: boolean;
+};
 
 export type SeenResult =
   | { kind: "panic" }

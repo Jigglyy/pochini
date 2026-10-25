@@ -69,6 +69,7 @@ impl WinInput {
         if sent as usize == inputs.len() {
             return Ok(());
         }
+        // SAFETY: reads this thread's last-error value; no preconditions.
         let code = unsafe { windows::Win32::Foundation::GetLastError().0 };
         if code == ERROR_ACCESS_DENIED {
             Err(InputError::AccessDenied)
@@ -195,7 +196,7 @@ impl InputBackend for WinInput {
             ScrollAxis::Vertical => MOUSEEVENTF_WHEEL,
             ScrollAxis::Horizontal => MOUSEEVENTF_HWHEEL,
         };
-        let wheel = Self::mouse(flags, 0, 0, notches * WHEEL_DELTA);
+        let wheel = Self::mouse(flags, 0, 0, notches.saturating_mul(WHEEL_DELTA));
         // Batch the move and the wheel event into one call so nothing can
         // interleave between positioning and scrolling.
         match at {
@@ -212,7 +213,9 @@ impl InputBackend for WinInput {
         if !down {
             flags |= KEYEVENTF_KEYUP;
         }
-        Self::send(&[Self::kbd(scan, flags)])
+        Self::send(&[Self::kbd(scan, flags)])?;
+        super::INJECTED.key(scan, extended, down);
+        Ok(())
     }
 
     fn modifier(&self, m: Modifier, down: bool) -> Result<()> {
@@ -235,6 +238,8 @@ unsafe extern "system" fn enum_proc(
     _clip: *mut RECT,
     lparam: LPARAM,
 ) -> BOOL {
+    // SAFETY: `monitors()` passes a pointer to its own Vec as the lparam and
+    // keeps it alive (and otherwise untouched) until EnumDisplayMonitors returns.
     let out = &mut *(lparam.0 as *mut Vec<Monitor>);
 
     let mut mi = MONITORINFOEXW {
@@ -355,6 +360,8 @@ pub fn list_apps() -> Vec<AppWindow> {
     }
 
     unsafe extern "system" fn each(hwnd: HWND, lp: LPARAM) -> BOOL {
+        // SAFETY: `list_apps` passes a pointer to its own Acc as the lparam
+        // and keeps it alive (and otherwise untouched) until EnumWindows returns.
         let acc = &mut *(lp.0 as *mut Acc);
         if !IsWindowVisible(hwnd).as_bool() {
             return TRUE;

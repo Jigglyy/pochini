@@ -12,6 +12,7 @@ export function macro(name: string, o: Partial<Macro> = {}): Macro {
     enabled: true,
     favorite: false,
     color: null,
+    review: false,
     trigger: null,
     repeat: { kind: "once" },
     queue: false,

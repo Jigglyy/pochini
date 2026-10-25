@@ -6,6 +6,7 @@ use std::sync::Arc;
 use tauri::State;
 
 use crate::app::AppState;
+use crate::hotkey::bindings::Clash;
 use crate::hotkey::TriggerEvent;
 use crate::input::{keys, Monitor};
 use crate::model::{KeyRef, Macro, Settings, Step};
@@ -20,13 +21,16 @@ pub struct MacroSummary {
     pub enabled: bool,
     pub hotkey: Option<String>,
     pub step_count: usize,
-    pub conflict: bool,
+    /// Why the hotkey cannot work as set, in words; `None` when it can.
+    pub conflict: Option<String>,
     pub duration_ms: (u64, u64),
     pub queue: bool,
     /// "App only" executable, if set.
     pub app: Option<String>,
     pub favorite: bool,
     pub color: Option<String>,
+    /// Imported and not reviewed yet (see share.rs).
+    pub review: bool,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -51,6 +55,7 @@ fn hotkey_label(m: &Macro) -> Option<String> {
 pub fn list_macros(state: State<'_, Arc<AppState>>) -> R<Vec<MacroSummary>> {
     let conflicts = state.binding_table().conflicts();
     let f = state.macros.lock().unwrap();
+    let name_of = |id: &str| f.macros.iter().find(|m| m.id == id).map(|m| m.name.clone()).unwrap_or_default();
     Ok(f.macros
         .iter()
         .map(|m| MacroSummary {
@@ -59,16 +64,25 @@ pub fn list_macros(state: State<'_, Arc<AppState>>) -> R<Vec<MacroSummary>> {
             enabled: m.enabled,
             hotkey: hotkey_label(m),
             step_count: m.steps.len(),
-            conflict: conflicts.contains(&m.id),
+            conflict: conflicts.iter().find(|(id, _)| *id == m.id).map(|(_, c)| clash_text(c, &name_of)),
             duration_ms: m.duration_range(),
             queue: m.queue,
             app: m.guard.as_ref().map(|g| g.process.clone()).filter(|p| !p.is_empty()),
             favorite: m.favorite,
             color: m.color.clone(),
+            review: m.review,
             created_at: m.created_at.clone(),
             updated_at: m.updated_at.clone(),
         })
         .collect())
+}
+
+fn clash_text(c: &Clash, name_of: &dyn Fn(&str) -> String) -> String {
+    match c {
+        Clash::PanicKey => "Same key as the panic stop, so it never runs".into(),
+        Clash::ToggleHotkey => "Same as the on/off hotkey, so it never runs".into(),
+        Clash::SameAs { macro_id } => format!("Same hotkey as \"{}\", which runs instead", name_of(macro_id)),
+    }
 }
 
 #[tauri::command]
@@ -89,10 +103,15 @@ pub fn create_macro(state: State<'_, Arc<AppState>>, name: String) -> R<Macro> {
     Ok(m)
 }
 
+/// Refused for an imported macro nobody has reviewed yet (see share.rs).
+const NEEDS_REVIEW: &str = "Review this imported macro before you turn it on or run it.";
+
 #[tauri::command]
 pub fn save_macro(state: State<'_, Arc<AppState>>, r#macro: Macro) -> R<()> {
     let mut m = r#macro;
     m.updated_at = now_iso8601();
+    // Saved from the editor, which shows every step: that is a review.
+    m.review = false;
     let id = m.id.clone();
     let disabled = !m.enabled;
     {
@@ -120,6 +139,9 @@ pub fn set_macro_enabled(state: State<'_, Arc<AppState>>, id: String, enabled: b
             .iter_mut()
             .find(|m| m.id == id)
             .ok_or_else(|| format!("no macro with id {id}"))?;
+        if enabled && m.review {
+            return Err(NEEDS_REVIEW.into());
+        }
         m.enabled = enabled;
         m.updated_at = now_iso8601();
     }
@@ -129,6 +151,21 @@ pub fn set_macro_enabled(state: State<'_, Arc<AppState>>, id: String, enabled: b
         state.abort_if(&id);
     }
     Ok(())
+}
+
+/// The import review dialog's "Looks good": the user has seen the steps.
+#[tauri::command]
+pub fn mark_reviewed(state: State<'_, Arc<AppState>>, id: String) -> R<()> {
+    {
+        let mut f = state.macros.lock().unwrap();
+        let m = f
+            .macros
+            .iter_mut()
+            .find(|m| m.id == id)
+            .ok_or_else(|| format!("no macro with id {id}"))?;
+        m.review = false;
+    }
+    state.persist()
 }
 
 /// The star on each macro row. Not an edit: `updated_at` stays, so starring
@@ -225,11 +262,12 @@ pub async fn import_macros(app: tauri::AppHandle, state: State<'_, Arc<AppState>
     let Some(path) = pick_file(&app, None) else {
         return Ok(Vec::new());
     };
-    let meta = std::fs::metadata(&path).map_err(|e| format!("Could not open {}: {e}", path.display()))?;
-    if meta.len() > crate::share::MAX_BYTES as u64 {
-        return Err(crate::share::ShareError::TooBig.to_string());
-    }
-    let text = std::fs::read_to_string(&path).map_err(|e| format!("Could not read {}: {e}", path.display()))?;
+    // Read at most one byte past the limit, however big the file claims to
+    // be (or grows while being read); share::import refuses anything over.
+    let mut text = String::new();
+    let file = std::fs::File::open(&path).map_err(|e| format!("Could not open {}: {e}", path.display()))?;
+    std::io::Read::read_to_string(&mut std::io::Read::take(file, crate::share::MAX_BYTES as u64 + 1), &mut text)
+        .map_err(|e| format!("Could not read {}: {e}", path.display()))?;
     let added = {
         let mut f = state.macros.lock().unwrap();
         let names: Vec<String> = f.macros.iter().map(|m| m.name.clone()).collect();
@@ -281,6 +319,34 @@ pub fn app_info(app: tauri::AppHandle, state: State<'_, Arc<AppState>>) -> R<App
     })
 }
 
+/// Why the macro library could not be read at startup, if it could not.
+#[tauri::command]
+pub fn storage_problem(state: State<'_, Arc<AppState>>) -> R<Option<crate::storage::LoadProblem>> {
+    Ok(state.storage_problem.lock().unwrap().clone())
+}
+
+/// Dismiss the storage notice. For a locked library this is "Start fresh":
+/// saving works again, and the unreadable file stays where it was kept.
+#[tauri::command]
+pub fn clear_storage_problem(state: State<'_, Arc<AppState>>) -> R<()> {
+    *state.storage_problem.lock().unwrap() = None;
+    Ok(())
+}
+
+/// Show the data folder in Explorer.
+#[tauri::command]
+pub fn open_data_dir(state: State<'_, Arc<AppState>>) -> R<()> {
+    #[cfg(debug_assertions)]
+    if crate::e2e::active() {
+        return Ok(());
+    }
+    std::process::Command::new("explorer.exe")
+        .arg(state.store.dir())
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("Could not open the folder: {e}"))
+}
+
 #[tauri::command]
 pub fn list_monitors(state: State<'_, Arc<AppState>>) -> R<Vec<Monitor>> {
     state.input.monitors().map_err(|e| e.to_string())
@@ -308,6 +374,9 @@ pub fn key_ref_for_vk(vk: u16) -> R<KeyRef> {
 /// is wherever the mouse is when it ends.
 #[tauri::command]
 pub fn run_macro(state: State<'_, Arc<AppState>>, id: String, delay_ms: u64) -> R<()> {
+    if state.find(&id).is_some_and(|m| m.review) {
+        return Err(NEEDS_REVIEW.into());
+    }
     state
         .tx
         .send(TriggerEvent::Start { macro_id: id, delay_ms, at: None })

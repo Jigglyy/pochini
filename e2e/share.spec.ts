@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Page } from "@playwright/test";
 import { expect, test } from "./_launch";
-import { clickAt, macro, wait } from "./data";
+import { clickAt, macro, typeText, wait } from "./data";
 
 // Sharing macros: Export writes a .pochini.json file, Import reads one.
 // Test mode answers the file dialogs with the seed's `dialog` file.
@@ -14,6 +14,7 @@ async function library(dataDir: string) {
     id: string;
     name: string;
     enabled: boolean;
+    review: boolean;
     steps: unknown[];
   }[];
 }
@@ -64,7 +65,7 @@ test.describe("import", () => {
   test("Import adds the macros as new ones, hotkeys off", async ({ app: { page, dataDir } }) => {
     await page.getByRole("button", { name: "Import", exact: true }).click();
     await expect(page.getByRole("status").filter({ hasText: "Imported" })).toContainText(
-      "Imported 2 macros. Their hotkeys are off until you turn them on.",
+      "Imported 2 macros. Their hotkeys are off: you'll see each one's steps before you turn it on or run it.",
     );
     await expect(row(page, "Fill form (imported)")).toBeVisible();
     await expect(row(page, "Buy")).toBeVisible();
@@ -73,8 +74,68 @@ test.describe("import", () => {
     const lib = await library(dataDir);
     expect(lib.map((m) => m.name)).toEqual(["Fill form", "Fill form (imported)", "Buy"]);
     expect(lib.every((m, i) => i === 0 || !m.enabled)).toBe(true);
+    expect(lib.map((m) => m.review)).toEqual([false, true, true]);
+    await expect(row(page, "Buy")).toContainText("Imported, check it before use");
     expect(new Set(lib.map((m) => m.id)).size).toBe(3);
     expect(lib.map((m) => m.id)).not.toContain("theirs");
+  });
+});
+
+const risky = {
+  format: "pochini.macros",
+  version: 1,
+  macros: [
+    macro("Helper", {
+      repeat: { kind: "forever" },
+      steps: [
+        {
+          type: "key",
+          id: "k",
+          shuffle: false,
+          key: { vk: 0x52, scancode: 0x13, extended: false, label: "R" },
+          action: "press",
+          modifiers: ["win"],
+          hold_ms: { base: 20, jitter: 0 },
+        },
+        typeText("powershell"),
+      ],
+    }),
+  ],
+};
+
+test.describe("reviewing an imported macro", () => {
+  test.use({
+    seed: { files: { "risky.pochini.json": JSON.stringify(risky) }, dialog: "risky.pochini.json" },
+  });
+
+  test("its steps are shown before it can be switched on", async ({ app: { page, dataDir } }) => {
+    await page.getByRole("button", { name: "Import a macro" }).click();
+    await row(page, "Helper").getByRole("switch").click();
+
+    const dialog = page.getByRole("alertdialog");
+    await expect(dialog).toContainText('Check "Helper" first');
+    await expect(dialog).toContainText("It repeats until you stop it");
+    const steps = dialog.getByRole("list", { name: "Steps" });
+    await expect(steps).toContainText("Press Win+R");
+    await expect(steps).toContainText("A shortcut: it can open, close or change things");
+    await expect(steps).toContainText('Type "powershell"');
+    await expect(steps).toContainText("Types into whatever has focus");
+
+    // Cancel leaves it off and unreviewed.
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(row(page, "Helper").getByRole("switch")).not.toBeChecked();
+
+    await row(page, "Helper").getByRole("switch").click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "Looks good, turn it on" }).click();
+    await expect(row(page, "Helper").getByRole("switch")).toBeChecked();
+    await expect(row(page, "Helper")).not.toContainText("check it before use");
+    await expect.poll(async () => (await library(dataDir)).map((m) => [m.enabled, m.review])).toEqual([[true, false]]);
+  });
+
+  test("Run asks first too", async ({ app: { page } }) => {
+    await page.getByRole("button", { name: "Import a macro" }).click();
+    await row(page, "Helper").getByRole("button", { name: "Run" }).click();
+    await expect(page.getByRole("alertdialog").getByRole("button", { name: "Looks good, run it" })).toBeVisible();
   });
 });
 
