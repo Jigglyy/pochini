@@ -113,9 +113,16 @@ behaviour or the macro file format.
    `tauri build --no-bundle`, and hashes the exe. The `publish` job (the only one that can
    write, in the `release` environment, only for pushes by the repository owner) publishes
    "Pochini vX.Y.Z" (creating the tag on the release commit) with `Pochini-X.Y.Z.exe`,
-   `SHA256SUMS.txt` and `THIRD_PARTY_NOTICES.md` attached, plus a build provenance
-   attestation once the repository is public. Watch it with `gh run watch`, then check
-   `gh release view vX.Y.Z`. Other pushes to main skip both jobs. A manual run (Actions tab)
+   `SHA256SUMS.txt` and `THIRD_PARTY_NOTICES.md` attached, plus a signed build provenance
+   attestation. Watch it with `gh run watch`, then check `gh release view vX.Y.Z`.
+5. **The publish job waits for approval**: the `release` environment requires the owner's
+   review (and deploys from `main` only). Approve it on the run's page, or, when the owner
+   asked for this release:
+   ```bash
+   RUN=$(gh run list --workflow release.yml --limit 1 --json databaseId --jq '.[0].databaseId')
+   ENV=$(gh api repos/Jigglyy/pochini/environments/release --jq .id)
+   gh api -X POST repos/Jigglyy/pochini/actions/runs/$RUN/pending_deployments      -F "environment_ids[]=$ENV" -f state=approved -f comment="Release requested by the owner"
+   ``` Other pushes to main skip both jobs. A manual run (Actions tab)
    is a dry run with the files as an artifact.
    - Every action is pinned to a commit SHA with the version in a comment; Dependabot bumps
      them. Never go back to `@v7` style tags: the repository settings require SHA pinning and
@@ -130,6 +137,13 @@ Pushing changes under `.github/workflows/` needs the `workflow` scope on the gh 
 (`gh auth refresh -h github.com -s workflow`).
 
 When an agent cuts a release, it reports both the local exe path and the GitHub release link.
+
+**The repository is public.** `main` is protected by the "Protect main" ruleset: no force
+pushes or deletion, and changes from anyone else arrive as a pull request with both CI jobs
+green and a code owner's approval; the admin role bypasses it, so the owner's direct pushes
+(and release commits) still work. Workflows from outside contributors' pull requests wait
+for approval. Private vulnerability reporting, secret scanning with push protection, and
+Dependabot alerts and security updates are on.
 
 **Pull requests** run `.github/workflows/ci.yml` on Windows: typecheck, guards, clippy
 `-D warnings`, `cargo test`, and the e2e suite (WebView2 is on the runner image). Rust is not
