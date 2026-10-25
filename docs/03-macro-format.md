@@ -1,7 +1,7 @@
 # Macro format
 
-On-disk schema for `macros.json`. Rust types in `src-tauri/src/model/` are the source of
-truth; TypeScript types are generated from them with `ts-rs`.
+On-disk schema for `macros.json`. The Rust types in `src-tauri/src/model.rs` are the source
+of truth; `src/types.ts` mirrors them by hand (generating it with `ts-rs` is still to do).
 
 ## Top level
 
@@ -14,8 +14,8 @@ truth; TypeScript types are generated from them with `ts-rs`.
 
 `schema_version` is bumped whenever a field is removed or its meaning changes. Adding an
 optional field with a serde default does not require a bump. Every bump needs a migration
-function in `storage/migrations.rs` and a round-trip test with a real file from the previous
-version.
+step in `migrate` (`src-tauri/src/storage.rs`) and a round-trip test with a real file from the
+previous version.
 
 ## Macro
 
@@ -39,7 +39,7 @@ version.
 }
 ```
 
-The order of `macros` in the file is the user's **custom order** (what dragging on the macro
+The order of `macros` in the file is the **custom order** (what dragging on the macro
 list edits). Sorting by name or date is a view in the UI and never rewrites the file.
 `reorder_macros` takes the new order of all macros, or of one group of them (the favorites, or
 the rest): the listed macros swap among the places they already hold and every other macro
@@ -66,8 +66,9 @@ or a `Toggle` trigger, and the UI must say so at the point of choice.
 everywhere else while the app runs; the editor warns when a bare, unmodified, commonly typed
 key is bound with swallow on.
 
-Both `vk` and `scancode` are stored. `scancode` is what gets injected and matched (layout
-independent); `vk` and `label` exist so the UI can show something readable.
+Both `vk` and `scancode` are stored. Hotkeys are matched on `vk` (what the keyboard hook
+reports); keys a step presses are injected by `scancode` (layout independent, and what games
+reading raw input see). `label` exists so the UI can show something readable.
 
 ## Step
 
@@ -199,14 +200,14 @@ Uses `KEYEVENTF_UNICODE`. Not suitable for game input - the UI should say so inl
 { "id": "…", "type": "wait", "ms": { "base": 500, "jitter": 200 } }
 ```
 
-This is the user's "wait a bit, with a tick for randomness and how much time the randomness
+This is the original spec's "wait a bit, with a tick for randomness and how much time the randomness
 adds." `jitter: 0` means exact; `jitter: n` means `base + uniform(0, n)`.
 
 ## Jitter
 
 A `Jitter` is `{ "base": <u32 ms>, "jitter": <u32 ms> }` and appears anywhere a duration does.
 Sampling is `base + rng.gen_range(0..=jitter)`, uniform. The UI renders it as a number field
-plus a checkbox that reveals a second number field, matching the user's description.
+plus a checkbox that reveals a second number field, matching the original description.
 
 ## Settings
 
@@ -244,13 +245,13 @@ moving my mouse". A queued run returns to the point from its own press.
 ## Guard ("App only")
 
 ```jsonc
-"guard": { "process": "game.exe", "label": "Game" }   // or null
+"guard": { "process": "notepad.exe", "label": "Untitled - Notepad" }   // or null
 ```
 
 When set, the macro's hotkey fires only while the mouse is over a top-level window that
 belongs to that executable (compared ignoring case). Anywhere else the key is treated as
 unbound: it passes through to the app under the cursor and is never swallowed, even if the
-trigger has `swallow` on. `label` is the window title the user picked from, for display only.
+trigger has `swallow` on. `label` is the window title it was picked from, for display only.
 
 The check runs in the hook callback at the moment of the press: `GetCursorPos`,
 `WindowFromPoint`, `GetAncestor(GA_ROOT)`, `GetWindowThreadProcessId`, then the executable
@@ -272,7 +273,7 @@ the chain (the first press, or where the Run countdown ended); "move mouse back"
 too. `"each_press"` uses the mouse position from each run's own press instead, but a press made
 while the macro runs catches the cursor wherever the macro has moved it, so a queued "click
 where the mouse started" lands on the macro's own last click, and "move mouse back" then keeps
-returning there (the drift a user reported; reproduced in app.rs `start_and_two_clicks_*` tests). A press
+returning there (the drift that was reported; reproduced in app.rs `start_and_two_clicks_*` tests). A press
 after the queue has emptied starts a new chain. Implemented in the run thread of `app.rs`
 (`chain_start`), which drains the queue back to back. Panic stop, the
 master switch going off, and switching the macro off (or deleting it) all clear its queued

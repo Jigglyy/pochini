@@ -600,8 +600,8 @@ mod tests {
         assert_eq!(moves(&input), vec![Event::Move(1, 1), Event::Move(1, 1), Event::Move(5, 5)]);
     }
 
-    /// The user's "Fill form": click where the mouse started, two fixed clicks,
-    /// move the mouse back. A second Space press lands while run 1 is on its
+    /// A typical queued macro: click where the mouse started, two fixed
+    /// clicks, move the mouse back. A second Space press lands while run 1 is on its
     /// last click, so it catches the cursor there.
     fn start_and_two_clicks(id: &str, from: QueueFrom) -> Macro {
         let click = |anchor, x, y| Step::Click {
@@ -643,7 +643,7 @@ mod tests {
         handle(&st, press("s", (1504, 938))); // pressed during run 1's last click
         assert!(wait_until(|| st.running_id().is_none() && moves(&input).len() >= 8, 3000));
         // Run 2 starts at the macro's own last click and "moves back" there,
-        // so every later run drifts too: the symptom the user reported.
+        // so every later run drifts too: the drift that was reported.
         let (start, a, b) = (Event::Move(500, 400), Event::Move(1127, 830), Event::Move(1504, 938));
         assert_eq!(
             moves(&input),

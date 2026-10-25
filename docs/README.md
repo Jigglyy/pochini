@@ -10,5 +10,5 @@ Read in order if you are new to the project.
 | [03-macro-format.md](03-macro-format.md) | On-disk JSON schema for macros |
 | [04-ui-spec.md](04-ui-spec.md) | Screens, interactions, coordinate picking |
 | [05-roadmap.md](05-roadmap.md) | Milestones, in build order |
-| [06-open-questions.md](06-open-questions.md) | Decisions still owned by the user |
+| [06-open-questions.md](06-open-questions.md) | Decisions the design rests on, and their status |
 | [adr/](adr/) | Architecture decision records |

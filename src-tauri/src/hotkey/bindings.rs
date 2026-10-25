@@ -325,7 +325,7 @@ mod tests {
 
     #[test]
     fn an_app_only_binding_fires_only_over_its_app() {
-        let t = BindingTable::build(&[guarded("g", 0x20, "game.exe")], 0x1B, true);
+        let t = BindingTable::build(&[guarded("g", 0x20, "Game.exe")], 0x1B, true);
         let over = |app: &'static str| move || Some(app.to_string());
         assert!(matches!(
             t.match_key_with(0x20, &[], &mut over("game.exe")),
@@ -341,7 +341,7 @@ mod tests {
     #[test]
     fn an_app_only_binding_beats_an_unrestricted_one_inside_its_app() {
         let t = BindingTable::build(
-            &[m("any", 0x20, vec![], false), guarded("game", 0x20, "game.exe")],
+            &[m("any", 0x20, vec![], false), guarded("game", 0x20, "Game.exe")],
             0x1B,
             true,
         );
@@ -349,7 +349,7 @@ mod tests {
             Match::Trigger { macro_id, .. } => macro_id,
             other => panic!("{other:?}"),
         };
-        assert_eq!(id(t.match_key_with(0x20, &[], &mut || Some("game.exe".into()))), "game");
+        assert_eq!(id(t.match_key_with(0x20, &[], &mut || Some("Game.exe".into()))), "game");
         assert_eq!(id(t.match_key_with(0x20, &[], &mut || Some("Notepad.exe".into()))), "any");
     }
 

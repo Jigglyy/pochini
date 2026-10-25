@@ -379,7 +379,7 @@ pub enum Repeat {
 /// (it passes through, even if the trigger would normally block it).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Guard {
-    /// Executable file name, e.g. "game.exe". Compared ignoring case.
+    /// Executable file name, e.g. "notepad.exe". Compared ignoring case.
     pub process: String,
     /// What the user picked it from (a window title), for display only.
     #[serde(default)]

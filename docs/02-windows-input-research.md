@@ -266,7 +266,7 @@ per-step sleeps, or drift compounds over a long macro.
 
 ### Randomness
 
-Per the user's spec, each wait has a base and an optional jitter:
+Per the original spec, each wait has a base and an optional jitter:
 
 ```
 actual = base_ms + uniform(0, jitter_ms)

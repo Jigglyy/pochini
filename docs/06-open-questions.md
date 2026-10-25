@@ -1,7 +1,7 @@
 # Open questions
 
-Decisions the docs currently make on the user's behalf. Each lists the assumption in force, so
-work can proceed; confirm or overturn them and update the relevant doc.
+Decisions the design rests on. Each lists the assumption in force, so work can proceed;
+confirm or overturn them and update the relevant doc.
 
 ## 1. What are the real targets?
 
@@ -52,26 +52,26 @@ target, the UX should surface elevation earlier rather than as an error recovery
 
 **Assumed:** v1 is hand-built step lists only; recording is M4+.
 
-The user's description was entirely about hand-building ("you can input it manually"), so this
+The original description was entirely about hand-building ("you can input it manually"), so this
 matches. But recording is usually the feature that makes this category of app pleasant, and
 building it later means the mouse hook arrives later too. Worth confirming it is not v1.
 
 ## 7. Name
 
 **Decided (2026-10-07): Pochini.** *Pochi* (ぽち) is the Japanese sound of pressing a button;
-"-ini" echoes the user's Kanbini. The app, executable, window title, `%APPDATA%` folder
+"-ini" echoes [Kanbini](https://github.com/Jigglyy/kanbini), a sibling project. The app, executable, window title, `%APPDATA%` folder
 (`com.pochini.app`) and GitHub repo (`Jigglyy/pochini`) use it; the local project folder keeps
 the working title `coordsclickermacro`.
 
 ## 8. Toggle hotkey default
 
 **Decided (2026-10-07): keep Ctrl+Shift+F12.** It was chosen as unlikely to collide with a game
-binding. The user's screenshot tool owns the bare F12 to F14 keys, which Ctrl+Shift+F12 does not
-trigger; the user preferred to keep the default. It can be rebound in Settings.
+binding. Screenshot tools often own the bare F12 to F14 keys, which Ctrl+Shift+F12 does not
+trigger. It can be rebound in Settings.
 
 ## 9. Toggle hotkey ignored (resolved in 0.2.1)
 
-**Resolved.** The user reported a real Ctrl+Shift+F12 doing nothing; after 0.2.1 it works. In
+**Resolved.** A real Ctrl+Shift+F12 was reported doing nothing; after 0.2.1 it works. In
 the built exe Windows accepted the combo, so no other program owned it, which points at the
 low-level hook having missed the key (Windows removes a slow hook silently and permanently, and
 other programs' hooks run before older ones). 0.2.1 registers the toggle with `RegisterHotKey`,

@@ -49,11 +49,11 @@ test.describe("the step editor", () => {
   });
 });
 
-// Like the user's "Fill form": click steps, whose bodies are tall (~470 px),
+// A macro of click steps, whose bodies are tall (~470 px),
 // taller than the room left under the last step. Wait steps open small enough
 // to fit that room, which is why the first version of this test passed while
 // the real app still left the step half off-screen.
-const tallSteps = macro("Fill form", {
+const tallSteps = macro("Three clicks", {
   steps: [
     { ...clickAt(1623, 592), id: "c1", anchor: "activation" as const },
     { ...clickAt(1127, 830), id: "c2" },
@@ -70,7 +70,7 @@ for (const size of [
 
     test("expanding the last click step shows all of it", async ({ app: { page } }) => {
       await page.setViewportSize(size);
-      await page.getByRole("button", { name: /^Fill form/ }).click();
+      await page.getByRole("button", { name: /^Three clicks/ }).click();
       await toBottomEdge(header(page, "c3"));
       await header(page, "c3").click();
       await expect(step(page, "c3").getByRole("spinbutton", { name: "X", exact: true })).toBeVisible();
@@ -82,7 +82,7 @@ for (const size of [
     // several times gives a race more chances to show.
     test("opening the last click step again and again always shows all of it", async ({ app: { page } }) => {
       await page.setViewportSize(size);
-      await page.getByRole("button", { name: /^Fill form/ }).click();
+      await page.getByRole("button", { name: /^Three clicks/ }).click();
       for (let i = 0; i < 4; i++) {
         await toBottomEdge(header(page, "c3"));
         await header(page, "c3").click(); // open
@@ -94,7 +94,7 @@ for (const size of [
 
     test("expanding the first click step at the bottom shows all of it", async ({ app: { page } }) => {
       await page.setViewportSize(size);
-      await page.getByRole("button", { name: /^Fill form/ }).click();
+      await page.getByRole("button", { name: /^Three clicks/ }).click();
       await toBottomEdge(header(page, "c1"));
       await header(page, "c1").click();
       await expect.poll(() => fullyVisible(step(page, "c1")), { timeout: 3000 }).toBe(true);
@@ -106,7 +106,7 @@ test.describe("the screen moves with the opening", () => {
   test.use({ seed: { macros: [tallSteps] } });
 
   test("scrolling happens during the animation, not after it", async ({ app: { page } }) => {
-    await page.getByRole("button", { name: /^Fill form/ }).click();
+    await page.getByRole("button", { name: /^Three clicks/ }).click();
     await toBottomEdge(header(page, "c3"));
     const samples = await header(page, "c3").evaluate(async (h) => {
       const main = document.querySelector("main")!;
@@ -136,7 +136,7 @@ test.describe("options under a switch", () => {
 
   test("turning on App only near the bottom shows the picker", async ({ app: { page } }) => {
     await page.setViewportSize({ width: 1000, height: 460 });
-    await page.getByRole("button", { name: /^Fill form/ }).click();
+    await page.getByRole("button", { name: /^Three clicks/ }).click();
     const row = page.getByRole("switch", { name: /^App only/ });
     await row.evaluate((n) => n.scrollIntoView({ block: "end" }));
     await row.click();

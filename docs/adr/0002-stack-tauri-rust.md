@@ -50,7 +50,7 @@ ship. `pyautogui` does not handle the virtual-desktop and DPI cases correctly ou
 timing is at the mercy of the interpreter, and packaging produces a large PyInstaller bundle
 that antivirus flags even harder than a signed native binary.
 
-**AutoHotkey v2.** Already solves this problem and solves it well - if the user were happy
+**AutoHotkey v2.** Already solves this problem and solves it well - for people happy
 writing scripts. The entire premise here is a GUI for people who do not want to write AHK, so
 building on it would mean generating and shepherding scripts through a separate process,
 inheriting its distribution and antivirus profile without inheriting a UI toolkit. Worth

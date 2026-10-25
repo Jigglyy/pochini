@@ -50,7 +50,7 @@ test.describe("export", () => {
 const shared = {
   format: "pochini.macros",
   version: 1,
-  macros: [macro("Fill form", { id: "theirs", enabled: true, steps: [clickAt(5, 5)] }), macro("Buy", { id: "b2" })],
+  macros: [macro("Fill form", { id: "theirs", enabled: true, steps: [clickAt(5, 5)] }), macro("Copy row", { id: "b2" })],
 };
 
 test.describe("import", () => {
@@ -68,14 +68,14 @@ test.describe("import", () => {
       "Imported 2 macros. Their hotkeys are off: you'll see each one's steps before you turn it on or run it.",
     );
     await expect(row(page, "Fill form (imported)")).toBeVisible();
-    await expect(row(page, "Buy")).toBeVisible();
-    await expect(row(page, "Buy").getByRole("switch")).not.toBeChecked();
+    await expect(row(page, "Copy row")).toBeVisible();
+    await expect(row(page, "Copy row").getByRole("switch")).not.toBeChecked();
 
     const lib = await library(dataDir);
-    expect(lib.map((m) => m.name)).toEqual(["Fill form", "Fill form (imported)", "Buy"]);
+    expect(lib.map((m) => m.name)).toEqual(["Fill form", "Fill form (imported)", "Copy row"]);
     expect(lib.every((m, i) => i === 0 || !m.enabled)).toBe(true);
     expect(lib.map((m) => m.review)).toEqual([false, true, true]);
-    await expect(row(page, "Buy")).toContainText("Imported, check it before use");
+    await expect(row(page, "Copy row")).toContainText("Imported, check it before use");
     expect(new Set(lib.map((m) => m.id)).size).toBe(3);
     expect(lib.map((m) => m.id)).not.toContain("theirs");
   });

@@ -1,6 +1,6 @@
 # UI spec
 
-Three screens behind one header. The look follows the user's Kanbini app: neutral oklch
+Three screens behind one header. The look follows [Kanbini](https://github.com/Jigglyy/kanbini), a sibling project: neutral oklch
 greys, an indigo primary, ShadCN components. Every screen sits in one 896 px column that the
 header shares, sections are a sentence-case heading over one panel of hairline-divided rows,
 and the type is Windows 11's Segoe UI Variable. Labels stay short; each explanation is behind a
@@ -12,7 +12,7 @@ and the type is Windows 11's Segoe UI Variable. Labels stay short; each explanat
 ## Header (every screen)
 
 ```
-[icon] Pochini  |  < Macros / Demo        ( * Macros on  [==o] )  [gear]
+[icon] Pochini  |  < Macros / Fill form        ( * Macros on  [==o] )  [gear]
 ```
 
 - App mark and name on the left. Off the home screen, a divider, a back link and a
@@ -29,8 +29,8 @@ and the type is Windows 11's Segoe UI Variable. Labels stay short; each explanat
 ```
 Your macros                Sort [Custom order  v]  [^ Import]  [+ New macro]
 
-| :: * Demo                              Space   [o==]  [> Run]  [...] |
-|      3 steps, 480 ms to 705 ms   [] Only in game.exe   Queues ...  |
+| :: * Fill form                              Space   [o==]  [> Run]  [...] |
+|      3 steps, 480 ms to 705 ms   [] Only in msedge.exe         Queues ...  |
 
 Panic stop [Esc] stops a running macro at once.
 ```
@@ -71,7 +71,7 @@ Panic stop [Esc] stops a running macro at once.
 ## Screen 2: Editor
 
 ```
-[ Demo                                        ]  [> Test]  [Save]
+[ Fill form                                        ]  [> Test]  [Save]
 
 TRIGGER
   Hotkey   [Space] [Change] [x Clear]

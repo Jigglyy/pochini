@@ -81,7 +81,8 @@ Rebuilt on ShadCN + Tailwind v4 in Kanbini's style.
 - [x] Drag-to-reorder for macros and steps (dnd-kit, as in Kanbini)
 - [x] Favorites and macro list sorting (custom, favorites first, name, newest, recently edited)
 - [x] Step color coding by kind, recolorable (right-click a step, or Settings)
-- [x] GitHub Releases: a `v*` tag builds the .exe on GitHub Actions and attaches it
+- [x] GitHub Releases: pushing a `chore(release): X.Y.Z` commit to main builds the .exe on
+      GitHub Actions and publishes it with checksums and third-party notices
 - [x] Offset targets: mouse start + offset, previous point + offset (chains)
 - [x] Export / import macros as `.pochini.json` files (imported hotkeys start off)
 - [x] Motion: animated expand / collapse, gliding lists, screen fades (reduced motion respected)
@@ -96,8 +97,8 @@ Rebuilt on ShadCN + Tailwind v4 in Kanbini's style.
       sell)
 - [ ] Installer + optional start-with-Windows
 - [ ] UIPI detection with a clear "relaunch as administrator?" prompt
-- [ ] README with the antivirus explanation
-- [ ] Import/export a single macro as JSON
+- [x] README with the antivirus explanation
+- [x] Import/export a single macro as JSON
 
 ## Later - in rough priority order
 

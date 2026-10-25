@@ -274,7 +274,7 @@ unsafe extern "system" fn enum_proc(
 /// A running application, as offered by the "App only" picker.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct AppWindow {
-    /// Executable file name, e.g. "game.exe".
+    /// Executable file name, e.g. "notepad.exe".
     pub process: String,
     /// Title of one of its visible top-level windows.
     pub title: String,

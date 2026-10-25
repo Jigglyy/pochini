@@ -64,13 +64,15 @@ npm run icons                                      # regenerate all icons from a
 npm run build                                      # type-check + build the frontend alone
 npm run e2e                                        # Playwright suite, headless (builds a debug app first)
 npm run e2e:headed                                 # same, with the windows on screen, one at a time
+npm run verify                                     # typecheck + guards + clippy -D warnings + cargo test
+npm run notices                                    # regenerate THIRD_PARTY_NOTICES.md (after dependency changes)
 cargo test  --manifest-path src-tauri/Cargo.toml
 cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets
 cargo run --manifest-path src-tauri/Cargo.toml --example trace_macro -- "<macro name>"
 ```
 
-`cargo` is at `%USERPROFILE%\.cargo\bin`; it is on the user PATH, but a shell (or a VS Code
-window) opened before the install will not have it.
+`cargo` installs to `%USERPROFILE%\.cargo\bin`; a shell (or a VS Code window) opened before
+rustup was installed will not have it on PATH.
 
 `trace_macro` runs a saved macro through the real engine with a mouse hook recording every
 event, and reports settle/hold/dwell timing plus which window each click lands on. Clicks
@@ -91,32 +93,44 @@ npm run release -- patch     # or minor / major / X.Y.Z / current
 ```
 
 `scripts/release.mjs` bumps the version in `package.json` + `package-lock.json` (the single
-source; `tauri.conf.json` reads it) and in `src-tauri/Cargo.toml`, runs
-`tauri build --no-bundle`, writes **`release/Pochini-<version>.exe`** (gitignored), and deletes
-any older `Pochini-*.exe` there. Semver; while the major is 0, a minor bump may change
+source; `tauri.conf.json` reads it) and in `src-tauri/Cargo.toml`, regenerates
+`THIRD_PARTY_NOTICES.md` (the exe embeds it), runs `tauri build --no-bundle`, writes
+**`release/Pochini-<version>.exe`** (gitignored), and deletes any older `Pochini-*.exe` there. Semver; while the major is 0, a minor bump may change
 behaviour or the macro file format.
 
 **Every version is also published as a GitHub Release.** After the local build:
 
-1. Run `cargo test` and `npm run e2e`. CI does not run tests (the user wants them run here,
-   and a debug compile on the runner cost ~6 minutes per release).
-2. Add `## X.Y.Z - <date>` to `CHANGELOG.md`; that section becomes the release notes.
+1. Run `cargo test` and `npm run e2e`. The release workflow runs no tests (they run here, and
+   a debug compile on the runner cost ~6 minutes per release); pull requests get them in
+   `ci.yml`.
+2. Rename `## Unreleased` in `CHANGELOG.md` to `## X.Y.Z - <date>` (and start a new empty
+   `## Unreleased` above it); that section becomes the release notes.
 3. `git commit -am "chore(release): X.Y.Z"` and `git push origin main`. No tag push.
 4. `.github/workflows/release.yml` (Kanbini's pattern) runs on that push because the head
-   commit starts with `chore(release):`. It fails if the commit message, `package.json` and
-   `Cargo.toml` disagree, builds with `tauri build --no-bundle`, and publishes
-   "Pochini vX.Y.Z" (creating the tag on the release commit) with `Pochini-X.Y.Z.exe`
-   attached. Watch it with `gh run watch`, then check `gh release view vX.Y.Z`. Other pushes
-   to main skip the job. A manual run (Actions tab) is a dry run with the exe as an artifact.
+   commit starts with `chore(release):`. The `build` job (read-only token) fails if the commit
+   message, `package.json` and `Cargo.toml` disagree or the notices are stale, builds with
+   `tauri build --no-bundle`, and hashes the exe. The `publish` job (the only one that can
+   write, in the `release` environment, only for pushes by the repository owner) publishes
+   "Pochini vX.Y.Z" (creating the tag on the release commit) with `Pochini-X.Y.Z.exe`,
+   `SHA256SUMS.txt` and `THIRD_PARTY_NOTICES.md` attached, plus a build provenance
+   attestation once the repository is public. Watch it with `gh run watch`, then check
+   `gh release view vX.Y.Z`. Other pushes to main skip both jobs. A manual run (Actions tab)
+   is a dry run with the files as an artifact.
+   - Every action is pinned to a commit SHA with the version in a comment; Dependabot bumps
+     them. Never go back to `@v7` style tags.
    - Releases build from main, not from a tag, because GitHub scopes the build cache per
      ref: tag runs could never reuse a cache and compiled everything (~20 minutes).
    - The release profile uses thin LTO: an incremental release build is 30 s instead of
      104 s with fat LTO and one codegen unit, for a 5.4 MB instead of 4.8 MB exe.
 
 Pushing changes under `.github/workflows/` needs the `workflow` scope on the gh login
-(`gh auth refresh -h github.com -s workflow`, granted 2026-10-07).
+(`gh auth refresh -h github.com -s workflow`).
 
-Report both the local exe path and the GitHub release link.
+When an agent cuts a release, it reports both the local exe path and the GitHub release link.
+
+**Pull requests** run `.github/workflows/ci.yml` on Windows: typecheck, guards, clippy
+`-D warnings`, `cargo test`, and the e2e suite (WebView2 is on the runner image). Rust is not
+rustfmt-formatted; do not reformat files you are not otherwise changing.
 
 ## Layout
 
@@ -162,6 +176,9 @@ tools/m0-probe/           standalone Win32 validation harness
 e2e/                      Playwright specs; _launch.ts starts the app per test
 src-tauri/src/e2e.rs      the test mode those specs launch (debug builds only)
 docs/                     design docs; docs/adr/ for decisions
+scripts/release.mjs       versioned exe (see Releases); notices.mjs, guards.mjs (CI checks)
+.github/                  release.yml, ci.yml (pull requests), issue forms, dependabot
+LICENSE, THIRD_PARTY_NOTICES.md, SECURITY.md, CONTRIBUTING.md, CODE_OF_CONDUCT.md
 ```
 
 ## Non-negotiable technical rules
@@ -175,7 +192,8 @@ These are the things that silently break this category of app. Full reasoning in
    on any monitor whose scale differs from the primary, and clicks land in the wrong place.
    The manifest must also keep the Common-Controls v6 dependency, or the app fails to start
    with STATUS_ENTRYPOINT_NOT_FOUND. The same applies to any helper script that injects or
-   measures: call EnsurePerMonitorV2 first or its numbers are 1.25x off on this machine.
+   measures: call EnsurePerMonitorV2 first or its numbers are off by the display scale (1.25x
+   at 125%).
 
 2. **Absolute mouse moves always use `MOUSEEVENTF_VIRTUALDESK`.** Without it, coordinates
    normalize against the primary monitor only and secondary monitors are unreachable.
@@ -253,14 +271,18 @@ Adopted from Kanbini:
 - **No em dashes.** Never use the em-dash character (U+2014) anywhere: code comments, docs,
   README, commit messages, or UI copy. Use a hyphen, a comma, parentheses, or split into two
   sentences. Plain hyphens and en dashes are fine.
-- **Permissive dependencies only** (MIT / Apache-2.0 / BSD / ISC). Check the license before
-  adding a dependency and say which it is in the commit body. Current front-end deps: React,
+- **Permissive dependencies only** (MIT / Apache-2.0 / BSD / ISC / Zlib / Unicode). Check the
+  license before adding a dependency and say which it is in the commit body, then run
+  `npm run notices`. One accepted exception: Tauri itself pulls in five MPL-2.0 crates
+  (cssparser, cssparser-macros, selectors, dtoa-short, option-ext), used unmodified, which is
+  compatible with MIT. Pochini is MIT licensed ([LICENSE](LICENSE)). Current front-end deps: React,
   Radix (`radix-ui`), Tailwind, tw-animate-css, clsx, tailwind-merge (all MIT), lucide-react
   (ISC), class-variance-authority (Apache-2.0).
 - **Tests are part of the work.** New behaviour ships with tests in the same commit; a bug
   fix starts with a failing regression test.
-- **Real-machine tests:** never inject F12, F13 or F14 (the user's screenshot tool hotkeys), and do
-  not inject keystrokes while the user is actively typing; they land in whatever is focused.
+- **Real-machine tests:** never inject F12, F13 or F14 (screenshot tools commonly own them,
+  the maintainer's included), and never inject keystrokes while someone is typing; they land
+  in whatever is focused.
 
 ## UI conventions
 
@@ -301,7 +323,7 @@ Mostly carried over from Kanbini, whose renderer this UI copies the look of:
   Display cut) for page titles and the macro name. No all-caps labels; keycaps are sans.
 - **Explanations live behind a "?"**, not on screen. Give `Field`, `ToggleRow`, `Section` or
   `JitterField` a `help` prop and it renders a `HelpTip` after the label: a tooltip on hover
-  (or keyboard focus) only; clicking it does nothing, by the user's choice. On-screen `hint` text is only for live values ("Lands at
+  (or keyboard focus) only; clicking it does nothing, by the maintainer's choice. On-screen `hint` text is only for live values ("Lands at
   (1623, 638)", "A random 50 to 75 ms each time") and short warnings or reasons ("Only in
   'Run once per press' mode"). Keep labels self-explanatory and help to two or three
   sentences. `ToggleRow` labels its switch by id, so the "?" never takes the switch's label.
@@ -361,8 +383,8 @@ Mostly carried over from Kanbini, whose renderer this UI copies the look of:
   and no toggle hotkey, skips the single-instance check, and runs headless. Specs check
   persistence by reading the data folder's `macros.json`. Lessons learned:
   - Headless means **never shown** (`visible(false)`), as in Kanbini. An off-screen position
-    is not enough: Windows put those windows on the user's main monitor. The user wants no
-    window to appear while tests run; keep it that way.
+    is not enough: Windows put those windows on the main monitor. No window may appear while
+    tests run; keep it that way.
   - Raw `page.mouse` moves do not scroll: `drag()` scrolls the source into view first, and
     grabs it a third of the way across (the star and buttons never start a drag).
   - dnd-kit swallows clicks for 50 ms after a drop; Radix leaves `pointer-events: none` on the

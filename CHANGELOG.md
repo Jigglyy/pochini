@@ -4,6 +4,15 @@ All notable changes to Pochini. Versions follow [semantic versioning](https://se
 while the major version is 0, a minor bump may change behaviour or the macro file format.
 Each version is built with `npm run release` into `release/Pochini-<version>.exe`.
 
+## Unreleased
+
+### Added
+
+- Settings > About lists the open source software inside Pochini and its licenses, and can open
+  the data folder.
+- Pochini is now MIT licensed. Each release also comes with SHA256 checksums and the
+  third-party license notices.
+
 ## 0.11.1 - 2026-10-25
 
 ### Fixed
@@ -253,8 +262,8 @@ Each version is built with `npm run release` into `release/Pochini-<version>.exe
 
 - Settings > **Hotkey check**: shows whether the keyboard hook is running, whether Windows
   accepted the on/off hotkey (and warns if another program already owns it), and a live list of
-  what happened each time you pressed one of your hotkeys ("Ran Demo", "Ignored: the mouse
-  was not over game.exe", "No hotkey uses this combination"...). Only your own hotkeys
+  what happened each time you pressed one of your hotkeys ("Ran Fill form", "Ignored: the mouse
+  was not over notepad.exe", "No hotkey uses this combination"...). Only your own hotkeys
   are listed, never other typing.
 
 ### Changed
