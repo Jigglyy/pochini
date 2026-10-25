@@ -30,7 +30,7 @@ this app owns.
 Implemented and building. `src-tauri/` has the full Rust core (model, storage, input,
 hotkey, engine, IPC) with **202 passing unit tests**; `src/` is a ShadCN + Tailwind v4 UI
 styled after Kanbini (macro list, step editor, settings), with **36 Vitest unit tests** for its
-helpers and **84 Playwright e2e tests** against the real app. `npm run tauri dev` opens the app.
+helpers and **85 Playwright e2e tests** against the real app. `npm run tauri dev` opens the app.
 
 The M0/M1 Win32 assumptions were measured before being ported; see
 [tools/m0-probe/README.md](tools/m0-probe/README.md). That harness found three errors in the
@@ -395,7 +395,7 @@ Mostly carried over from Kanbini, whose renderer this UI copies the look of:
 
 `cargo test` is the gate: 202 tests, no Windows APIs required for most of them. The UI has
 `npm test` (35 Vitest tests of the pure helpers in `src/lib` and the error boundary, in
-jsdom) and `npm run e2e` (84 Playwright tests), all run locally before every release and by
+jsdom) and `npm run e2e` (85 Playwright tests), all run locally before every release and by
 CI on pull requests.
 
 - Vitest is for logic that needs no app: summaries and estimates (`lib/steps.ts`, which
@@ -441,7 +441,8 @@ CI on pull requests.
     timers stopped mid-test. Tests that depend on animations set `emulateMedia` themselves,
     and check that an animation started rather than that one is still running.
   - Record steps reads its events from `record.json` in the data folder in test mode (no
-    hooks there), and Pick picks wherever the fake mouse is, at once.
+    hooks there), and Pick makes the magnifier window (hidden) and picks wherever the fake
+    mouse is, at once.
   - Test mode has no tray icon, never intercepts closing the window, keeps "start with
     Windows" in `autostart.txt` in the data folder (never the registry), and its fake screen
     has the color `[x, y, 0]` at (x, y), so a "wait for a color" test can name a color that
@@ -452,6 +453,12 @@ CI on pull requests.
 
 ## Conventions
 
+- **Never create a window in a synchronous command or event handler.** On Windows it
+  deadlocks the main thread (Tauri's docs; the WebView2 issue), and then nothing answers:
+  0.14.0's Pick did it with the magnifier window, and the pick never arrived, the tray menu
+  went dead and the macro list stopped loading. Commands that build a window (or wait on a
+  UAC prompt) are `async`. Test mode still creates the magnifier, hidden, so the e2e suite
+  would hang on a regression.
 - Rust: `thiserror` for error enums, string errors only at the command boundary. No
   `unwrap()` or `expect()` in `engine/` or `hotkey/`: a panic in the hook thread takes the
   hook down. The release profile unwinds (`panic = "unwind"`), so `Engine::run_at` can catch

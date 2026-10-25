@@ -4,6 +4,16 @@ All notable changes to Pochini. Versions follow [semantic versioning](https://se
 while the major version is 0, a minor bump may change behaviour or the macro file format.
 Each version is built with `npm run release` into `release/Pochini-<version>.exe`.
 
+## 0.14.2 - 2026-10-25
+
+### Fixed
+
+- **Pick froze the app.** Pressing Pick in 0.14 made the magnifier window in a way that locks
+  up Pochini on Windows, so the click was taken but the point never arrived, the tray icon's
+  menu stopped responding (you could not quit from it), and the macro list stayed empty after
+  leaving the editor. Pick, the magnifier and the tray work again, and Restart as administrator
+  no longer holds up the window while Windows asks.
+
 ## 0.14.1 - 2026-10-25
 
 ### Fixed

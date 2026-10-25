@@ -558,8 +558,9 @@ pub fn is_elevated() -> R<bool> {
 }
 
 /// "Restart as administrator", always on the user's request (rule 10).
+/// Async so the UAC prompt it waits for never blocks the main thread.
 #[tauri::command]
-pub fn restart_elevated(app: tauri::AppHandle) -> R<()> {
+pub async fn restart_elevated(app: tauri::AppHandle) -> R<()> {
     #[cfg(debug_assertions)]
     if crate::e2e::active() {
         return Err("Not in test mode.".into());
@@ -641,16 +642,24 @@ pub fn stop_recording(state: State<'_, Arc<AppState>>) -> R<Vec<Step>> {
 /// "picked"), and never reaches the app under it. The panic key cancels.
 /// A small magnifier follows the cursor meanwhile. The e2e test mode picks
 /// wherever the fake mouse is, at once.
+///
+/// Async on purpose: it creates the magnifier window, and creating a window
+/// in a synchronous command deadlocks the main thread on Windows (Tauri's
+/// docs, the WebView2 issue). That froze the whole app: the pick never
+/// arrived, the tray menu went dead and the macro list stopped loading.
 #[tauri::command]
-pub fn start_pick(app: tauri::AppHandle, state: State<'_, Arc<AppState>>) -> R<()> {
+pub async fn start_pick(app: tauri::AppHandle, state: State<'_, Arc<AppState>>) -> R<()> {
     state.start_pick();
     #[cfg(debug_assertions)]
     if crate::e2e::active() {
+        // The magnifier window is made (hidden), as for real, then the pick
+        // ends at once wherever the fake mouse is.
+        crate::magnifier::open(&app, state.inner().clone(), false);
         let at = state.input.cursor_pos().map_err(|e| e.to_string())?;
         state.finish_pick(Some(at));
         return Ok(());
     }
-    crate::magnifier::open(&app, state.inner().clone());
+    crate::magnifier::open(&app, state.inner().clone(), true);
     Ok(())
 }
 

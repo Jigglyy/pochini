@@ -354,3 +354,20 @@ test.describe("while a run is on a step", () => {
     await expect(page.locator("[data-running]")).toHaveCount(0, { timeout: 6_000 });
   });
 });
+
+// Regression: Pick made the magnifier window inside a synchronous command,
+// which deadlocks the app's main thread on Windows: the pick never arrived,
+// the tray menu went dead, and the macro list never loaded again.
+test.describe("after a pick", () => {
+  test.use({ seed: { macros: [macro("Keep me"), macro("Pick here", { steps: [{ ...clickAt(5, 5), id: "c1" }] })] } });
+
+  test("the app still answers: the point arrives and the list loads", async ({ app: { page } }) => {
+    await page.getByRole("button", { name: /^Pick here/ }).click();
+    await header(page, "c1").click();
+    await step(page, "c1").getByRole("button", { name: "Pick" }).click();
+    await expect(step(page, "c1").getByRole("spinbutton", { name: "X", exact: true })).toHaveValue("0");
+    await page.getByRole("button", { name: "Macros", exact: true }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "Discard" }).click();
+    await expect(page.locator("li[data-macro-id]").filter({ hasText: "Keep me" })).toBeVisible();
+  });
+});

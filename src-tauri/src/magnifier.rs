@@ -27,7 +27,9 @@ struct Frame {
     px: Vec<u32>,
 }
 
-pub fn open(app: &AppHandle, state: Arc<AppState>) {
+/// `show`: false keeps it hidden (the e2e test mode, which still creates it,
+/// so the tests exercise making the window from a command).
+pub fn open(app: &AppHandle, state: Arc<AppState>, show: bool) {
     let window = match app.get_webview_window(LABEL) {
         Some(w) => w,
         None => match WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html?view=magnifier".into()))
@@ -62,7 +64,7 @@ pub fn open(app: &AppHandle, state: Arc<AppState>) {
                     let wy = if y + OFFSET + h > rect.y + rect.h { y - OFFSET - h } else { y + OFFSET };
                     let _ = window.set_position(PhysicalPosition::new(wx, wy));
                 }
-                if !shown {
+                if show && !shown {
                     let _ = window.show();
                     shown = true;
                 }
