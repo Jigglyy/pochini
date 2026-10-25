@@ -50,7 +50,7 @@ unmodified; their source is available from crates.io at the versions shown.
 - alloc-no-stdlib 3.0.0 (BSD-3-Clause): https://github.com/dropbox/rust-alloc-no-stdlib
 - alloc-stdlib 0.3.0 (BSD-3-Clause): https://github.com/dropbox/rust-alloc-no-stdlib
 - anyhow 1.0.104 (MIT OR Apache-2.0): https://github.com/dtolnay/anyhow
-- arc-swap 1.9.2 (MIT OR Apache-2.0): https://github.com/vorner/arc-swap
+- arc-swap 1.9.3 (MIT OR Apache-2.0): https://github.com/vorner/arc-swap
 - auto-launch 0.6.0 (MIT): https://github.com/zzzgydi/auto-launch.git
 - base64 0.22.1 (MIT OR Apache-2.0): https://github.com/marshallpierce/rust-base64
 - base64 0.23.1 (MIT OR Apache-2.0): https://github.com/marshallpierce/rust-base64
@@ -201,7 +201,7 @@ unmodified; their source is available from crates.io at the versions shown.
 - serde_core 1.0.229 (MIT OR Apache-2.0): https://github.com/serde-rs/serde
 - serde_derive 1.0.229 (MIT OR Apache-2.0): https://github.com/serde-rs/serde
 - serde_derive_internals 0.29.1 (MIT OR Apache-2.0): https://github.com/serde-rs/serde
-- serde_json 1.0.151 (MIT OR Apache-2.0): https://github.com/serde-rs/json
+- serde_json 1.0.154 (MIT OR Apache-2.0): https://github.com/serde-rs/json
 - serde_repr 0.1.21 (MIT OR Apache-2.0): https://github.com/dtolnay/serde-repr
 - serde_spanned 1.1.1 (MIT OR Apache-2.0): https://github.com/toml-rs/toml
 - serde_with 3.23.0 (MIT OR Apache-2.0): https://github.com/jonasbb/serde_with/
@@ -223,20 +223,20 @@ unmodified; their source is available from crates.io at the versions shown.
 - syn 3.0.6 (MIT OR Apache-2.0): https://github.com/dtolnay/syn
 - synstructure 0.14.0 (MIT): https://github.com/mystor/synstructure
 - tao 0.37.1 (Apache-2.0): https://github.com/tauri-apps/tao
-- tauri 2.12.1 (Apache-2.0 OR MIT): https://github.com/tauri-apps/tauri
+- tauri 2.12.2 (Apache-2.0 OR MIT): https://github.com/tauri-apps/tauri
 - tauri-codegen 2.7.1 (Apache-2.0 OR MIT): https://github.com/tauri-apps/tauri
 - tauri-macros 2.7.1 (Apache-2.0 OR MIT): https://github.com/tauri-apps/tauri
 - tauri-plugin-autostart 2.7.0 (Apache-2.0 OR MIT): https://github.com/tauri-apps/plugins-workspace
-- tauri-plugin-dialog 2.8.2 (Apache-2.0 OR MIT): https://github.com/tauri-apps/plugins-workspace
-- tauri-plugin-fs 2.7.0 (Apache-2.0 OR MIT): https://github.com/tauri-apps/plugins-workspace
-- tauri-plugin-single-instance 2.5.2 (Apache-2.0 OR MIT): https://github.com/tauri-apps/plugins-workspace
+- tauri-plugin-dialog 2.8.3 (Apache-2.0 OR MIT): https://github.com/tauri-apps/plugins-workspace
+- tauri-plugin-fs 2.7.1 (Apache-2.0 OR MIT): https://github.com/tauri-apps/plugins-workspace
+- tauri-plugin-single-instance 2.5.4 (Apache-2.0 OR MIT): https://github.com/tauri-apps/plugins-workspace
 - tauri-plugin-window-state 2.5.0 (Apache-2.0 OR MIT): https://github.com/tauri-apps/plugins-workspace
 - tauri-runtime 2.12.1 (Apache-2.0 OR MIT): https://github.com/tauri-apps/tauri
 - tauri-runtime-wry 2.12.1 (Apache-2.0 OR MIT): https://github.com/tauri-apps/tauri
 - tauri-utils 2.10.1 (Apache-2.0 OR MIT): https://github.com/tauri-apps/tauri
 - tendril 0.5.1 (MIT OR Apache-2.0): https://github.com/servo/html5ever
-- thiserror 2.0.20 (MIT OR Apache-2.0): https://github.com/dtolnay/thiserror
-- thiserror-impl 2.0.20 (MIT OR Apache-2.0): https://github.com/dtolnay/thiserror
+- thiserror 2.0.21 (MIT OR Apache-2.0): https://github.com/dtolnay/thiserror
+- thiserror-impl 2.0.21 (MIT OR Apache-2.0): https://github.com/dtolnay/thiserror
 - time 0.3.55 (MIT OR Apache-2.0): https://github.com/time-rs/time
 - time-core 0.1.9 (MIT OR Apache-2.0): https://github.com/time-rs/time
 - time-macros 0.2.32 (MIT OR Apache-2.0): https://github.com/time-rs/time
@@ -476,7 +476,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ````
 
-### adler2 2.0.1, anyhow 1.0.104, camino 1.2.6, cargo_metadata 0.19.2, cargo-platform 0.1.9, displaydoc 0.2.7, dtoa 1.0.11, dyn-clone 1.0.20, erased-serde 0.4.10, fastrand 2.5.0, itoa 1.0.18, once_cell 1.21.4, pin-project-lite 0.2.17, proc-macro2 1.0.107, quote 1.0.47, ref-cast 1.0.27, ref-cast-impl 1.0.27, rustc-hash 2.1.3, rustversion 1.0.23, semver 1.0.28, serde 1.0.229, serde_core 1.0.229, serde_derive 1.0.229, serde_derive_internals 0.29.1, serde_json 1.0.151, serde_repr 0.1.21, serde-untagged 0.1.9, servo_arc 0.4.3, syn 2.0.119, syn 3.0.6, thiserror 2.0.20, thiserror-impl 2.0.20, typeid 1.0.3, unicode-ident 1.0.26, zmij 1.0.23
+### adler2 2.0.1, anyhow 1.0.104, camino 1.2.6, cargo_metadata 0.19.2, cargo-platform 0.1.9, displaydoc 0.2.7, dtoa 1.0.11, dyn-clone 1.0.20, erased-serde 0.4.10, fastrand 2.5.0, itoa 1.0.18, once_cell 1.21.4, pin-project-lite 0.2.17, proc-macro2 1.0.107, quote 1.0.47, ref-cast 1.0.27, ref-cast-impl 1.0.27, rustc-hash 2.1.3, rustversion 1.0.23, semver 1.0.28, serde 1.0.229, serde_core 1.0.229, serde_derive 1.0.229, serde_derive_internals 0.29.1, serde_json 1.0.154, serde_repr 0.1.21, serde-untagged 0.1.9, servo_arc 0.4.3, syn 2.0.119, syn 3.0.6, thiserror 2.0.21, thiserror-impl 2.0.21, typeid 1.0.3, unicode-ident 1.0.26, zmij 1.0.23
 
 ````
 Permission is hereby granted, free of charge, to any
@@ -547,7 +547,7 @@ Redistribution and use in source and binary forms, with or without modification,
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ````
 
-### arc-swap 1.9.2
+### arc-swap 1.9.3
 
 ````
 Copyright (c) 2017 arc-swap developers
@@ -5336,7 +5336,7 @@ PackageDownloadLocation: git+ssh://github.com/tauri-apps/tao.git
 Creator: Person: Daniel Thompson-Yvetot
 ````
 
-### tauri 2.12.1, tauri-codegen 2.7.1, tauri-macros 2.7.1, tauri-plugin-autostart 2.7.0, tauri-plugin-dialog 2.8.2, tauri-plugin-fs 2.7.0, tauri-plugin-window-state 2.5.0, tauri-runtime 2.12.1, tauri-runtime-wry 2.12.1, tauri-utils 2.10.1, @tauri-apps/api 2.12.4
+### tauri 2.12.2, tauri-codegen 2.7.1, tauri-macros 2.7.1, tauri-plugin-autostart 2.7.0, tauri-plugin-dialog 2.8.3, tauri-plugin-fs 2.7.1, tauri-plugin-window-state 2.5.0, tauri-runtime 2.12.1, tauri-runtime-wry 2.12.1, tauri-utils 2.10.1, @tauri-apps/api 2.12.4
 
 ````
 MIT License
@@ -5362,7 +5362,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ````
 
-### tauri-plugin-single-instance 2.5.2
+### tauri-plugin-single-instance 2.5.4
 
 ````
 MIT License
