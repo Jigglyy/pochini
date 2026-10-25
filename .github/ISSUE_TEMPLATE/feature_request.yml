@@ -1,0 +1,23 @@
+name: Feature request
+description: An idea for Pochini.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The task or annoyance behind the idea. "I want to click a button that moves around" says more than "add image search".
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help?
+      description: How you imagine it working, if you have an idea.
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - label: This is not about hiding Pochini from anti-cheat or making its input look human to a detector. Pochini will not do that (see Scope in the README).
+          required: true

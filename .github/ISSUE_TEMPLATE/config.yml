@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Download the latest version
+    url: https://github.com/Jigglyy/pochini/releases/latest
+    about: Before reporting a bug, check that it still happens in the latest release.
+  - name: Report a security problem
+    url: https://github.com/Jigglyy/pochini/security/advisories/new
+    about: Privately, never as a public issue. See SECURITY.md.

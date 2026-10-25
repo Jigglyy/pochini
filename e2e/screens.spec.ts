@@ -20,11 +20,11 @@ const rel = (anchor: "activation" | "previous", dx: number, dy: number): ClickSt
 test.use({
   seed: {
     macros: [
-      macro("Fill form", {
+      macro("Fill the order form", {
         favorite: true,
         color: "orange",
         trigger: { key: space, modifiers: [], mode: "once", swallow: false },
-        guard: { process: "game.exe", label: "Game" },
+        guard: { process: "msedge.exe", label: "" },
         queue: true,
         return_to_start: true,
         steps: [
@@ -42,15 +42,15 @@ test.use({
         repeat: { kind: "forever" },
         steps: [clickAt(840, 412), wait(1200), clickAt(1320, 700), wait(600)],
       }),
-      macro("Inventory sweep with a rather long name that keeps going", {
+      macro("Rename every file in the folder, one after another, until the list ends", {
         favorite: true,
         repeat: { kind: "count", n: 12 },
         steps: [rel("previous", 64, 0), wait(90)],
       }),
-      macro("Chat greeting", {
+      macro("Sign-off", {
         enabled: false,
         trigger: { key: { vk: 0x71, scancode: 0x3c, extended: false, label: "F2" }, modifiers: [], mode: "once", swallow: false },
-        steps: [typeText("gg wp"), wait(50)],
+        steps: [typeText("Thanks, talk soon!"), wait(50)],
       }),
     ],
   },
@@ -68,7 +68,7 @@ for (const theme of ["dark", "light"] as const) {
     await page.getByRole("button", { name: "Settings" }).click();
     await page.getByText(theme === "light" ? "Light" : "Dark", { exact: true }).click();
     await page.getByRole("button", { name: "Macros", exact: true }).click();
-    await expect(page.getByText("Fill form")).toBeVisible();
+    await expect(page.getByText("Fill the order form")).toBeVisible();
     await shot(page, `${theme}-1-home`);
 
     await page.locator("li[data-macro-id]").nth(1).click({ button: "right" });
@@ -76,7 +76,7 @@ for (const theme of ["dark", "light"] as const) {
     await shot(page, `${theme}-1b-row-menu`);
     await page.keyboard.press("Escape");
 
-    await page.getByRole("button", { name: /^Fill form/ }).click();
+    await page.getByRole("button", { name: /^Fill the order form/ }).click();
     await shot(page, `${theme}-2-editor`);
 
     await page.locator("[data-step-id]").nth(3).locator('[role="button"][aria-expanded]').click();
@@ -93,5 +93,27 @@ for (const theme of ["dark", "light"] as const) {
 
     await page.getByRole("button", { name: "Settings" }).click();
     await shot(page, `${theme}-5-settings`);
+  });
+}
+
+// The README pictures (docs/images/): window-sized, not whole pages.
+for (const theme of ["dark", "light"] as const) {
+  test(`readme ${theme}`, async ({ app: { page } }) => {
+    await page.setViewportSize({ width: 1100, height: 700 });
+    await page.getByRole("button", { name: "Settings" }).click();
+    await page.getByText(theme === "light" ? "Light" : "Dark", { exact: true }).click();
+    await page.getByRole("button", { name: "Macros", exact: true }).click();
+    await expect(page.getByText("Fill the order form")).toBeVisible();
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: `${out}/readme-list-${theme}.png` });
+
+    await page.setViewportSize({ width: 1100, height: 900 });
+    await page.getByRole("button", { name: /^Fill the order form/ }).click();
+    await page.locator("[data-step-id]").nth(2).locator('[role="button"][aria-expanded]').click();
+    await page.waitForTimeout(400);
+    // The step list from its heading down.
+    await page.getByRole("heading", { name: "Steps" }).evaluate((h) => h.scrollIntoView({ block: "start" }));
+    await page.waitForTimeout(200);
+    await page.screenshot({ path: `${out}/readme-editor-${theme}.png` });
   });
 }

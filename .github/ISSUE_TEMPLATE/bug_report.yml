@@ -1,0 +1,65 @@
+name: Bug report
+description: Something in Pochini does not work as it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Security problems go through private reporting instead (Security tab > Report a vulnerability), never a public issue.
+
+        Most click and hotkey problems come down to display scaling or a target app that runs as administrator, so the questions below ask about those.
+  - type: input
+    id: version
+    attributes:
+      label: Pochini version
+      description: Settings > About.
+      placeholder: "0.11.1"
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      description: Press Win+R, type `winver`, Enter.
+      placeholder: Windows 11 24H2 (build 26100)
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Make a macro with a Click step at ...
+        2. Bind it to ...
+        3. Press it while ...
+    validations:
+      required: true
+  - type: textarea
+    id: displays
+    attributes:
+      label: Monitors
+      description: How many, how they are arranged, and each one's scaling (Settings > System > Display > Scale).
+      placeholder: Two monitors, 2560x1440 at 125% on the left, 1920x1080 at 100% on the right (main).
+  - type: input
+    id: target
+    attributes:
+      label: Target app
+      description: What were you clicking or typing into? Does it run as administrator? (Pochini cannot send input to an app running as administrator unless Pochini does too.)
+      placeholder: Notepad, not as administrator
+  - type: textarea
+    id: hotkeys
+    attributes:
+      label: Hotkey check
+      description: For hotkey problems, press the hotkey, then copy what Settings > Hotkey check shows.
+      render: text
+  - type: textarea
+    id: macro
+    attributes:
+      label: The macro (optional)
+      description: Export it (the macro's menu > Export...) and attach the .pochini.json file, or paste it here.
