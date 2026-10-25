@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { Hand, Keyboard, MousePointerClick, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -8,6 +9,13 @@ import type { Settings } from "@/types";
 /** The first-run welcome: the few things worth knowing before a macro ever
  *  moves the mouse. Shown until it is closed once (Settings.welcomed). */
 export function Welcome({ settings, onDone }: { settings: Settings; onDone: () => void }) {
+  // "Got it" also closes the dialog, which reports it too: once is enough.
+  const closed = useRef(false);
+  const done = () => {
+    if (closed.current) return;
+    closed.current = true;
+    onDone();
+  };
   const points = [
     {
       Icon: MousePointerClick,
@@ -43,7 +51,7 @@ export function Welcome({ settings, onDone }: { settings: Settings; onDone: () =
   ];
 
   return (
-    <Dialog open onOpenChange={(o) => !o && onDone()}>
+    <Dialog open onOpenChange={(o) => !o && done()}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="font-display text-xl">Welcome to Pochini</DialogTitle>
@@ -61,7 +69,7 @@ export function Welcome({ settings, onDone }: { settings: Settings; onDone: () =
           ))}
         </ul>
         <DialogFooter>
-          <Button onClick={onDone}>Got it</Button>
+          <Button onClick={done}>Got it</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

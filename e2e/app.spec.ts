@@ -65,6 +65,7 @@ test("runs under a content security policy, and the app breaks none of it", asyn
   await page.getByRole("button", { name: "Create your first macro" }).click();
   await page.getByRole("button", { name: "Click", exact: true }).click();
   await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Saved", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Settings" }).click();
   await expect(page.getByText("Panic stop", { exact: true })).toBeVisible();
   expect(violations).toEqual([]);
@@ -137,4 +138,15 @@ test("Settings > Window: tray, start with Windows, administrator", async ({ app:
   const restart = page.getByRole("button", { name: "Restart as administrator" });
   if ((await status.textContent())?.startsWith("Not")) await expect(restart).toBeVisible();
   else await expect(restart).toHaveCount(0);
+});
+
+// Regression: the editor told the app it was clean an effect later, so
+// leaving right after Save asked "Discard unsaved changes?" for nothing.
+test("leaving straight after Save does not ask about unsaved changes", async ({ app: { page } }) => {
+  await page.getByRole("button", { name: "Create your first macro" }).click();
+  await page.getByRole("textbox", { name: "Macro name" }).fill("Quick");
+  await page.keyboard.press("Control+s");
+  await page.getByRole("button", { name: "Macros", exact: true }).click();
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  await expect(page.locator("li[data-macro-id]").filter({ hasText: "Quick" })).toBeVisible();
 });

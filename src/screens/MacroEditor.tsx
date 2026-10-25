@@ -235,6 +235,9 @@ export function MacroEditor({
     if (!m) return;
     try {
       await saveMacro(m);
+      // Tell the app now, not in an effect a render later: navigating away
+      // right after Save asked "Discard unsaved changes?" for nothing.
+      onDirtyChange(false);
       setSaved(JSON.stringify(m));
       setSaves((n) => n + 1);
       setErr(null);

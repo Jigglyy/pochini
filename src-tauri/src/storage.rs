@@ -54,11 +54,20 @@ pub fn now_iso8601() -> String {
 
 pub struct Store {
     dir: PathBuf,
+    /// One write at a time: the backup copy and the rename of one save must
+    /// not interleave with another's (an async command and a sync one can
+    /// save at the same moment).
+    writing: std::sync::Mutex<()>,
 }
 
 impl Store {
     pub fn new(dir: impl Into<PathBuf>) -> Self {
-        Self { dir: dir.into() }
+        Self { dir: dir.into(), writing: std::sync::Mutex::new(()) }
+    }
+
+    fn write(&self, path: &Path, bytes: &[u8]) -> Result<()> {
+        let _one_at_a_time = self.writing.lock().unwrap_or_else(|e| e.into_inner());
+        atomic_write(path, bytes)
     }
 
     pub fn dir(&self) -> &Path {
@@ -134,7 +143,7 @@ impl Store {
     pub fn save_macros(&self, f: &MacroFile) -> Result<()> {
         let mut f = f.clone();
         f.schema_version = SCHEMA_VERSION;
-        atomic_write(&self.macros_path(), &serde_json::to_vec_pretty(&f)?)
+        self.write(&self.macros_path(), &serde_json::to_vec_pretty(&f)?)
     }
 
     pub fn load_settings(&self) -> Result<Settings> {
@@ -148,7 +157,7 @@ impl Store {
     }
 
     pub fn save_settings(&self, s: &Settings) -> Result<()> {
-        atomic_write(&self.settings_path(), &serde_json::to_vec_pretty(s)?)
+        self.write(&self.settings_path(), &serde_json::to_vec_pretty(s)?)
     }
 }
 
@@ -198,7 +207,8 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let tmp = path.with_extension("tmp");
+    // A temp file of its own, so no other writer can truncate it.
+    let tmp = path.with_extension(format!("{}.tmp", ulid::Ulid::new()));
     {
         let mut f = fs::File::create(&tmp)?;
         f.write_all(bytes)?;
@@ -211,8 +221,23 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     if path.exists() {
         let _ = fs::copy(path, path.with_extension("bak"));
     }
-    fs::rename(&tmp, path)?;
-    Ok(())
+    // Windows refuses a rename while something else has either file open
+    // for a moment (an antivirus scanning the new file, the indexer): try
+    // again briefly rather than fail the save.
+    let mut tries = 0;
+    loop {
+        match fs::rename(&tmp, path) {
+            Ok(()) => return Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied && tries < 40 => {
+                tries += 1;
+                std::thread::sleep(std::time::Duration::from_millis(25));
+            }
+            Err(e) => {
+                let _ = fs::remove_file(&tmp);
+                return Err(e.into());
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -361,6 +386,37 @@ mod tests {
             .map(|e| e.path())
             .filter(|p| p.to_string_lossy().contains("unreadable-"))
             .collect()
+    }
+
+    /// Regression: every save went through one temp file. Two saves at once
+    /// (an async command and a sync one) truncated each other's temp file,
+    /// and on Windows a rename fails while another handle has the file open,
+    /// so a save could fail and leave no file at all.
+    #[test]
+    fn saves_at_the_same_time_all_succeed() {
+        let d = tmpdir("concurrent");
+        let s = std::sync::Arc::new(Store::new(&d));
+        let threads: Vec<_> = (0..8)
+            .map(|t| {
+                let s = s.clone();
+                std::thread::spawn(move || {
+                    for i in 0..40 {
+                        let set = Settings { rng_seed: Some(t * 1000 + i), ..Settings::default() };
+                        s.save_settings(&set).unwrap();
+                    }
+                })
+            })
+            .collect();
+        for t in threads {
+            t.join().unwrap();
+        }
+        assert!(s.load_settings().unwrap().rng_seed.is_some());
+        let left: Vec<_> = fs::read_dir(&d)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().contains(".tmp"))
+            .collect();
+        assert!(left.is_empty(), "temp files left behind: {left:?}");
     }
 
     #[test]

@@ -4,6 +4,17 @@ All notable changes to Pochini. Versions follow [semantic versioning](https://se
 while the major version is 0, a minor bump may change behaviour or the macro file format.
 Each version is built with `npm run release` into `release/Pochini-<version>.exe`.
 
+## 0.14.1 - 2026-10-25
+
+### Fixed
+
+- Two saves at the same moment (say, an import finishing while you change a setting) could make
+  one of them fail and leave no file, and Windows Defender scanning a just-written file could
+  do the same. Saves now take turns, each uses its own temporary file, and a briefly refused
+  rename is tried again.
+- Leaving the editor right after saving no longer asks "Discard unsaved changes?".
+- Closing the welcome no longer saves the choice twice.
+
 ## 0.14.0 - 2026-10-25
 
 ### Added

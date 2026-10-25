@@ -28,9 +28,9 @@ this app owns.
 ## Status
 
 Implemented and building. `src-tauri/` has the full Rust core (model, storage, input,
-hotkey, engine, IPC) with **201 passing unit tests**; `src/` is a ShadCN + Tailwind v4 UI
+hotkey, engine, IPC) with **202 passing unit tests**; `src/` is a ShadCN + Tailwind v4 UI
 styled after Kanbini (macro list, step editor, settings), with **36 Vitest unit tests** for its
-helpers and **83 Playwright e2e tests** against the real app. `npm run tauri dev` opens the app.
+helpers and **84 Playwright e2e tests** against the real app. `npm run tauri dev` opens the app.
 
 The M0/M1 Win32 assumptions were measured before being ported; see
 [tools/m0-probe/README.md](tools/m0-probe/README.md). That harness found three errors in the
@@ -393,9 +393,9 @@ Mostly carried over from Kanbini, whose renderer this UI copies the look of:
 
 ## Testing
 
-`cargo test` is the gate: 201 tests, no Windows APIs required for most of them. The UI has
+`cargo test` is the gate: 202 tests, no Windows APIs required for most of them. The UI has
 `npm test` (35 Vitest tests of the pure helpers in `src/lib` and the error boundary, in
-jsdom) and `npm run e2e` (83 Playwright tests), all run locally before every release and by
+jsdom) and `npm run e2e` (84 Playwright tests), all run locally before every release and by
 CI on pull requests.
 
 - Vitest is for logic that needs no app: summaries and estimates (`lib/steps.ts`, which

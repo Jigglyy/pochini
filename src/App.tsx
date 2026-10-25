@@ -197,7 +197,8 @@ export default function App() {
           settings={settings}
           onDone={() => {
             setSettings({ ...settings, welcomed: true });
-            void setWelcomed();
+            // If it cannot be saved, the welcome simply shows again next time.
+            setWelcomed().catch((e) => console.error("could not save the welcome", e));
           }}
         />
       )}
