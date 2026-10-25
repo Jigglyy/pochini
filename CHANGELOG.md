@@ -6,6 +6,19 @@ Each version is built with `npm run release` into `release/Pochini-<version>.exe
 
 ## Unreleased
 
+### Changed
+
+- **Settings looks and works like Kanbini's**: a sidebar of sections (Macros: Hotkeys, Run
+  history, Hotkey check; Personalize: Appearance, Step colors, Shortcuts; then Window and
+  startup, Backup, About) and one section at a time beside it. It reopens on the section you
+  used last. Appearance can also set how the editor lays out steps, and Shortcuts lists what
+  the mouse does as well as the keys.
+- **A maximized window uses its width**: the page grows to 72rem on a wide window and 80rem on
+  a very wide one, instead of staying a 56rem strip in the middle. In the editor, Trigger and
+  When it runs then sit side by side, and the Side by side list gets wider.
+- The Add buttons sit under the steps again, instead of staying over the list at the bottom of
+  the window while it scrolls.
+
 ## 0.15.0 - 2026-10-26
 
 ### Added

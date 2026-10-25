@@ -29,8 +29,8 @@ this app owns.
 
 Implemented and building. `src-tauri/` has the full Rust core (model, storage, input,
 hotkey, engine, IPC) with **208 passing unit tests**; `src/` is a ShadCN + Tailwind v4 UI
-styled after Kanbini (macro list, step editor, settings), with **96 Vitest tests** for its
-helpers and components, and **105 Playwright e2e tests** against the real app. `npm run tauri dev` opens the app.
+styled after Kanbini (macro list, step editor, settings), with **98 Vitest tests** for its
+helpers and components, and **109 Playwright e2e tests** against the real app. `npm run tauri dev` opens the app.
 
 The M0/M1 Win32 assumptions were measured before being ported; see
 [tools/m0-probe/README.md](tools/m0-probe/README.md). That harness found three errors in the
@@ -87,7 +87,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\m0-probe\probe.ps1 saf
 
 ## Releases
 
-Every version gets a new executable and the previous one is deleted:
+**No releases unless the owner asks for one.** Do not run `npm run release`, bump the
+version, make or push a `chore(release):` commit, or approve the `release` environment's
+publish job until the owner explicitly asks for a release (the owner's rule since
+2026-10-26). Ordinary commits and pushes to main are fine: they never publish anything. New
+changes collect under `## Unreleased` in `CHANGELOG.md` until then.
+
+When a release is asked for, every version gets a new executable and the previous one is
+deleted:
 
 ```powershell
 npm run release -- patch     # or minor / major / X.Y.Z / current
@@ -154,7 +161,7 @@ rustfmt-formatted; do not reformat files you are not otherwise changing.
 ```
 src/                      React UI
   App.tsx                 shell: header, master switch, routes, run pill, discard guard
-  screens/                MacroList, MacroEditor, Settings
+  screens/                MacroList, MacroEditor, Settings (Kanbini's sidebar layout)
   components/ui/          ShadCN components (CLI copy-in; ours to evolve)
   components/layout.tsx   Section, Field, ToggleRow, Kbd, KeyCombo, Notice primitives
   components/             StepRow (+ StepFields), JitterField, CoordPicker, KeyCapture, RunIndicator
@@ -351,10 +358,20 @@ Mostly carried over from Kanbini, whose renderer this UI copies the look of:
   pickers in any menu use `SwatchGrid` with that menu's own Item component.
 - **Theme preference** (system / light / dark) is renderer-only, stored in localStorage under
   `pochini.settings`, and applied before first paint by the inline script in `index.html`.
-- **One column, one left edge.** The header's contents and every page body share
-  `mx-auto max-w-4xl`, and `<main>` reserves its scrollbar gutter on both edges, so the logo,
-  page titles, panels and rows start at the same x on every screen and nothing shifts when a
-  page starts to scroll. Don't give a page its own width.
+- **One column, one left edge.** The header's contents and every page body share the
+  `page-column` utility (`index.css`), and `<main>` reserves its scrollbar gutter on both
+  edges, so the logo, page titles, panels and rows start at the same x on every screen and
+  nothing shifts when a page starts to scroll. Don't give a page its own width. The column
+  grows with the window (56rem, 72rem from `xl`, 80rem from `2xl`) because a maximized window
+  was a narrow strip with empty sides; wide windows use the room inside it (the editor puts
+  Trigger and When it runs side by side from `xl`), never a wider page of their own.
+- **Settings is laid out like Kanbini's**: a sidebar of sections in groups (sentence-case
+  group headers, no all-caps; a header-less group sits under a hairline) and one section at a
+  time beside it, fading in. The last section is remembered in its own localStorage key,
+  `pochini.lastSettingsSection` (UI state, not a pref, as in Kanbini), Hotkeys the first
+  time. Below `md` the sidebar becomes a row that scrolls sideways. A new setting goes in the
+  section it belongs to; a new section goes in `SECTION_GROUPS`. In e2e, `openSettings(page,
+  "<section>")` from `_launch.ts` opens one.
 - **Build screens from the primitives in `components/layout.tsx`**: `Section` (a sentence-case
   heading, then one `bg-card/40` panel whose direct children are rows divided by hairlines;
   `bare` for content with its own cards, like the step list), `Field` (8rem label column +
@@ -424,8 +441,8 @@ Mostly carried over from Kanbini, whose renderer this UI copies the look of:
 ## Testing
 
 `cargo test` is the gate: 208 tests, no Windows APIs required for most of them. The UI has
-`npm test` (96 Vitest tests: the pure helpers in `src/lib`, and components with their IPC
-mocked, in jsdom) and `npm run e2e` (105 Playwright tests), all run locally before every release and by
+`npm test` (98 Vitest tests: the pure helpers in `src/lib`, and components with their IPC
+mocked, in jsdom) and `npm run e2e` (109 Playwright tests), all run locally before every release and by
 CI on pull requests.
 
 - Vitest is for logic that needs no app: summaries and estimates (`lib/steps.ts`, which
