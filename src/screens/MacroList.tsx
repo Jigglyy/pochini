@@ -5,6 +5,8 @@ import {
   AppWindow,
   ArrowDown,
   ArrowUp,
+  ClipboardCopy,
+  ClipboardPaste,
   Copy,
   Download,
   GripVertical,
@@ -14,24 +16,17 @@ import {
   Pencil,
   Play,
   Plus,
+  Search,
   ShieldAlert,
   Star,
   Trash2,
   TriangleAlert,
+  Undo2,
   Upload,
   X,
 } from "lucide-react";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -61,19 +56,24 @@ import { refocusWithoutScroll, useFlip } from "@/lib/motion";
 import { comboLabel } from "@/components/KeyCapture";
 import { FloatingOverlay, useDragSensors, useSortableItem, type DragHandle } from "@/components/sortable";
 import {
+  copyMacroText,
   createMacro,
   deleteMacro,
   duplicateMacro,
   exportMacro,
+  getMacro,
   importMacros,
   listMacros,
   markReviewed,
+  pasteMacros,
   reorderMacros,
+  restoreMacro,
   runMacro,
   setMacroColor,
   setMacroEnabled,
   setMacroFavorite,
 } from "@/lib/ipc";
+import { useShortcut, withKeys } from "@/lib/shortcuts";
 import {
   applyGroupOrder,
   DRAGGABLE,
@@ -85,7 +85,19 @@ import {
 } from "@/lib/order";
 import { fmtRange } from "@/lib/steps";
 import { cn } from "@/lib/utils";
-import type { MacroSummary, Settings } from "@/types";
+import type { Macro, MacroSummary, Settings } from "@/types";
+
+/** The search box appears once the list is long enough to need it. */
+const FILTER_FROM = 5;
+
+/** Does a row match the search? Name, hotkey and app, ignoring case. */
+export const rowMatches = (r: MacroSummary, q: string) => {
+  const s = q.trim().toLowerCase();
+  return !s || [r.name, r.hotkey ?? "", r.app ?? ""].some((f) => f.toLowerCase().includes(s));
+};
+
+/** A one-line confirmation, optionally with Undo. */
+type Note = { text: string; undo?: () => void };
 
 export function MacroList({
   settings,
@@ -98,14 +110,16 @@ export function MacroList({
 }) {
   const [rows, setRows] = useState<MacroSummary[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [pendingDelete, setPendingDelete] = useState<MacroSummary | null>(null);
+  const [query, setQuery] = useState("");
+  const search = useRef<HTMLInputElement>(null);
   /** An imported macro being switched on or run for the first time. */
   const [reviewing, setReviewing] = useState<{ row: MacroSummary; then: ReviewThen } | null>(null);
   // Rows glide when sorting, starring, menus, duplicates, imports or deletes
   // move them; new rows fade in. Drag drops are animated by dnd-kit.
   const flip = useFlip<HTMLDivElement>();
-  /** A one-line confirmation after an export or import. */
-  const [note, setNote] = useState<string | null>(null);
+  /** A one-line confirmation after an export, import, copy or delete. */
+  const [note, setNoteState] = useState<Note | null>(null);
+  const setNote = (n: string | Note | null) => setNoteState(typeof n === "string" ? { text: n } : n);
   const [sort, setSortState] = useState<SortMode>(loadSortMode);
   const setSort = (m: SortMode) => {
     flip.prepare();
@@ -187,22 +201,60 @@ export function MacroList({
     }
   };
 
-  const importFile = async () => {
+  const imported = async (names: string[]) => {
+    if (names.length === 0) return; // cancelled
+    await reload(true);
+    setErr(null);
+    setNote(
+      names.length === 1
+        ? `Imported "${names[0]}". Its hotkey is off: you'll see its steps before you turn it on or run it.`
+        : `Imported ${names.length} macros. Their hotkeys are off: you'll see each one's steps before you turn it on or run it.`,
+    );
+  };
+  const importFile = () =>
+    importMacros()
+      .then(imported)
+      .catch((e) => {
+        setNote(null);
+        setErr(String(e));
+      });
+  const paste = () =>
+    pasteMacros()
+      .then(imported)
+      .catch((e) => {
+        setNote(null);
+        setErr(String(e));
+      });
+
+  /** Delete at once, with Undo: the whole macro is kept until the next note. */
+  const remove = async (r: MacroSummary) => {
     try {
-      const names = await importMacros();
-      if (names.length === 0) return; // cancelled
+      const full: Macro = await getMacro(r.id);
+      const index = rows?.findIndex((x) => x.id === r.id) ?? -1;
+      await deleteMacro(r.id);
       await reload(true);
       setErr(null);
-      setNote(
-        names.length === 1
-          ? `Imported "${names[0]}". Its hotkey is off: you'll see its steps before you turn it on or run it.`
-          : `Imported ${names.length} macros. Their hotkeys are off: you'll see each one's steps before you turn it on or run it.`,
-      );
+      setNote({
+        text: `Deleted "${r.name}".`,
+        undo: async () => {
+          try {
+            await restoreMacro(full, Math.max(0, index));
+            setNote(null);
+            await reload(true);
+          } catch (e) {
+            setErr(String(e));
+          }
+        },
+      });
     } catch (e) {
-      setNote(null);
       setErr(String(e));
     }
   };
+
+  useShortcut("Ctrl+N", () => void create());
+  useShortcut("Ctrl+F", () => search.current?.focus());
+  useShortcut("Ctrl+V", () => void paste());
+  useShortcut("Ctrl+Z", () => note?.undo?.(), { enabled: !!note?.undo });
 
   const run = (r: MacroSummary) => {
     onRun(r.name);
@@ -235,7 +287,14 @@ export function MacroList({
       duplicateMacro(r.id)
         .then(() => reload(true))
         .catch((e) => setErr(String(e))),
-    onDelete: setPendingDelete,
+    onDelete: (r) => void remove(r),
+    onCopy: (r) =>
+      copyMacroText(r.id)
+        .then(() => {
+          setErr(null);
+          setNote(`Copied "${r.name}" as text. Paste it in a chat; anyone can paste it into Pochini with Ctrl+V.`);
+        })
+        .catch((e) => setErr(String(e))),
     onExport: async (r) => {
       try {
         const path = await exportMacro(r.id);
@@ -250,7 +309,10 @@ export function MacroList({
   };
 
   const off = settings ? !settings.enabled : false;
-  const draggable = DRAGGABLE.has(sort);
+  const filtering = query.trim() !== "";
+  // Dragging a filtered list would reorder rows you cannot see.
+  const draggable = DRAGGABLE.has(sort) && !filtering;
+  const shown = rows?.filter((r) => rowMatches(r, query)) ?? null;
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
@@ -293,12 +355,41 @@ export function MacroList({
             <Upload />
             Import
           </Button>
-          <Button onClick={create}>
-            <Plus />
-            New macro
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="outline" size="icon" aria-label="Paste a copied macro" onClick={paste}>
+                <ClipboardPaste />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{withKeys("Paste a macro copied as text", "Ctrl+V")}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button onClick={create}>
+                <Plus />
+                New macro
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{withKeys("New macro", "Ctrl+N")}</TooltipContent>
+          </Tooltip>
         </div>
       </div>
+
+      {rows && rows.length >= FILTER_FROM && (
+        <div className="relative -mt-2">
+          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            ref={search}
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => e.key === "Escape" && setQuery("")}
+            placeholder="Find a macro by name, hotkey or app (Ctrl+F)"
+            aria-label="Find a macro"
+            className="pl-9"
+          />
+        </div>
+      )}
 
       {/* Sticky, so a confirmation or error shows even while scrolled down
           the list (Export... from a row near the bottom). Opaque tints, as
@@ -310,7 +401,13 @@ export function MacroList({
               role="status"
               className="flex animate-in items-start gap-3 rounded-md border border-success/40 bg-[color-mix(in_oklab,var(--success)_12%,var(--background))] px-3 py-2.5 text-sm shadow-sm fade-in-0 slide-in-from-top-1 motion-reduce:animate-none"
             >
-              <span className="min-w-0 flex-1 break-words">{note}</span>
+              <span className="min-w-0 flex-1 break-words">{note.text}</span>
+              {note.undo && (
+                <Button variant="outline" size="sm" className="-my-1" onClick={note.undo}>
+                  <Undo2 />
+                  Undo
+                </Button>
+              )}
               <button
                 type="button"
                 onClick={() => setNote(null)}
@@ -329,9 +426,9 @@ export function MacroList({
         </div>
       )}
 
-      {rows && rows.length > 0 && (
+      {shown && shown.length > 0 && (
         <div ref={flip.ref} className="flex flex-col gap-6">
-          {groupMacros(rows, sort).map((g) => (
+          {groupMacros(shown, sort).map((g) => (
             <MacroGroup
               key={`${sort}-${g.key}`}
               title={g.title}
@@ -342,6 +439,12 @@ export function MacroList({
             />
           ))}
         </div>
+      )}
+
+      {filtering && shown?.length === 0 && (
+        <p className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+          No macros match "{query.trim()}".
+        </p>
       )}
 
       {rows && rows.length === 0 && (
@@ -381,31 +484,6 @@ export function MacroList({
         onClose={() => setReviewing(null)}
       />
 
-      <AlertDialog open={pendingDelete !== null} onOpenChange={(o) => !o && setPendingDelete(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete "{pendingDelete?.name}"?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Its steps and hotkey are removed. The previous version of your macro file is kept as
-              macros.bak, but there is no undo here.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              onClick={async () => {
-                if (!pendingDelete) return;
-                await deleteMacro(pendingDelete.id);
-                setPendingDelete(null);
-                reload(true);
-              }}
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }
@@ -418,6 +496,7 @@ type RowActions = {
   onRun: (r: MacroSummary) => void;
   onDuplicate: (r: MacroSummary) => void;
   onDelete: (r: MacroSummary) => void;
+  onCopy: (r: MacroSummary) => void;
   onExport: (r: MacroSummary) => void;
 };
 
@@ -550,7 +629,7 @@ function MacroRow({
       className={cn(
         "group flex items-center gap-3 rounded-lg border border-l-[3px] border-border bg-card py-2.5 pr-3 pl-2 transition-[border-color,background-color,box-shadow] duration-200 ease-smooth hover:border-primary/40",
         !r.enabled && "bg-card/50",
-        lifted && "cursor-grabbing border-primary/40 bg-card shadow-xl",
+        lifted && "cursor-grabbing border-primary/40 bg-card",
       )}
     >
       {/* Same width with or without the grip, so names line up in every sort. */}
@@ -698,6 +777,10 @@ function MacroRow({
               <Copy />
               Duplicate
             </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => actions.onCopy(r)}>
+              <ClipboardCopy />
+              Copy as text
+            </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => actions.onExport(r)}>
               <Download />
               Export...
@@ -744,6 +827,10 @@ function MacroRow({
         <ContextMenuItem onSelect={() => actions.onDuplicate(r)}>
           <Copy />
           Duplicate
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={() => actions.onCopy(r)}>
+          <ClipboardCopy />
+          Copy as text
         </ContextMenuItem>
         <ContextMenuItem onSelect={() => actions.onExport(r)}>
           <Download />

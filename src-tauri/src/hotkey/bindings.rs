@@ -28,6 +28,10 @@ pub struct BindingTable {
     pub enabled: bool,
     /// Flips the master switch. Matched even while disabled.
     pub toggle: Option<(u16, Vec<Modifier>)>,
+    /// The user is recording a key in Pochini's window: macros and the
+    /// toggle stand aside (and Windows lets go of the toggle) so the key can
+    /// be recorded instead of firing. The panic key still works.
+    pub paused: bool,
 }
 
 /// Why a macro's hotkey cannot work as set.
@@ -68,7 +72,7 @@ impl BindingTable {
                 })
             })
             .collect();
-        Self { bindings, panic_vk, enabled, toggle: None }
+        Self { bindings, panic_vk, enabled, toggle: None, paused: false }
     }
 
     pub fn with_toggle(mut self, vk: u16, modifiers: Vec<Modifier>) -> Self {
@@ -97,6 +101,9 @@ impl BindingTable {
     ) -> Match {
         if vk == self.panic_vk {
             return Match::Panic;
+        }
+        if self.paused {
+            return Match::None;
         }
         // Before the enabled check: the toggle is how you turn things back on.
         if let Some((tvk, tmods)) = &self.toggle {
@@ -430,6 +437,16 @@ mod tests {
             ],
             "Ctrl+F12 alone is not the toggle"
         );
+    }
+
+    #[test]
+    fn while_recording_only_the_panic_key_matches() {
+        let mut t = BindingTable::build(&[m("a", 0x20, vec![], true)], 0x1B, true)
+            .with_toggle(0x7B, vec![Modifier::Ctrl]);
+        t.paused = true;
+        assert_eq!(t.match_key(0x20, &[]), Match::None);
+        assert_eq!(t.match_key(0x7B, &[Modifier::Ctrl]), Match::None);
+        assert_eq!(t.match_key(0x1B, &[]), Match::Panic);
     }
 
     #[test]

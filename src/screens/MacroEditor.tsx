@@ -4,6 +4,8 @@ import { arrayMove, SortableContext, verticalListSortingStrategy } from "@dnd-ki
 import {
   ArrowUpDown,
   Check,
+  Redo2,
+  Undo2,
   Crosshair,
   Keyboard,
   MousePointerClick,
@@ -24,8 +26,11 @@ import { HelpTip } from "@/components/HelpTip";
 import { Field, Notice, Section, Segmented, ToggleRow } from "@/components/layout";
 import { getMacro, saveMacro, testSteps } from "@/lib/ipc";
 import { tone, useStepColors } from "@/lib/colors";
+import { record, redo, start, undo, type History } from "@/lib/history";
 import { useFlip } from "@/lib/motion";
-import { aimPoints, blankStep, fmtRange, newId, stepRange, type NewStepKind } from "@/lib/steps";
+import { useShortcut, withKeys } from "@/lib/shortcuts";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { aimPoints, blankStep, fmtRange, newId, stepRange, summarize, type NewStepKind } from "@/lib/steps";
 import type { Macro, QueueFrom, Repeat, Step, TriggerMode } from "@/types";
 
 const QUEUE_FROM: readonly { value: QueueFrom; label: string }[] = [
@@ -63,8 +68,16 @@ export function MacroEditor({
   /** Lets the app ask before navigating away from unsaved changes. */
   onDirtyChange: (dirty: boolean) => void;
 }) {
-  const [m, setM] = useState<Macro | null>(null);
-  const [dirty, setDirty] = useState(false);
+  // The unsaved macro, with undo and redo (lib/history.ts).
+  const [hist, setHist] = useState<History<Macro> | null>(null);
+  const m = hist?.present ?? null;
+  /** The macro as last saved (or loaded), to tell whether anything changed. */
+  const [saved, setSaved] = useState("");
+  /** Bumped by each save, so the "Saved" check pops then and not on load. */
+  const [saves, setSaves] = useState(0);
+  const dirty = m !== null && JSON.stringify(m) !== saved;
+  /** The step just deleted, for its "Undo" line. */
+  const [deleted, setDeleted] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [justAdded, setJustAdded] = useState<string | null>(null);
   const [draggingStep, setDraggingStep] = useState<string | null>(null);
@@ -76,8 +89,8 @@ export function MacroEditor({
   useEffect(() => {
     getMacro(id)
       .then((x) => {
-        setM(x);
-        onName(x.name);
+        setHist(start(x));
+        setSaved(JSON.stringify(x));
       })
       .catch((e) => setErr(String(e)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -87,17 +100,22 @@ export function MacroEditor({
     onDirtyChange(dirty);
   }, [dirty, onDirtyChange]);
 
-  // Ctrl+S saves, as everywhere else.
+  // The header shows the name as it is now, undo included.
+  const name = m?.name;
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
-        e.preventDefault();
-        if (dirty && m) void save();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  });
+    if (name !== undefined) onName(name);
+  }, [name, onName]);
+
+  // Steps glide back into place on undo and redo too.
+  const step = (to: (h: History<Macro>) => History<Macro>) => {
+    flip.prepare();
+    setDeleted(null);
+    setHist((h) => h && to(h));
+  };
+  useShortcut("Ctrl+Z", () => step(undo));
+  useShortcut(["Ctrl+Y", "Ctrl+Shift+Z"], () => step(redo));
+  useShortcut("Ctrl+S", () => dirty && void save(), { inFields: true });
+  useShortcut("Ctrl+Enter", () => runTest(), { inFields: true });
 
   const est = useMemo<[number, number]>(() => {
     if (!m) return [0, 0];
@@ -115,16 +133,17 @@ export function MacroEditor({
   }
   if (!m) return <p className="mx-auto max-w-4xl text-sm text-muted-foreground">Loading...</p>;
 
-  const edit = (patch: Partial<Macro>) => {
-    setM({ ...m, ...patch });
-    setDirty(true);
-    if (patch.name !== undefined) onName(patch.name);
+  /** `key` names what changed ("name", a step id) so typing into one field
+   *  undoes as one step; see lib/history.ts. */
+  const edit = (patch: Partial<Macro>, key?: string) => {
+    setDeleted(null);
+    setHist((h) => h && record(h, { ...h.present, ...patch }, performance.now(), key));
   };
 
   const setStep = (i: number, s: Step) => {
     const steps = [...m.steps];
     steps[i] = s;
-    edit({ steps });
+    edit({ steps }, `step:${s.id}`);
   };
 
   // Buttons and menus glide steps to their new places; a drag drop does
@@ -161,11 +180,18 @@ export function MacroEditor({
     if (!m) return;
     try {
       await saveMacro(m);
-      setDirty(false);
+      setSaved(JSON.stringify(m));
+      setSaves((n) => n + 1);
       setErr(null);
     } catch (e) {
       setErr(String(e));
     }
+  }
+
+  function runTest() {
+    if (!m || m.steps.length === 0) return;
+    onRun(`${m.name} (test)`);
+    testSteps(m.steps).catch((e) => setErr(String(e)));
   }
 
   const t = m.trigger;
@@ -176,26 +202,46 @@ export function MacroEditor({
       <div className="flex flex-wrap items-center gap-3">
         <Input
           value={m.name}
-          onChange={(e) => edit({ name: e.target.value })}
+          onChange={(e) => edit({ name: e.target.value }, "name")}
           aria-label="Macro name"
           className="h-10 min-w-48 flex-1 font-display text-lg font-semibold"
         />
-        <Button
-          variant="outline"
-          size="lg"
-          disabled={m.steps.length === 0}
-          onClick={() => {
-            onRun(`${m.name} (test)`);
-            testSteps(m.steps).catch((e) => setErr(String(e)));
-          }}
-        >
-          <Play />
-          Test
-        </Button>
-        <Button onClick={save} disabled={!dirty} variant={dirty ? "default" : "outline"} size="lg" className="min-w-28">
-          {dirty ? <Save /> : <Check />}
-          {dirty ? "Save" : "Saved"}
-        </Button>
+        <div className="flex items-center">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon-lg" aria-label="Undo" disabled={!hist?.past.length} onClick={() => step(undo)}>
+                <Undo2 />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{withKeys("Undo", "Ctrl+Z")}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon-lg" aria-label="Redo" disabled={!hist?.future.length} onClick={() => step(redo)}>
+                <Redo2 />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{withKeys("Redo", "Ctrl+Y")}</TooltipContent>
+          </Tooltip>
+        </div>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="outline" size="lg" disabled={m.steps.length === 0} onClick={runTest}>
+              <Play />
+              Test
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{withKeys("Runs these steps after a 3 second countdown", "Ctrl+Enter")}</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button onClick={save} disabled={!dirty} variant={dirty ? "default" : "outline"} size="lg" className="min-w-28">
+              {dirty ? <Save /> : <Check key={saves} className={saves > 0 ? "animate-pop" : undefined} />}
+              {dirty ? "Save" : "Saved"}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{withKeys("Save", "Ctrl+S")}</TooltipContent>
+        </Tooltip>
       </div>
 
       {dirty && (
@@ -223,6 +269,7 @@ export function MacroEditor({
           help="Press Record, then the key or combination. The macro runs whenever you press it, in any app, even inside a game."
         >
           <KeyCapture
+            clashFor={{ macroId: m.id, guard: m.guard?.process || null }}
             value={t ? { key: t.key, modifiers: t.modifiers } : null}
             onChange={(h) =>
               edit({
@@ -370,6 +417,26 @@ export function MacroEditor({
           </div>
         </ToggleRow>
         <ToggleRow
+          label="Stop after a while"
+          help="A safety limit: the run ends on its own after this long, whatever its repeat or hotkey mode. It ends normally, so the mouse still moves back if that is on."
+          hint={m.stop_after_ms === null && (m.repeat.kind === "forever" || t?.mode === "hold_repeat" || t?.mode === "toggle") ? "Useful here: this macro can run until stopped." : undefined}
+          checked={m.stop_after_ms !== null}
+          onChange={(on) => edit({ stop_after_ms: on ? 10 * 60_000 : null })}
+        >
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-muted-foreground">Stop after</span>
+            <Input
+              type="number"
+              min={1}
+              aria-label="Minutes"
+              className="w-24 tabular-nums"
+              value={m.stop_after_ms === null ? 10 : Math.max(1, Math.round(m.stop_after_ms / 60_000))}
+              onChange={(e) => edit({ stop_after_ms: Math.max(1, Math.round(+e.target.value || 1)) * 60_000 }, "stop_after")}
+            />
+            <span className="text-muted-foreground">minutes</span>
+          </div>
+        </ToggleRow>
+        <ToggleRow
           label="Move mouse back to where it started"
           help="When the macro ends, the cursor jumps back to where it was when the macro started. Also after releasing a hold-to-repeat key or pressing a toggle hotkey again, but not after Panic or Stop."
           checked={m.return_to_start}
@@ -390,6 +457,18 @@ export function MacroEditor({
           )
         }
       >
+        {deleted && (
+          <div
+            role="status"
+            className="flex animate-in items-center gap-3 rounded-md border border-border bg-muted/50 px-3 py-2 text-sm fade-in-0 motion-reduce:animate-none"
+          >
+            <span className="min-w-0 flex-1 truncate">Deleted "{deleted}".</span>
+            <Button variant="outline" size="sm" onClick={() => step(undo)}>
+              <Undo2 />
+              Undo
+            </Button>
+          </div>
+        )}
         {m.steps.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
             No steps yet. Add the first one below.
@@ -418,6 +497,7 @@ export function MacroEditor({
                     onDelete={() => {
                       flip.prepare();
                       edit({ steps: m.steps.filter((_, j) => j !== i) });
+                      setDeleted(summarize(s));
                     }}
                     onDuplicate={() => {
                       const steps = [...m.steps];

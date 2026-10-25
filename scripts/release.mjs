@@ -15,7 +15,7 @@
 // Release (.github/workflows/release.yml).
 
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { execSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "..");
@@ -74,6 +74,18 @@ mkdirSync(outDir, { recursive: true });
 const out = path.join(outDir, `Pochini-${next}.exe`);
 // New build first, so a failure below never leaves release/ empty.
 copyFileSync(built, out);
+
+// 5. Smoke-check the new exe before the old one goes: it starts, finds its
+//    embedded page, saves and reads back storage in a temp folder, and exits
+//    0. Catches what only a release build can get wrong (manifest, LTO,
+//    strip). No window opens and nothing of yours is touched.
+try {
+  execFileSync(out, ["--smoke"], { timeout: 60_000, stdio: "ignore" });
+} catch (e) {
+  console.error(`
+${path.basename(out)} failed its --smoke check (${e.status ?? e.message}); older builds were kept.`);
+  process.exit(1);
+}
 
 // Then remove older builds. One that is running cannot be deleted on Windows;
 // say so and carry on (the next release run removes it).

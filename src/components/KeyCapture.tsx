@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { Keyboard, X } from "lucide-react";
+import { Keyboard, TriangleAlert, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { keyRefForVk } from "@/lib/ipc";
+import { hotkeyClash, keyRefForVk, setRecording as pauseHotkeys } from "@/lib/ipc";
+import { cn } from "@/lib/utils";
 import { modLabel } from "@/lib/steps";
 import type { Hotkey, Modifier } from "@/types";
 import { KeyCombo } from "./layout";
@@ -19,14 +20,45 @@ export function KeyCapture({
   allowModifiers = true,
   allowClear = true,
   emptyLabel = "Not set",
+  clashFor,
 }: {
   value: Hotkey | null;
   onChange: (h: Hotkey | null) => void;
   allowModifiers?: boolean;
   allowClear?: boolean;
   emptyLabel?: string;
+  /** A macro's hotkey: warn when it would clash with another hotkey. */
+  clashFor?: { macroId: string; guard: string | null };
 }) {
   const [recording, setRecording] = useState(false);
+  const [clash, setClash] = useState<string | null>(null);
+  const [shake, setShake] = useState(0);
+
+  // While recording, hotkeys stand aside, so recording a combo that is
+  // already bound (or the on/off hotkey) records it instead of firing it.
+  useEffect(() => {
+    if (!recording) return;
+    void pauseHotkeys(true);
+    return () => void pauseHotkeys(false);
+  }, [recording]);
+
+  const vk = value?.key.vk;
+  const mods = value?.modifiers.join("+") ?? "";
+  const macroId = clashFor?.macroId;
+  const guard = clashFor?.guard ?? null;
+  useEffect(() => {
+    if (vk === undefined || macroId === undefined) {
+      setClash(null);
+      return;
+    }
+    let live = true;
+    hotkeyClash(vk, (mods ? mods.split("+") : []) as Modifier[], guard, macroId)
+      .then((c) => live && setClash(c))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [vk, mods, macroId, guard]);
 
   useEffect(() => {
     if (!recording) return;
@@ -49,14 +81,26 @@ export function KeyCapture({
       const key = await keyRefForVk(e.keyCode);
       onChange({ key, modifiers: mods });
       setRecording(false);
+      if (clashFor) {
+        const c = await hotkeyClash(key.vk, mods, clashFor.guard, clashFor.macroId).catch(() => null);
+        if (c) setShake((n) => n + 1);
+      }
     };
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
-  }, [recording, allowModifiers, onChange]);
+  }, [recording, allowModifiers, onChange, clashFor]);
 
   return (
+    <div className="flex flex-col gap-1.5">
     <div className="flex flex-wrap items-center gap-2">
-      <div className="flex h-9 min-w-32 items-center rounded-md border border-input bg-background px-2.5">
+      <div
+        key={shake}
+        className={cn(
+          "flex h-9 min-w-32 items-center rounded-md border border-input bg-background px-2.5",
+          shake > 0 && "animate-shake",
+          clash && !recording && "border-warning/60",
+        )}
+      >
         {recording ? (
           <span className="animate-pulse text-sm text-primary">Press a key...</span>
         ) : value ? (
@@ -75,6 +119,13 @@ export function KeyCapture({
           Clear
         </Button>
       )}
+    </div>
+    {clash && !recording && (
+      <p className="flex items-center gap-1.5 text-xs text-warning" role="status">
+        <TriangleAlert className="size-3.5 shrink-0" />
+        {clash}
+      </p>
+    )}
     </div>
   );
 }

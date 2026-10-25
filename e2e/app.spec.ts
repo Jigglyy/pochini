@@ -1,3 +1,6 @@
+import { spawn } from "node:child_process";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { expect, test } from "./_launch";
 
 // The basics, and that test mode really is isolated.
@@ -76,4 +79,42 @@ test("Settings > About shows the third-party licenses built into the app", async
   await expect(dialog).toContainText("tauri ");
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
+});
+
+test.describe("first run", () => {
+  test.use({ seed: { welcome: true } });
+
+  test("welcomes once, with the panic key and the privacy promise", async ({ app: { page, dataDir } }) => {
+    const dialog = page.getByRole("dialog", { name: "Welcome to Pochini" });
+    await expect(dialog).toContainText("stops a running macro at once");
+    await expect(dialog).toContainText("The keyboard hook keeps nothing");
+    await dialog.getByRole("button", { name: "Got it" }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect.poll(async () => JSON.parse(await readFile(join(dataDir, "settings.json"), "utf8")).welcomed).toBe(true);
+    await page.reload();
+    await expect(page.getByText("No macros yet")).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  });
+});
+
+test("Settings lists the app shortcuts", async ({ app: { page } }) => {
+  await page.getByRole("button", { name: "Settings" }).click();
+  await expect(page.getByText("Paste a copied macro")).toBeVisible();
+  await page.keyboard.press("Alt+ArrowLeft");
+  await expect(page.getByText("No macros yet")).toBeVisible();
+});
+
+// What only a release build can get wrong (the manifest, the embedded page,
+// storage), checked the way scripts/release.mjs checks each new exe.
+test("--smoke starts, checks itself and exits cleanly", async () => {
+  const exe = join(import.meta.dirname, "../src-tauri/target/debug/pochini.exe");
+  const code = await new Promise<number | null>((done) => {
+    const child = spawn(exe, ["--smoke"], { stdio: "ignore" });
+    const timer = setTimeout(() => child.kill(), 30_000);
+    child.on("exit", (c) => {
+      clearTimeout(timer);
+      done(c);
+    });
+  });
+  expect(code).toBe(0);
 });

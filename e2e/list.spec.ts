@@ -112,17 +112,59 @@ test.describe("dragging", () => {
 });
 
 test.describe("deleting", () => {
-  test.use({ seed: { macros: [macro("Keep", { id: "k" }), macro("Remove me", { id: "r" })] } });
+  test.use({
+    seed: { macros: [macro("Keep", { id: "k" }), macro("Remove me", { id: "r", color: "teal" }), macro("Last", { id: "l" })] },
+  });
 
-  test("delete asks first", async ({ app: { page, dataDir } }) => {
+  test("delete is immediate, and Undo puts it back in its place", async ({ app: { page, dataDir } }) => {
     await page.getByRole("button", { name: "More actions for Remove me" }).click();
     await page.getByRole("menuitem", { name: "Delete" }).click();
-    const dialog = page.getByRole("alertdialog");
-    await expect(dialog).toContainText('Delete "Remove me"?');
-    await dialog.getByRole("button", { name: "Delete" }).click();
-
     await expect(row(page, "r")).toHaveCount(0);
-    await expect.poll(() => saved(dataDir)).toEqual(["k"]);
+    await expect.poll(() => saved(dataDir)).toEqual(["k", "l"]);
+
+    await page.getByRole("status").getByRole("button", { name: "Undo" }).click();
+    await expect.poll(() => shown(page)).toEqual(["k", "r", "l"]);
+    await expect.poll(() => saved(dataDir)).toEqual(["k", "r", "l"]);
+    const back = JSON.parse(await readFile(join(dataDir, "macros.json"), "utf8")).macros[1];
+    expect(back.color).toBe("teal"); // the whole macro, not a blank one
+  });
+
+  test("Ctrl+Z undoes a delete too", async ({ app: { page, dataDir } }) => {
+    await row(page, "k").click({ button: "right" });
+    await page.getByRole("menu").getByRole("menuitem", { name: "Delete" }).click();
+    await expect(row(page, "k")).toHaveCount(0);
+    await page.keyboard.press("Control+z");
+    await expect.poll(() => saved(dataDir)).toEqual(["k", "r", "l"]);
+  });
+});
+
+test.describe("finding a macro", () => {
+  test.use({
+    seed: {
+      macros: [
+        macro("Fill form", { id: "f" }),
+        macro("Refresh page", { id: "r", trigger: { key: { vk: 0x71, scancode: 0x3c, extended: false, label: "F2" }, modifiers: [], mode: "once", swallow: false } }),
+        macro("Rename files", { id: "n", guard: { process: "explorer.exe", label: "" } }),
+        macro("Sign-off", { id: "s" }),
+        macro("Copy rows", { id: "c" }),
+      ],
+    },
+  });
+
+  test("by name, hotkey or app, with Ctrl+F", async ({ app: { page } }) => {
+    await page.keyboard.press("Control+f");
+    const box = page.getByRole("searchbox", { name: "Find a macro" });
+    await expect(box).toBeFocused();
+    await box.fill("re");
+    await expect.poll(() => shown(page)).toEqual(["r", "n"]);
+    await box.fill("f2");
+    await expect.poll(() => shown(page)).toEqual(["r"]);
+    await box.fill("EXPLORER");
+    await expect.poll(() => shown(page)).toEqual(["n"]);
+    await box.fill("nothing like it");
+    await expect(page.getByText('No macros match "nothing like it".')).toBeVisible();
+    await box.press("Escape");
+    await expect.poll(() => shown(page)).toHaveLength(5);
   });
 });
 

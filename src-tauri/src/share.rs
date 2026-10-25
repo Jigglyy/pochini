@@ -49,7 +49,17 @@ pub enum ShareError {
 
 /// The file for `macros`. Personal state stays behind (see the module docs).
 pub fn export(macros: &[Macro]) -> String {
-    let file = ShareFile {
+    // A Vec of plain data cannot fail to serialize.
+    serde_json::to_string_pretty(&share_file(macros)).unwrap_or_default()
+}
+
+/// The same, on one line: "Copy as text", for pasting into a chat.
+pub fn export_compact(macros: &[Macro]) -> String {
+    serde_json::to_string(&share_file(macros)).unwrap_or_default()
+}
+
+fn share_file(macros: &[Macro]) -> ShareFile {
+    ShareFile {
         format: FORMAT.into(),
         version: VERSION,
         macros: macros
@@ -65,9 +75,7 @@ pub fn export(macros: &[Macro]) -> String {
                 m
             })
             .collect(),
-    };
-    // A Vec of plain data cannot fail to serialize.
-    serde_json::to_string_pretty(&file).unwrap_or_default()
+    }
 }
 
 /// A file name for an export of `name`: Windows-safe, never empty.
@@ -207,6 +215,13 @@ mod tests {
         let mut m = sample("Fill");
         m.color = Some(" Teal ".into());
         assert_eq!(import(&export(&[m]), &[], NOW).unwrap()[0].color.as_deref(), Some("teal"));
+    }
+
+    #[test]
+    fn copy_as_text_is_one_line_that_imports_the_same() {
+        let text = export_compact(&[sample("Fill")]);
+        assert!(!text.contains('\n'));
+        assert_eq!(import(&text, &[], NOW).unwrap()[0].steps.len(), 2);
     }
 
     #[test]

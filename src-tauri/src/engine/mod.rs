@@ -169,6 +169,8 @@ impl Engine {
         if m.steps.is_empty() {
             return Ok(());
         }
+        let run_started = std::time::Instant::now();
+        let time_up = || m.stop_after_ms.is_some_and(|ms| run_started.elapsed().as_millis() >= u128::from(ms));
         let mut pass = 0u32;
         loop {
             if let Some(limit) = passes {
@@ -180,6 +182,10 @@ impl Engine {
             for i in self.pass_order(&m.steps) {
                 if cancel.is_cancelled() {
                     return Err(EngineError::Cancelled);
+                }
+                // "Stop after": a normal end, between steps.
+                if time_up() {
+                    return Ok(());
                 }
                 self.run_step(&m.steps[i], cancel, held)?;
             }
@@ -1252,6 +1258,31 @@ mod tests {
         });
         assert!(matches!(e.run(&m, &cancel), Err(EngineError::Cancelled)));
         assert!(f.still_held().is_empty());
+    }
+
+    #[test]
+    fn stop_after_ends_an_endless_run_normally_and_lets_go_of_everything() {
+        let (f, mut e) = engine();
+        let mut m = mac(vec![
+            Step::Key {
+                id: "k".into(),
+                shuffle: false,
+                key: key(0x2A),
+                action: KeyAction::Down,
+                modifiers: vec![],
+                hold_ms: Jitter::exact(0),
+            },
+            Step::Wait { id: "w".into(), shuffle: false, ms: Jitter::exact(5) },
+        ]);
+        m.repeat = Repeat::Forever;
+        m.stop_after_ms = Some(60);
+        m.return_to_start = true;
+        let t = std::time::Instant::now();
+        e.run_at(&m, &CancelToken::new(), Some((7, 8))).unwrap();
+        let took = t.elapsed();
+        assert!(took >= std::time::Duration::from_millis(55) && took < std::time::Duration::from_millis(400), "{took:?}");
+        assert!(f.still_held().is_empty(), "{:?}", f.still_held());
+        assert_eq!(f.events().last(), Some(&Event::Move(7, 8)), "a normal end moves the mouse back");
     }
 
     /// Regression: "Until stopped" with no steps looped with nothing to wait

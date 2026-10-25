@@ -1,7 +1,7 @@
 //! Application state and the engine worker.
 
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
@@ -41,7 +41,15 @@ pub struct AppState {
     /// Set when `macros.json` could not be read at startup (see
     /// `Store::open_macros`). While it is `locked`, nothing is saved.
     pub storage_problem: Mutex<Option<LoadProblem>>,
+    /// A key is being recorded in the window (see `BindingTable::paused`).
+    pub recording: AtomicBool,
+    /// Bumped on every `set_recording`, so an old expiry timer does nothing.
+    pub recording_gen: AtomicU64,
 }
+
+/// A recording that is never finished (the window crashed, say) stops
+/// pausing the hotkeys after this long.
+pub const RECORDING_EXPIRES_MS: u64 = 60_000;
 
 pub struct RunHandle {
     /// Unique per run. The same macro can be running and queued at once, so
@@ -102,7 +110,25 @@ impl AppState {
         if let Some(h) = &settings.toggle_hotkey {
             t = t.with_toggle(h.key.vk, h.modifiers.clone());
         }
+        t.paused = self.recording.load(Ordering::SeqCst);
         Arc::new(t)
+    }
+
+    /// The window starts or stops recording a key: hotkeys stand aside
+    /// meanwhile. A recording left on expires on its own.
+    pub fn set_recording(self: &Arc<Self>, on: bool) {
+        let gen = self.recording_gen.fetch_add(1, Ordering::SeqCst) + 1;
+        self.recording.store(on, Ordering::SeqCst);
+        self.refresh_bindings();
+        if on {
+            let st = self.clone();
+            let _ = std::thread::Builder::new().name("recording-expiry".into()).spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(RECORDING_EXPIRES_MS));
+                if st.recording_gen.load(Ordering::SeqCst) == gen {
+                    st.set_recording(false);
+                }
+            });
+        }
     }
 
     pub fn persist(&self) -> Result<(), String> {
@@ -407,6 +433,8 @@ mod tests {
             recent_keys: Mutex::new(VecDeque::new()),
             notify: Some(Box::new(rec.clone())),
             storage_problem: Mutex::new(None),
+            recording: AtomicBool::new(false),
+            recording_gen: AtomicU64::new(0),
         });
         (st, input, rec)
     }
@@ -885,6 +913,16 @@ mod tests {
         *st.storage_problem.lock().unwrap() = None;
         st.persist().unwrap();
         assert_eq!(st.store.load_macros().unwrap().macros[0].name, "made while locked");
+    }
+
+    #[test]
+    fn recording_a_key_pauses_the_hotkeys_until_it_ends() {
+        let (st, _, _) = state_with(vec![]);
+        assert!(!st.binding_table().paused);
+        st.set_recording(true);
+        assert!(st.binding_table().paused);
+        st.set_recording(false);
+        assert!(!st.binding_table().paused);
     }
 
     #[test]

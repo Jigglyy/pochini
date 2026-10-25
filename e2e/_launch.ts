@@ -22,6 +22,8 @@ export type Seed = {
   files?: Record<string, string>;
   /** A file in the data folder that every save / open dialog "returns". */
   dialog?: string;
+  /** Show the first-run welcome (every other test starts past it). */
+  welcome?: boolean;
 };
 
 export type App = {
@@ -53,6 +55,9 @@ async function launch(seed: Seed): Promise<{ app: App; close: () => Promise<void
   const dataDir = await mkdtemp(join(tmpdir(), "pochini-e2e-"));
   if (seed.macros) {
     await writeFile(join(dataDir, "macros.json"), JSON.stringify({ schema_version: 1, macros: seed.macros }));
+  }
+  if (!seed.welcome && !seed.files?.["settings.json"]) {
+    await writeFile(join(dataDir, "settings.json"), JSON.stringify({ welcomed: true }));
   }
   for (const [name, text] of Object.entries(seed.files ?? {})) {
     await writeFile(join(dataDir, name), text);

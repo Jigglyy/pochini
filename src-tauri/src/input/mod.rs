@@ -3,6 +3,8 @@
 //! The engine talks to the [`InputBackend`] trait, never to Win32 directly, so
 //! it can be tested against a recording fake. See docs/01-architecture.md.
 
+#[cfg(windows)]
+pub mod clipboard;
 pub mod coords;
 pub mod keys;
 #[cfg(windows)]

@@ -46,6 +46,12 @@ pub fn run() {
 
     let (tx, rx) = std::sync::mpsc::channel();
 
+    // `Pochini.exe --smoke`: start up, check what only a release build can
+    // get wrong (the manifest, the embedded page, storage), and exit 0. No
+    // window, no hook, nothing of the user's touched. scripts/release.mjs
+    // runs it on every new exe before the old one is deleted.
+    let smoke = std::env::args().any(|a| a == "--smoke");
+
     // The Playwright test mode (debug builds only), see e2e.rs.
     #[cfg(debug_assertions)]
     let e2e = match e2e::from_env() {
@@ -60,8 +66,9 @@ pub fn run() {
     #[cfg(not(debug_assertions))]
     let testing = false;
 
+    let quiet = testing || smoke;
     let mut builder = tauri::Builder::default();
-    if !testing {
+    if !quiet {
         // Must be the first plugin. A second copy of Pochini would install a
         // second keyboard hook and every hotkey would fire twice; instead the
         // second launch just brings the running window to the front.
@@ -72,17 +79,21 @@ pub fn run() {
                 let _ = w.set_focus();
             }
         }));
+        // Size, position and maximized state, kept between runs (never in
+        // test mode: a hidden test window's state would spoil the next start).
+        builder = builder.plugin(tauri_plugin_window_state::Builder::default().build());
     }
 
-    builder
+    let app = builder
         .plugin(tauri_plugin_dialog::init())
         .setup(move |app| {
             #[cfg(debug_assertions)]
             let test_dir = e2e.as_ref().map(|t| t.data_dir.clone());
             #[cfg(not(debug_assertions))]
             let test_dir: Option<std::path::PathBuf> = None;
+            let smoke_dir = smoke.then(|| std::env::temp_dir().join(format!("pochini-smoke-{}", std::process::id())));
 
-            let dir = match test_dir {
+            let dir = match test_dir.or(smoke_dir.clone()) {
                 Some(d) => d,
                 None => {
                     let dir = app.path().app_config_dir()?;
@@ -101,6 +112,9 @@ pub fn run() {
             };
             std::fs::create_dir_all(&dir)?;
             let store = storage::Store::new(dir);
+            if smoke {
+                smoke_check(app, &store)?;
+            }
 
             // Never just "start empty" on a read error: see Store::open_macros.
             let opened = store.open_macros();
@@ -129,12 +143,14 @@ pub fn run() {
                 recent_keys: Mutex::new(std::collections::VecDeque::new()),
                 notify: Some(Box::new(TauriNotify(app.handle().clone()))),
                 storage_problem: Mutex::new(opened.problem),
+                recording: std::sync::atomic::AtomicBool::new(false),
+                recording_gen: std::sync::atomic::AtomicU64::new(0),
             });
 
             app::spawn_worker(state.clone(), rx);
 
             #[cfg(windows)]
-            if !testing {
+            if !quiet {
                 match hotkey::HookThread::start(state.binding_table(), tx.clone()) {
                     Ok(h) => {
                         // Kept alive for the process lifetime; dropping it
@@ -146,6 +162,9 @@ pub fn run() {
             }
 
             app.manage(state);
+            if smoke {
+                return Ok(());
+            }
 
             // The window is built here rather than by Tauri ("create": false in
             // tauri.conf.json) so test mode can move it off-screen and give
@@ -199,7 +218,34 @@ pub fn run() {
             commands::clear_storage_problem,
             commands::open_data_dir,
             commands::third_party_notices,
+            commands::restore_macro,
+            commands::export_all,
+            commands::copy_macro_text,
+            commands::paste_macros,
+            commands::set_welcomed,
+            commands::set_recording,
+            commands::hotkey_clash,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while starting Pochini");
+    if smoke {
+        let _ = std::fs::remove_dir_all(std::env::temp_dir().join(format!("pochini-smoke-{}", std::process::id())));
+        std::process::exit(0);
+    }
+    app.run(|_, _| {});
+}
+
+/// `--smoke`: the page is embedded, and storage saves and reads back.
+fn smoke_check(app: &tauri::App, store: &storage::Store) -> Result<(), String> {
+    if app.asset_resolver().get("index.html".into()).is_none() {
+        return Err("the page is not embedded in the exe".into());
+    }
+    let mut f = model::MacroFile::default();
+    f.macros.push(model::Macro::new("smoke"));
+    store.save_macros(&f).map_err(|e| e.to_string())?;
+    let back = store.open_macros();
+    if back.problem.is_some() || back.file.macros.len() != 1 {
+        return Err("storage did not read back what it saved".into());
+    }
+    Ok(())
 }

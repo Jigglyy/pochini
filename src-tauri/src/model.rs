@@ -418,6 +418,11 @@ pub struct Macro {
     /// (the activation point). Not after Panic / Stop / switching off.
     #[serde(default)]
     pub return_to_start: bool,
+    /// End the run after this long, however it repeats: a safety limit for
+    /// "until stopped" and repeat-while-held. A normal end, so "move mouse
+    /// back" still happens. `None`: no limit.
+    #[serde(default)]
+    pub stop_after_ms: Option<u64>,
     #[serde(default)]
     pub steps: Vec<Step>,
     #[serde(default)]
@@ -471,6 +476,7 @@ impl Macro {
             queue: false,
             queue_from: QueueFrom::FirstPress,
             return_to_start: false,
+            stop_after_ms: None,
             steps: Vec::new(),
             guard: None,
             created_at: now.clone(),
@@ -515,6 +521,17 @@ impl MacroFile {
     /// places they already hold and every other macro stays exactly where it
     /// was, so reordering the favorites never shuffles the rest. Unknown and
     /// repeated ids are ignored.
+    /// Put back a macro that was deleted (Undo), at `index` or the end, with
+    /// its own id. Refused (false) if a macro with that id exists.
+    pub fn insert_at(&mut self, m: Macro, index: usize) -> bool {
+        if self.macros.iter().any(|x| x.id == m.id) {
+            return false;
+        }
+        let i = index.min(self.macros.len());
+        self.macros.insert(i, m);
+        true
+    }
+
     pub fn reorder(&mut self, ids: &[String]) {
         let mut wanted: Vec<&String> = Vec::new();
         for id in ids {
@@ -559,6 +576,7 @@ pub struct Hotkey {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Settings {
     /// Never swallowed; aborts any running macro. See docs/06-open-questions.md.
+    #[serde(default = "default_panic_key")]
     pub panic_key: KeyRef,
     /// Master switch. When false the hook stays installed but every binding is inert.
     #[serde(default = "default_true")]
@@ -572,6 +590,19 @@ pub struct Settings {
     /// means the user cleared it.
     #[serde(default = "default_toggle_hotkey")]
     pub toggle_hotkey: Option<Hotkey>,
+    /// The first-run welcome has been seen.
+    #[serde(default)]
+    pub welcomed: bool,
+}
+
+/// Esc: the instinctive "stop" key (docs/06-open-questions.md #3).
+fn default_panic_key() -> KeyRef {
+    KeyRef {
+        vk: 0x1B,
+        scancode: 0x01,
+        extended: false,
+        label: "Esc".into(),
+    }
 }
 
 /// Ctrl+Shift+F12: unlikely to collide with a game binding.
@@ -590,16 +621,11 @@ fn default_toggle_hotkey() -> Option<Hotkey> {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            // VK_ESCAPE
-            panic_key: KeyRef {
-                vk: 0x1B,
-                scancode: 0x01,
-                extended: false,
-                label: "Esc".into(),
-            },
+            panic_key: default_panic_key(),
             enabled: true,
             rng_seed: None,
             toggle_hotkey: default_toggle_hotkey(),
+            welcomed: false,
         }
     }
 }
@@ -900,6 +926,35 @@ mod tests {
         };
         // The emoji is two UTF-16 units, typed (and waited for) one by one.
         assert_eq!(text.duration_range(), (30, 36));
+    }
+
+    #[test]
+    fn a_settings_file_with_only_some_fields_keeps_the_defaults_for_the_rest() {
+        let s: Settings = serde_json::from_str(r#"{"welcomed": true}"#).unwrap();
+        assert!(s.welcomed);
+        assert_eq!(s.panic_key.label, "Esc");
+        assert_eq!(s, Settings { welcomed: true, ..Settings::default() });
+        let old: Settings = serde_json::from_str(r#"{"panic_key":{"vk":19,"scancode":69,"extended":false,"label":"Pause"}}"#).unwrap();
+        assert!(!old.welcomed, "a file from before the welcome has not seen it");
+    }
+
+    #[test]
+    fn a_deleted_macro_goes_back_in_its_place_with_its_id() {
+        let mut f = MacroFile::default();
+        let (a, b, c) = (Macro::new("a"), Macro::new("b"), Macro::new("c"));
+        f.macros = vec![a.clone(), c.clone()];
+        assert!(f.insert_at(b.clone(), 1));
+        assert_eq!(f.macros.iter().map(|m| m.name.as_str()).collect::<Vec<_>>(), ["a", "b", "c"]);
+        assert!(!f.insert_at(b, 0), "never twice");
+        assert!(f.insert_at(Macro::new("d"), 99), "past the end means at the end");
+        assert_eq!(f.macros[3].name, "d");
+        let _ = (a, c);
+    }
+
+    #[test]
+    fn stop_after_defaults_to_no_limit() {
+        let m: Macro = serde_json::from_str(r#"{"id":"x","name":"n","trigger":null}"#).unwrap();
+        assert_eq!(m.stop_after_ms, None);
     }
 
     #[test]

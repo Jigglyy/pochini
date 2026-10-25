@@ -3,13 +3,17 @@ import { Crosshair, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { cursorPos, previewPoint } from "@/lib/ipc";
+import { cursorPos, listMonitors, previewPoint } from "@/lib/ipc";
+import { cn } from "@/lib/utils";
+import type { CaptureMeta } from "@/types";
 
 const PICK_SECONDS = 3;
 
 /** Coordinate capture: arm it, move the real cursor over the target anywhere
  *  on screen (including over a fullscreen game an overlay could not cover),
- *  and the position is read when the countdown ends. */
+ *  and the position is read when the countdown ends, with the monitor it is
+ *  on (`capture`, for noticing a changed display layout later). Typing a
+ *  number instead clears `capture`: the point was not picked there. */
 export function CoordPicker({
   x,
   y,
@@ -17,9 +21,11 @@ export function CoordPicker({
 }: {
   x: number;
   y: number;
-  onChange: (x: number, y: number) => void;
+  onChange: (x: number, y: number, capture: CaptureMeta | null) => void;
 }) {
   const [left, setLeft] = useState<number | null>(null);
+  /** Bumped on each pick, so the fields flash to say "got it". */
+  const [picked, setPicked] = useState(0);
   const [live, setLive] = useState<[number, number] | null>(null);
   const tick = useRef<number | null>(null);
 
@@ -36,7 +42,11 @@ export function CoordPicker({
       window.clearInterval(poll);
       try {
         const [cx, cy] = await cursorPos();
-        onChange(cx, cy);
+        const mon = (await listMonitors().catch(() => [])).find(
+          (m) => cx >= m.rect[0] && cx < m.rect[2] && cy >= m.rect[1] && cy < m.rect[3],
+        );
+        onChange(cx, cy, mon ? { monitor: mon.device, monitor_rect: mon.rect, dpi: mon.dpi } : null);
+        setPicked((n) => n + 1);
       } catch {
         /* leave the value alone */
       }
@@ -55,18 +65,20 @@ export function CoordPicker({
       <div className="flex items-center gap-1.5">
         <span className="text-xs text-muted-foreground">X</span>
         <Input
+          key={`x${picked}`}
           type="number"
-          className="w-24 tabular-nums"
+          className={cn("w-24 tabular-nums", picked > 0 && "animate-flash")}
           value={x}
-          onChange={(e) => onChange(+e.target.value || 0, y)}
+          onChange={(e) => onChange(+e.target.value || 0, y, null)}
           aria-label="X"
         />
         <span className="ml-1 text-xs text-muted-foreground">Y</span>
         <Input
+          key={`y${picked}`}
           type="number"
-          className="w-24 tabular-nums"
+          className={cn("w-24 tabular-nums", picked > 0 && "animate-flash")}
           value={y}
-          onChange={(e) => onChange(x, +e.target.value || 0)}
+          onChange={(e) => onChange(x, +e.target.value || 0, null)}
           aria-label="Y"
         />
       </div>

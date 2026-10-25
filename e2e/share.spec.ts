@@ -150,3 +150,29 @@ test.describe("importing something else", () => {
     expect((await library(dataDir)).map((m) => m.name)).toEqual(["Keep"]);
   });
 });
+
+test.describe("copy and paste as text", () => {
+  test.use({ seed: { macros: [macro("Fill form", { id: "f", steps: [clickAt(1, 2)] })] } });
+
+  test("Copy as text puts one line on the clipboard; Ctrl+V pastes it back as a new macro", async ({ app: { page, dataDir } }) => {
+    await page.getByRole("button", { name: "More actions for Fill form" }).click();
+    await page.getByRole("menuitem", { name: "Copy as text" }).click();
+    await expect(page.getByRole("status").filter({ hasText: "Copied" })).toContainText('Copied "Fill form" as text.');
+    // Test mode keeps the "clipboard" in a file, away from yours.
+    const text = await readFile(join(dataDir, "clipboard.txt"), "utf8");
+    expect(text).not.toContain("\n");
+    expect(JSON.parse(text).format).toBe("pochini.macros");
+
+    await page.keyboard.press("Control+v");
+    await expect(row(page, "Fill form (imported)")).toContainText("Imported, check it before use");
+    expect((await library(dataDir)).map((m) => [m.name, m.review])).toEqual([
+      ["Fill form", false],
+      ["Fill form (imported)", true],
+    ]);
+  });
+
+  test("pasting something that is not a macro says so", async ({ app: { page } }) => {
+    await page.getByRole("button", { name: "Paste a copied macro" }).click();
+    await expect(page.getByText("The clipboard holds no text. Copy a macro first.")).toBeVisible();
+  });
+});

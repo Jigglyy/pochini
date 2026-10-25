@@ -9,7 +9,7 @@ use crate::app::AppState;
 use crate::hotkey::bindings::Clash;
 use crate::hotkey::TriggerEvent;
 use crate::input::{keys, Monitor};
-use crate::model::{KeyRef, Macro, Settings, Step};
+use crate::model::{KeyRef, Macro, Modifier, Settings, Step};
 use crate::storage::now_iso8601;
 
 type R<T> = Result<T, String>;
@@ -209,6 +209,17 @@ pub fn delete_macro(state: State<'_, Arc<AppState>>, id: String) -> R<()> {
     Ok(())
 }
 
+/// Undo of a delete: the macro goes back where it was, with its own id.
+#[tauri::command]
+pub fn restore_macro(state: State<'_, Arc<AppState>>, r#macro: Macro, index: usize) -> R<()> {
+    if !state.macros.lock().unwrap().insert_at(r#macro, index) {
+        return Err("That macro is already back.".into());
+    }
+    state.persist()?;
+    state.refresh_bindings();
+    Ok(())
+}
+
 #[tauri::command]
 pub fn duplicate_macro(state: State<'_, Arc<AppState>>, id: String) -> R<Macro> {
     let mut m = state.find(&id).ok_or_else(|| format!("no macro with id {id}"))?;
@@ -255,6 +266,75 @@ pub async fn export_macro(app: tauri::AppHandle, state: State<'_, Arc<AppState>>
     Ok(Some(path.display().to_string()))
 }
 
+/// Settings > Backup: every macro in one share file, which Import reads back.
+#[tauri::command]
+pub async fn export_all(app: tauri::AppHandle, state: State<'_, Arc<AppState>>) -> R<Option<String>> {
+    let all = state.macros.lock().unwrap().macros.clone();
+    if all.is_empty() {
+        return Err("There are no macros to export yet.".into());
+    }
+    let Some(path) = pick_file(&app, Some("Pochini macros.pochini.json")) else {
+        return Ok(None);
+    };
+    std::fs::write(&path, crate::share::export(&all)).map_err(|e| format!("Could not write {}: {e}", path.display()))?;
+    Ok(Some(path.display().to_string()))
+}
+
+/// Add the macros in `text` (an export, a bare macro, or a backup) as new
+/// macros, hotkeys off and marked for review. Their names.
+fn import_text(state: &AppState, text: &str) -> R<Vec<String>> {
+    let added = {
+        let mut f = state.macros.lock().unwrap();
+        let names: Vec<String> = f.macros.iter().map(|m| m.name.clone()).collect();
+        let added = crate::share::import(text, &names, &now_iso8601()).map_err(|e| e.to_string())?;
+        f.macros.extend(added.iter().cloned());
+        added
+    };
+    state.persist()?;
+    state.refresh_bindings();
+    Ok(added.into_iter().map(|m| m.name).collect())
+}
+
+/// The clipboard, or in the e2e test mode a file in the data folder (tests
+/// must never touch the clipboard of the person running them).
+fn clipboard_write(state: &AppState, text: &str) -> R<()> {
+    #[cfg(debug_assertions)]
+    if crate::e2e::active() {
+        return std::fs::write(state.store.dir().join("clipboard.txt"), text).map_err(|e| e.to_string());
+    }
+    let _ = state;
+    #[cfg(windows)]
+    return crate::input::clipboard::write_text(text);
+    #[cfg(not(windows))]
+    Err("No clipboard on this platform.".into())
+}
+
+fn clipboard_read(state: &AppState) -> R<Option<String>> {
+    #[cfg(debug_assertions)]
+    if crate::e2e::active() {
+        return Ok(std::fs::read_to_string(state.store.dir().join("clipboard.txt")).ok());
+    }
+    let _ = state;
+    #[cfg(windows)]
+    return crate::input::clipboard::read_text();
+    #[cfg(not(windows))]
+    Ok(None)
+}
+
+/// "Copy as text": the macro, as a one-line share file, on the clipboard.
+#[tauri::command]
+pub fn copy_macro_text(state: State<'_, Arc<AppState>>, id: String) -> R<()> {
+    let m = state.find(&id).ok_or_else(|| format!("no macro with id {id}"))?;
+    clipboard_write(&state, &crate::share::export_compact(&[m]))
+}
+
+/// "Paste": macros from text on the clipboard, by the same rules as Import.
+#[tauri::command]
+pub fn paste_macros(state: State<'_, Arc<AppState>>) -> R<Vec<String>> {
+    let text = clipboard_read(&state)?.ok_or("The clipboard holds no text. Copy a macro first.")?;
+    import_text(&state, &text)
+}
+
 /// "Import...": read a shared macro file and add its macros, hotkeys off.
 /// Returns the names added (empty if the dialog was cancelled).
 #[tauri::command]
@@ -268,16 +348,7 @@ pub async fn import_macros(app: tauri::AppHandle, state: State<'_, Arc<AppState>
     let file = std::fs::File::open(&path).map_err(|e| format!("Could not open {}: {e}", path.display()))?;
     std::io::Read::read_to_string(&mut std::io::Read::take(file, crate::share::MAX_BYTES as u64 + 1), &mut text)
         .map_err(|e| format!("Could not read {}: {e}", path.display()))?;
-    let added = {
-        let mut f = state.macros.lock().unwrap();
-        let names: Vec<String> = f.macros.iter().map(|m| m.name.clone()).collect();
-        let added = crate::share::import(&text, &names, &now_iso8601()).map_err(|e| e.to_string())?;
-        f.macros.extend(added.iter().cloned());
-        added
-    };
-    state.persist()?;
-    state.refresh_bindings();
-    Ok(added.into_iter().map(|m| m.name).collect())
+    import_text(&state, &text)
 }
 
 /// A drag on the macro list: `ids` is the new order of all macros, or of one
@@ -296,6 +367,38 @@ pub fn get_settings(state: State<'_, Arc<AppState>>) -> R<Settings> {
 #[tauri::command]
 pub fn save_settings(state: State<'_, Arc<AppState>>, settings: Settings) -> R<()> {
     state.apply_settings(settings)
+}
+
+/// The first-run welcome was closed: never show it again.
+#[tauri::command]
+pub fn set_welcomed(state: State<'_, Arc<AppState>>) -> R<()> {
+    let mut s = state.settings.lock().unwrap().clone();
+    s.welcomed = true;
+    state.apply_settings(s)
+}
+
+/// Recording a key in the window starts (`on`) or ends: hotkeys stand aside
+/// meanwhile, so recording a combo never fires it (see BindingTable::paused).
+#[tauri::command]
+pub fn set_recording(state: State<'_, Arc<AppState>>, on: bool) -> R<()> {
+    state.inner().set_recording(on);
+    Ok(())
+}
+
+/// Would this hotkey work for `macro_id`? Why not, in words, or `None`.
+#[tauri::command]
+pub fn hotkey_clash(
+    state: State<'_, Arc<AppState>>,
+    vk: u16,
+    modifiers: Vec<Modifier>,
+    guard: Option<String>,
+    macro_id: String,
+) -> R<Option<String>> {
+    let table = state.binding_table();
+    let clash = table.clash_for(vk, &modifiers, guard.as_deref().filter(|g| !g.is_empty()), &macro_id);
+    let f = state.macros.lock().unwrap();
+    let name_of = |id: &str| f.macros.iter().find(|m| m.id == id).map(|m| m.name.clone()).unwrap_or_default();
+    Ok(clash.map(|c| clash_text(&c, &name_of)))
 }
 
 /// The master switch. Turning it off also stops whatever is running.

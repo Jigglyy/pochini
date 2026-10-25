@@ -181,3 +181,100 @@ test.describe("held keys and shuffle", () => {
     expect([steps[2].modifiers, steps[2].held_key]).toEqual([[], null]);
   });
 });
+
+test.describe("undo and redo", () => {
+  test.use({ seed: { macros: [macro("Undoable", { steps: [{ ...wait(100), id: "w1" }, { ...wait(200), id: "w2" }] })] } });
+
+  test("a deleted step comes back, and Ctrl+Z / Ctrl+Y walk the history", async ({ app: { page } }) => {
+    await page.getByRole("button", { name: /^Undoable/ }).click();
+    await step(page, "w1").getByRole("button", { name: "Delete", exact: true }).click();
+    await expect(step(page, "w1")).toHaveCount(0);
+    await expect(page.getByRole("status").filter({ hasText: "Deleted" })).toContainText('Deleted "Wait 100 ms".');
+    await page.getByRole("status").getByRole("button", { name: "Undo" }).click();
+    await expect.poll(() => stepOrder(page)).toEqual(["w1", "w2"]);
+    // Back where it was saved: nothing to save.
+    await expect(page.getByRole("button", { name: "Saved", exact: true })).toBeVisible();
+
+    await page.getByRole("button", { name: "Wait", exact: true }).click();
+    await expect(page.locator("[data-step-id]")).toHaveCount(3);
+    await page.locator("body").click({ position: { x: 5, y: 5 } }); // out of any field
+    await page.keyboard.press("Control+z");
+    await expect(page.locator("[data-step-id]")).toHaveCount(2);
+    await page.keyboard.press("Control+y");
+    await expect(page.locator("[data-step-id]")).toHaveCount(3);
+  });
+
+  test("typing a name undoes in one step", async ({ app: { page } }) => {
+    await page.getByRole("button", { name: /^Undoable/ }).click();
+    const name = page.getByRole("textbox", { name: "Macro name" });
+    await name.press("End");
+    await name.pressSequentially(" again", { delay: 20 });
+    await expect(name).toHaveValue("Undoable again");
+    await page.getByRole("button", { name: "Undo", exact: true }).click();
+    await expect(name).toHaveValue("Undoable");
+    await page.getByRole("button", { name: "Redo", exact: true }).click();
+    await expect(name).toHaveValue("Undoable again");
+  });
+
+  test("Delete and Ctrl+D act on the focused step", async ({ app: { page } }) => {
+    await page.getByRole("button", { name: /^Undoable/ }).click();
+    await header(page, "w2").focus();
+    await page.keyboard.press("Control+d");
+    await expect(page.locator("[data-step-id]")).toHaveCount(3);
+    await header(page, "w1").focus();
+    await page.keyboard.press("Delete");
+    await expect(step(page, "w1")).toHaveCount(0);
+  });
+});
+
+test.describe("hotkey clashes while recording", () => {
+  const space = { key: { vk: 0x20, scancode: 0x39, extended: false, label: "Space" }, modifiers: [], mode: "once" as const, swallow: false };
+  test.use({ seed: { macros: [macro("First", { id: "a", trigger: space }), macro("Second", { id: "b" })] } });
+
+  test("say so while recording a hotkey another macro has", async ({ app: { page } }) => {
+    await page.getByRole("button", { name: /^Second/ }).click();
+    await page.getByRole("button", { name: "Record" }).first().click();
+    await page.keyboard.press("Space");
+    await expect(page.getByText('Same hotkey as "First", which runs instead')).toBeVisible();
+    await page.getByRole("button", { name: "Change" }).first().click();
+    await page.keyboard.press("Shift+Space");
+    await expect(page.getByText("Same hotkey as")).toHaveCount(0);
+  });
+});
+
+test.describe("stop after", () => {
+  test.use({ seed: { macros: [macro("Endless", { repeat: { kind: "forever" }, steps: [wait(50)] })] } });
+
+  test("a run that repeats until stopped can end on its own", async ({ app: { page, dataDir } }) => {
+    await page.getByRole("button", { name: /^Endless/ }).click();
+    await expect(page.getByText("Useful here: this macro can run until stopped.")).toBeVisible();
+    await page.getByRole("switch", { name: /^Stop after a while/ }).click();
+    const minutes = page.getByRole("spinbutton", { name: "Minutes" });
+    // It opens under the switch; typing before it has opened goes nowhere.
+    await expect(minutes).toHaveValue("10");
+    await expect(minutes.locator("xpath=ancestor::*[@inert]")).toHaveCount(0);
+    await minutes.fill("3");
+    await expect(minutes).toHaveValue("3");
+    await save(page);
+    const f = JSON.parse(await readFile(join(dataDir, "macros.json"), "utf8"));
+    expect(f.macros[0].stop_after_ms).toBe(180_000);
+  });
+});
+
+test.describe("picking a point", () => {
+  test.use({ seed: { macros: [macro("Pick one", { steps: [{ ...clickAt(5, 5), id: "c1" }] })] } });
+
+  test("records the monitor it was picked on; typing a number forgets it", async ({ app: { page, dataDir } }) => {
+    await page.getByRole("button", { name: /^Pick one/ }).click();
+    await header(page, "c1").click();
+    await step(page, "c1").getByRole("button", { name: "Pick" }).click();
+    await expect(step(page, "c1").getByRole("button", { name: "Pick" })).toBeVisible({ timeout: 6_000 });
+    await save(page);
+    // The fake mouse sits at (0, 0), on its 2560x1440 primary monitor.
+    expect((await savedSteps(dataDir))[0].capture).toEqual({ monitor: "\\\\.\\DISPLAY2", monitor_rect: [0, 0, 2560, 1440], dpi: 120 });
+
+    await step(page, "c1").getByRole("spinbutton", { name: "X", exact: true }).fill("12");
+    await save(page);
+    expect((await savedSteps(dataDir))[0].capture).toBeNull();
+  });
+});

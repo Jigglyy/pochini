@@ -129,6 +129,11 @@ fn register_toggle(table: &BindingTable) {
     }
     TOGGLE_REGISTERED.store(false, Ordering::Relaxed);
     TOGGLE_TAKEN.store(false, Ordering::Relaxed);
+    // While a key is being recorded, Windows must let go of the toggle, or
+    // it swallows the combo before Pochini's window can record it.
+    if table.paused {
+        return;
+    }
     let Some((vk, mods)) = &table.toggle else {
         return;
     };

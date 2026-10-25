@@ -18,6 +18,7 @@ test("after the countdown the run shows, then finishes", async ({ app: { page } 
   await page.getByRole("button", { name: "Run" }).click();
   const pill = page.getByRole("status").filter({ hasText: /Starting in|Running/ });
   await expect(pill).toContainText("Running Slow one", { timeout: 6_000 });
+  await expect(pill).toContainText("Esc stops it");
   await expect(pill.getByRole("button", { name: "Stop" })).toBeVisible();
   await expect(pill).toHaveCount(0, { timeout: 6_000 });
 });

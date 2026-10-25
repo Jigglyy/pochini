@@ -27,6 +27,7 @@ rand = "0.8"
 ulid = { version = "1", features = ["serde"] }
 arc-swap = "1"
 time = { version = "0.3", features = ["formatting", "parsing", "serde-well-known"] }
+tauri-plugin-window-state = "2"
 
 [target.'cfg(windows)'.dependencies.windows]
 version = "0.58"
@@ -35,7 +36,10 @@ features = [
     "Win32_Graphics_Dwm",
     "Win32_Security",
     "Win32_Graphics_Gdi",
+    "Win32_System_DataExchange",
     "Win32_System_LibraryLoader",
+    "Win32_System_Memory",
+    "Win32_System_Ole",
     "Win32_System_Threading",
     "Win32_UI_HiDpi",
     "Win32_UI_Input_KeyboardAndMouse",

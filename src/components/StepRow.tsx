@@ -177,7 +177,7 @@ export function StepFace({ step, index }: { step: Step; index: number }) {
   const color = useStepColors()[kind];
   return (
     <div
-      className="flex cursor-grabbing items-center gap-3 rounded-lg border border-l-[3px] border-primary/40 bg-card px-3 py-2.5 text-card-foreground shadow-xl"
+      className="flex cursor-grabbing items-center gap-3 rounded-lg border border-l-[3px] border-primary/40 bg-card px-3 py-2.5 text-card-foreground"
       style={outlineStyle(tone(color))}
     >
       <GripVertical className="size-4 shrink-0 text-muted-foreground" />
@@ -299,6 +299,16 @@ export function StepRow({
               }
               if (e.altKey && e.key === "ArrowUp") onMove(-1);
               if (e.altKey && e.key === "ArrowDown") onMove(1);
+              // Only on the header itself, never on its buttons.
+              if (e.target !== e.currentTarget) return;
+              if (e.key === "Delete" && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+                e.preventDefault();
+                onDelete();
+              }
+              if (e.ctrlKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "d") {
+                e.preventDefault();
+                onDuplicate();
+              }
             }}
             className="flex items-center gap-3 rounded-lg px-3 py-2.5 outline-none hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-ring"
           >
@@ -356,7 +366,7 @@ export function StepRow({
               </Field>
               {step.anchor === "fixed" ? (
                 <Field label="Position">
-                  <CoordPicker x={step.x} y={step.y} onChange={(x, y) => set({ x, y })} />
+                  <CoordPicker x={step.x} y={step.y} onChange={(x, y, capture) => set({ x, y, capture })} />
                 </Field>
               ) : (
                 <Field

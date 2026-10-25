@@ -1,14 +1,15 @@
 import { useEffect, useState } from "react";
-import { FileText, FolderOpen, Monitor, Moon, Sun } from "lucide-react";
+import { Check, ClipboardCopy, Download, FileText, FolderOpen, Monitor, Moon, Sun } from "lucide-react";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { HotkeyCheck } from "@/components/HotkeyCheck";
 import { StepColorSettings } from "@/components/StepColors";
 import { KeyCapture, comboLabel } from "@/components/KeyCapture";
-import { Field, Section } from "@/components/layout";
+import { Field, KeyCombo, Section } from "@/components/layout";
 import { DEFAULT_COLORS, KINDS, resetStepColors, useStepColors } from "@/lib/colors";
-import { appInfo, openDataDir, saveSettings, thirdPartyNotices, type AppInfo } from "@/lib/ipc";
+import { appInfo, exportAll, openDataDir, saveSettings, thirdPartyNotices, type AppInfo } from "@/lib/ipc";
+import { SHORTCUTS } from "@/lib/shortcuts";
 import type { ThemePref } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import type { Settings as SettingsT } from "@/types";
@@ -32,6 +33,9 @@ export function Settings({
 }) {
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [notices, setNotices] = useState<string | null>(null);
+  /** The last Backup result, or an error. */
+  const [backup, setBackup] = useState<{ ok: boolean; text: string } | null>(null);
+  const [copied, setCopied] = useState(false);
   const colors = useStepColors();
   const customColors = KINDS.some((k) => colors[k] !== DEFAULT_COLORS[k]);
   useEffect(() => {
@@ -122,6 +126,45 @@ export function Settings({
         <StepColorSettings />
       </Section>
 
+      <Section
+        title="Backup"
+        help="Saves every macro to one file you choose. Import on the macro list reads it back, here or on another PC."
+      >
+        <Field label="All macros">
+          <Button
+            variant="outline"
+            onClick={() =>
+              exportAll()
+                .then((path) => path && setBackup({ ok: true, text: `Saved to ${path}` }))
+                .catch((e) => setBackup({ ok: false, text: String(e) }))
+            }
+          >
+            <Download />
+            Export all macros...
+          </Button>
+          {backup && (
+            <span role="status" className={cn("min-w-0 text-xs break-all", backup.ok ? "text-muted-foreground" : "text-destructive")}>
+              {backup.text}
+            </span>
+          )}
+        </Field>
+      </Section>
+
+      <Section
+        title="App shortcuts"
+        help="Keys that work while this window is focused. They are not hotkeys: a macro's hotkey that blocks its key from other apps comes first."
+      >
+        {SHORTCUTS.map((s) => (
+          <div key={s.keys} className="flex items-center gap-4 text-sm">
+            <span className="w-32 shrink-0">
+              <KeyCombo combo={s.keys} />
+            </span>
+            <span className="min-w-0 flex-1">{s.action}</span>
+            <span className="hidden text-xs text-muted-foreground sm:inline">{s.where}</span>
+          </div>
+        ))}
+      </Section>
+
       {info && (
         <Section title="About">
           <Field label="Version">
@@ -134,6 +177,20 @@ export function Settings({
             <code className="min-w-0 flex-1 select-text break-all pt-2 font-mono text-xs text-muted-foreground">
               {info.data_dir}
             </code>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Copy the folder's path"
+              title="Copy the folder's path"
+              onClick={() =>
+                navigator.clipboard.writeText(info.data_dir).then(() => {
+                  setCopied(true);
+                  window.setTimeout(() => setCopied(false), 1500);
+                })
+              }
+            >
+              {copied ? <Check className="animate-pop text-success" /> : <ClipboardCopy />}
+            </Button>
             <Button variant="outline" onClick={() => void openDataDir()}>
               <FolderOpen />
               Open

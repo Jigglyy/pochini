@@ -113,6 +113,15 @@ jobs:
       - name: Build (type-check, frontend, release exe)
         run: npm run tauri build -- --no-bundle
 
+      # Starts, finds its embedded page, saves and reads storage in a temp
+      # folder, exits 0; no window (see lib.rs, `--smoke`).
+      # (A GUI exe: PowerShell must be told to wait for it.)
+      - name: Smoke-check the exe
+        shell: pwsh
+        run: |
+          $p = Start-Process src-tauri/target/release/pochini.exe -ArgumentList '--smoke' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "pochini.exe --smoke exited with $($p.ExitCode)" }
+
       - name: Name the exe and hash it
         shell: bash
         env:

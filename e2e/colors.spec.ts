@@ -51,7 +51,7 @@ test("right-click recolors every step of that kind, and it sticks", async ({ app
   // Settings shows the change and resets it.
   await page.getByRole("button", { name: "Settings" }).click();
   await page.getByRole("button", { name: "Reset all" }).click();
-  await page.getByRole("button", { name: "Back" }).click();
+  await page.getByRole("button", { name: "Back", exact: true }).click();
   await expect(step(page, "c1")).toHaveCSS("border-left-color", BLUE);
 });
 

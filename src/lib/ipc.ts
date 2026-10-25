@@ -7,6 +7,7 @@ import type {
   LoadProblem,
   Macro,
   MacroSummary,
+  Modifier,
   Monitor,
   RunStatus,
   Settings,
@@ -31,6 +32,14 @@ export const markReviewed = (id: string) => invoke<void>("mark_reviewed", { id }
 export const setMacroColor = (id: string, color: string | null) =>
   invoke<void>("set_macro_color", { id, color });
 export const deleteMacro = (id: string) => invoke<void>("delete_macro", { id });
+/** Undo of a delete: back at `index`, with its own id. */
+export const restoreMacro = (m: Macro, index: number) => invoke<void>("restore_macro", { macro: m, index });
+/** Every macro in one .pochini.json file the user picks; where it went, or null. */
+export const exportAll = () => invoke<string | null>("export_all");
+/** The macro as one line of text on the clipboard, to paste into a chat. */
+export const copyMacroText = (id: string) => invoke<void>("copy_macro_text", { id });
+/** Import macros from text on the clipboard; their names. */
+export const pasteMacros = () => invoke<string[]>("paste_macros");
 export const duplicateMacro = (id: string) => invoke<Macro>("duplicate_macro", { id });
 /** Save one macro to a .pochini.json file the user picks; where it went, or
  *  null if they cancelled. */
@@ -44,6 +53,13 @@ export const reorderMacros = (ids: string[]) => invoke<void>("reorder_macros", {
 export const getSettings = () => invoke<Settings>("get_settings");
 export const saveSettings = (settings: Settings) => invoke<void>("save_settings", { settings });
 export const setEnabled = (enabled: boolean) => invoke<void>("set_enabled", { enabled });
+/** The first-run welcome was closed. */
+export const setWelcomed = () => invoke<void>("set_welcomed");
+/** A key is being recorded in the window: hotkeys stand aside meanwhile. */
+export const setRecording = (on: boolean) => invoke<void>("set_recording", { on });
+/** Would this hotkey work for the macro? Why not, in words, or null. */
+export const hotkeyClash = (vk: number, modifiers: Modifier[], guard: string | null, macroId: string) =>
+  invoke<string | null>("hotkey_clash", { vk, modifiers, guard, macroId });
 
 /** Fires when settings change behind the UI's back, e.g. the toggle hotkey
  *  flipped the master switch from inside a game. */

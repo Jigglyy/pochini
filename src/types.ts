@@ -124,6 +124,8 @@ export type Macro = {
   queue_from: QueueFrom;
   /** When the run ends, move the cursor back to where the macro started. */
   return_to_start: boolean;
+  /** End the run after this long (a safety limit), or null for no limit. */
+  stop_after_ms: number | null;
   steps: Step[];
   guard: Guard | null;
   created_at: string;
@@ -157,6 +159,8 @@ export type Settings = {
   rng_seed: number | null;
   /** Flips `enabled` from anywhere, even from inside a fullscreen game. */
   toggle_hotkey: Hotkey | null;
+  /** The first-run welcome has been seen. */
+  welcomed: boolean;
 };
 
 export type AppWindow = { process: string; title: string };

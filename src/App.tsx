@@ -15,9 +15,12 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { comboLabel } from "@/components/KeyCapture";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { RunIndicator, type PendingRun } from "@/components/RunIndicator";
+import { Welcome } from "@/components/Welcome";
 import { StorageNotice } from "@/components/StorageNotice";
-import { getSettings, onSettingsChanged, setEnabled } from "@/lib/ipc";
+import { getSettings, onSettingsChanged, setEnabled, setWelcomed } from "@/lib/ipc";
+import { useShortcut, withKeys } from "@/lib/shortcuts";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import { MacroEditor } from "@/screens/MacroEditor";
@@ -69,6 +72,8 @@ export default function App() {
   };
 
   const goHome = () => navigate({ kind: "home" });
+  const back = () => (route.kind === "settings" ? go(route.back) : goHome());
+  useShortcut("Alt+Left", back, { enabled: route.kind !== "home" });
 
   return (
     <div className="flex h-screen flex-col bg-background text-foreground">
@@ -84,7 +89,8 @@ export default function App() {
             <span aria-hidden className="h-5 w-px bg-border" />
             <button
               type="button"
-              onClick={() => (route.kind === "settings" ? go(route.back) : goHome())}
+              title={withKeys("Back", "Alt+Left")}
+              onClick={back}
               className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
             >
               <ChevronLeft className="size-4" />
@@ -152,6 +158,7 @@ export default function App() {
           key={route.kind === "editor" ? `editor-${route.id}` : route.kind}
           className="animate-in duration-200 fade-in-0 slide-in-from-bottom-1"
         >
+          <ErrorBoundary onHome={() => go({ kind: "home" })}>
           {route.kind === "home" && (
             <MacroList
               settings={settings}
@@ -174,10 +181,21 @@ export default function App() {
           {route.kind === "settings" && (
             <Settings settings={settings} onSettings={setSettings} theme={theme} onTheme={setTheme} />
           )}
+          </ErrorBoundary>
         </div>
       </main>
 
-      <RunIndicator pending={pending} onDone={onRunDone} />
+      <RunIndicator pending={pending} onDone={onRunDone} panicKey={settings?.panic_key.label ?? "Esc"} />
+
+      {settings && !settings.welcomed && (
+        <Welcome
+          settings={settings}
+          onDone={() => {
+            setSettings({ ...settings, welcomed: true });
+            void setWelcomed();
+          }}
+        />
+      )}
 
       <AlertDialog open={pendingNav !== null} onOpenChange={(o) => !o && setPendingNav(null)}>
         <AlertDialogContent>

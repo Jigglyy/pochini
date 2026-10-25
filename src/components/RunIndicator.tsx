@@ -3,14 +3,24 @@ import { Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { RUN_COUNTDOWN_MS, runStatus, stopMacro } from "@/lib/ipc";
 import type { RunStatus } from "@/types";
+import { Kbd } from "./layout";
 
 export type PendingRun = { label: string; at: number; token: number };
 
 /** Bottom pill: the countdown after Run/Test, then "Running <name>" with how
  *  many presses are queued, and a Stop that also clears the queue. Shows runs
  *  started by a hotkey too. The user must always be able to tell that
- *  something is driving their mouse, and stop it. */
-export function RunIndicator({ pending, onDone }: { pending: PendingRun | null; onDone: () => void }) {
+ *  something is driving their mouse, and stop it: the pill names the panic
+ *  key, which works even when this window is in the background. */
+export function RunIndicator({
+  pending,
+  onDone,
+  panicKey,
+}: {
+  pending: PendingRun | null;
+  onDone: () => void;
+  panicKey: string;
+}) {
   const [status, setStatus] = useState<RunStatus | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const seenRunning = useRef(false);
@@ -65,6 +75,9 @@ export function RunIndicator({ pending, onDone }: { pending: PendingRun | null; 
           {queued > 0 && <span className="tabular-nums text-muted-foreground"> · {queued} queued</span>}
         </span>
       )}
+      <span className="hidden items-center gap-1 text-xs text-muted-foreground sm:inline-flex" aria-label={`${panicKey} stops it`}>
+        <Kbd>{panicKey}</Kbd> stops it
+      </span>
       <Button
         size="sm"
         variant="outline"
