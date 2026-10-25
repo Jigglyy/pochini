@@ -58,6 +58,9 @@ jobs:
       - name: Guards (em dashes, no logging in the hook, test mode out of release)
         run: npm run guards
 
+      - name: UI unit tests (Vitest)
+        run: npx vitest run
+
       # The frontend is embedded at compile time, so it must exist for clippy.
       - name: Build the frontend
         run: npx vite build
