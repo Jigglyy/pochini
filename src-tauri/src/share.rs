@@ -19,7 +19,10 @@
 use crate::model::{normalize_color, Macro, MacroFile, Step};
 
 pub const FORMAT: &str = "pochini.macros";
-pub const VERSION: u32 = 1;
+/// The newest format this build reads. A file is written as version 1
+/// unless it needs 2 (a "wait for a color" step), so older builds still
+/// import everything they can run, and say "update" for the rest.
+pub const VERSION: u32 = 2;
 /// A shared macro is a few kilobytes; anything near this is not one.
 pub const MAX_BYTES: usize = 2 * 1024 * 1024;
 pub const MAX_MACROS: usize = 500;
@@ -59,9 +62,10 @@ pub fn export_compact(macros: &[Macro]) -> String {
 }
 
 fn share_file(macros: &[Macro]) -> ShareFile {
+    let needs_2 = macros.iter().flat_map(|m| &m.steps).any(|s| matches!(s, Step::WaitColor { .. }));
     ShareFile {
         format: FORMAT.into(),
-        version: VERSION,
+        version: if needs_2 { 2 } else { 1 },
         macros: macros
             .iter()
             .cloned()
@@ -215,6 +219,25 @@ mod tests {
         let mut m = sample("Fill");
         m.color = Some(" Teal ".into());
         assert_eq!(import(&export(&[m]), &[], NOW).unwrap()[0].color.as_deref(), Some("teal"));
+    }
+
+    #[test]
+    fn a_file_says_version_2_only_when_it_needs_to() {
+        assert!(export(&[sample("plain")]).contains(r#""version": 1"#));
+        let mut m = sample("color");
+        m.steps.push(Step::WaitColor {
+            id: "c".into(),
+            shuffle: false,
+            x: 1,
+            y: 1,
+            color: "#ffffff".into(),
+            tolerance: 0,
+            timeout_ms: 10,
+            on_timeout: crate::model::TimeoutAction::Stop,
+        });
+        let text = export(&[m]);
+        assert!(text.contains(r#""version": 2"#), "{text}");
+        assert_eq!(import(&text, &[], NOW).unwrap()[0].steps.len(), 3);
     }
 
     #[test]

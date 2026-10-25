@@ -186,8 +186,10 @@ fn migrate(v: serde_json::Value) -> Result<MacroFile> {
             expected: SCHEMA_VERSION,
         });
     }
-    // v1 is current. Future versions add arms here, oldest first, each one
-    // upgrading `v` in place before the final deserialize.
+    // Each version that changed something adds an arm here, oldest first,
+    // upgrading `v` in place before the final deserialize. 1 -> 2 only added
+    // a step type, so a version 1 file reads as is; the next save writes 2.
+    let _ = found;
     Ok(serde_json::from_value(v)?)
 }
 
@@ -445,6 +447,18 @@ mod tests {
             }
             other => panic!("expected TooNew, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn a_version_1_library_reads_and_saves_as_the_current_version() {
+        let d = tmpdir("v1");
+        let s = Store::new(&d);
+        fs::write(s.macros_path(), br#"{"schema_version":1,"macros":[{"id":"m","name":"old","trigger":null}]}"#).unwrap();
+        let f = s.load_macros().unwrap();
+        assert_eq!(f.macros[0].name, "old");
+        s.save_macros(&f).unwrap();
+        let raw: serde_json::Value = serde_json::from_str(&fs::read_to_string(s.macros_path()).unwrap()).unwrap();
+        assert_eq!(raw["schema_version"], SCHEMA_VERSION);
     }
 
     #[test]

@@ -1,18 +1,47 @@
 import { useEffect, useState } from "react";
-import { Check, ClipboardCopy, Download, FileText, FolderOpen, Monitor, Moon, Sun } from "lucide-react";
+import { Check, ClipboardCopy, Download, FileText, FolderOpen, Monitor, Moon, ShieldCheck, Sun } from "lucide-react";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { HotkeyCheck } from "@/components/HotkeyCheck";
 import { StepColorSettings } from "@/components/StepColors";
 import { KeyCapture, comboLabel } from "@/components/KeyCapture";
-import { Field, KeyCombo, Section } from "@/components/layout";
+import { Field, KeyCombo, Section, ToggleRow } from "@/components/layout";
 import { DEFAULT_COLORS, KINDS, resetStepColors, useStepColors } from "@/lib/colors";
-import { appInfo, exportAll, openDataDir, saveSettings, thirdPartyNotices, type AppInfo } from "@/lib/ipc";
+import {
+  appInfo,
+  autostartEnabled,
+  clearRunHistory,
+  exportAll,
+  isElevated,
+  onRunFinished,
+  openDataDir,
+  restartElevated,
+  runHistory,
+  saveSettings,
+  setAutostart,
+  thirdPartyNotices,
+  type AppInfo,
+} from "@/lib/ipc";
+import { fmtRange } from "@/lib/steps";
 import { SHORTCUTS } from "@/lib/shortcuts";
 import type { ThemePref } from "@/lib/theme";
 import { cn } from "@/lib/utils";
-import type { Settings as SettingsT } from "@/types";
+import type { RunRecord, Settings as SettingsT } from "@/types";
+
+/** A run's ending, in words, for the history. */
+function outcomeText(r: RunRecord): string {
+  switch (r.outcome.kind) {
+    case "finished":
+      return "Finished";
+    case "stopped":
+      return "Stopped";
+    case "cancelled":
+      return "Cancelled before it started";
+    case "failed":
+      return r.outcome.message;
+  }
+}
 
 const THEMES: { value: ThemePref; label: string; hint: string; Icon: typeof Sun }[] = [
   { value: "system", label: "System", hint: "Follow Windows", Icon: Monitor },
@@ -36,10 +65,20 @@ export function Settings({
   /** The last Backup result, or an error. */
   const [backup, setBackup] = useState<{ ok: boolean; text: string } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [autostart, setAutostartState] = useState<boolean | null>(null);
+  const [elevated, setElevated] = useState<boolean | null>(null);
+  const [history, setHistory] = useState<RunRecord[]>([]);
   const colors = useStepColors();
   const customColors = KINDS.some((k) => colors[k] !== DEFAULT_COLORS[k]);
   useEffect(() => {
     appInfo().then(setInfo).catch(() => {});
+    autostartEnabled().then(setAutostartState).catch(() => {});
+    isElevated().then(setElevated).catch(() => {});
+    runHistory().then(setHistory).catch(() => {});
+    const un = onRunFinished((r) => setHistory((h) => [r, ...h].slice(0, 30)));
+    return () => {
+      void un.then((f) => f());
+    };
   }, []);
 
   if (!settings) return <p className="mx-auto max-w-4xl text-sm text-muted-foreground">Loading...</p>;
@@ -124,6 +163,80 @@ export function Settings({
         }
       >
         <StepColorSettings />
+      </Section>
+
+      <Section title="Window">
+        <ToggleRow
+          label="Keep running in the tray when the window is closed"
+          help="Closing the window then leaves Pochini in the tray (by the clock), with every hotkey still working. Quit from the tray icon's menu."
+          hint={settings.close_to_tray === null ? "Pochini asks the first time you close the window." : undefined}
+          checked={settings.close_to_tray === true}
+          onChange={(on) => save({ ...settings, close_to_tray: on })}
+        />
+        <ToggleRow
+          label="Start with Windows"
+          help="Pochini starts in the tray when you sign in to Windows, so your hotkeys are ready. Off unless you turn it on."
+          checked={autostart === true}
+          disabled={autostart === null}
+          onChange={(on) =>
+            setAutostart(on)
+              .then(() => setAutostartState(on))
+              .catch(() => {})
+          }
+        />
+        <Field
+          label="Administrator"
+          help="Windows only lets programs that also run as administrator send input to apps that run as administrator. Pochini never asks for it on its own."
+        >
+          <span className="flex flex-1 items-center gap-1.5 pt-2 text-sm text-muted-foreground">
+            {elevated && <ShieldCheck className="size-4 text-success" />}
+            {elevated === null ? "" : elevated ? "Running as administrator" : "Not running as administrator"}
+          </span>
+          {elevated === false && (
+            <Button variant="outline" onClick={() => void restartElevated()}>
+              Restart as administrator
+            </Button>
+          )}
+        </Field>
+      </Section>
+
+      <Section
+        title="Run history"
+        help="The last runs since Pochini started, newest first, and how each one ended. Kept in memory only."
+        action={
+          history.length > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground"
+              onClick={() => clearRunHistory().then(() => setHistory([]))}
+            >
+              Clear
+            </Button>
+          )
+        }
+      >
+        {history.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No runs yet.</p>
+        ) : (
+          history.map((r, i) => (
+            <div key={`${r.at_ms}-${i}`} className="flex items-start gap-4 text-sm">
+              <span className="w-20 shrink-0 pt-px text-xs tabular-nums text-muted-foreground">
+                {new Date(r.at_ms).toLocaleTimeString()}
+              </span>
+              <span className="w-40 shrink-0 truncate font-medium">{r.name}</span>
+              <span
+                className={cn(
+                  "min-w-0 flex-1 break-words",
+                  r.outcome.kind === "failed" ? "text-destructive" : "text-muted-foreground",
+                )}
+              >
+                {outcomeText(r)}
+              </span>
+              <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{fmtRange([r.duration_ms, r.duration_ms])}</span>
+            </div>
+          ))
+        )}
       </Section>
 
       <Section

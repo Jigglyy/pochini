@@ -83,7 +83,7 @@ pub enum InputError {
     #[error("SendInput inserted {sent} of {expected} events (os error {code})")]
     Partial { sent: u32, expected: u32, code: u32 },
     /// UIPI: a normal-integrity process cannot inject into an elevated window.
-    #[error("blocked by UIPI - the foreground window belongs to an elevated process")]
+    #[error("Windows blocked the input: the app it was meant for runs as administrator. Run Pochini as administrator to drive it.")]
     AccessDenied,
     #[error("no displays found")]
     NoDisplays,
@@ -116,6 +116,18 @@ pub trait InputBackend: Send + Sync {
     fn modifier(&self, m: Modifier, down: bool) -> Result<()>;
     /// One UTF-16 code unit via `KEYEVENTF_UNICODE`.
     fn unicode(&self, unit: u16, down: bool) -> Result<()>;
+
+    /// The color of one screen pixel, `[r, g, b]`.
+    fn pixel(&self, x: i32, y: i32) -> Result<[u8; 3]>;
+
+    /// Would Windows silently drop our input here? True when the window at
+    /// `at` (or the foreground window, for `None`) belongs to a process
+    /// running as administrator and Pochini does not (UIPI). `SendInput`
+    /// reports success either way, so this is the only way to know. False
+    /// when unsure: a protected process we may not inspect is not blocked.
+    fn blocked(&self, _at: Option<(i32, i32)>) -> bool {
+        false
+    }
 }
 
 /// Unit tests, and the e2e test mode of debug builds (see `crate::e2e`).

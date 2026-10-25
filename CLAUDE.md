@@ -28,16 +28,17 @@ this app owns.
 ## Status
 
 Implemented and building. `src-tauri/` has the full Rust core (model, storage, input,
-hotkey, engine, IPC) with **172 passing unit tests**; `src/` is a ShadCN + Tailwind v4 UI
+hotkey, engine, IPC) with **184 passing unit tests**; `src/` is a ShadCN + Tailwind v4 UI
 styled after Kanbini (macro list, step editor, settings), with **35 Vitest unit tests** for its
-helpers and **75 Playwright e2e tests** against the real app. `npm run tauri dev` opens the app.
+helpers and **79 Playwright e2e tests** against the real app. `npm run tauri dev` opens the app.
 
 The M0/M1 Win32 assumptions were measured before being ported; see
 [tools/m0-probe/README.md](tools/m0-probe/README.md). That harness found three errors in the
 original design docs; the numbered rules below are the corrected versions and each one has a
 regression test. Read [docs/README.md](docs/README.md) before changing behaviour.
 
-Not yet done: tray icon, ts-rs type generation, code signing, installer.
+Not yet done: ts-rs type generation, code signing, installer; record mode and the rest of
+the roadmap's M5.
 The toggle hotkey once did nothing; fixed in 0.2.1 by RegisterHotKey plus a hook watchdog
 ([docs/06-open-questions.md](docs/06-open-questions.md) #9).
 See [docs/05-roadmap.md](docs/05-roadmap.md).
@@ -172,6 +173,7 @@ src-tauri/src/
   input/win.rs            SendInput + DPI + monitors      (unsafe)
   input/fake.rs           recording backend for tests
   input/clipboard.rs      plain-text clipboard (Copy as text / Paste)  (unsafe)
+  tray.rs                 tray icon and menu; closing the window hides it there (lib.rs)
   engine/mod.rs           step execution, jitter, settle, activation point, release pass
   engine/timer.rs         high-resolution interruptible wait
   hotkey/bindings.rs      binding table + matching        (pure, tested)
@@ -256,7 +258,12 @@ These are the things that silently break this category of app. Full reasoning in
 10. **Do not ship elevated by default.** A non-elevated process cannot inject into an
     elevated window (UIPI). Surface that as an explicit, user-initiated "restart as
     administrator" action with an explanation, never a silent manifest-level
-    `requireAdministrator`.
+    `requireAdministrator`. `SendInput` reports success even when UIPI drops the input, so
+    the engine asks `InputBackend::blocked` before clicks, scrolls, keys and text (the window
+    under the point, or the foreground window) and stops the run with
+    `InputError::AccessDenied`; the run pill then offers Restart as administrator
+    (`win::restart_elevated`, `runas`, with `--restarted` so the new copy skips the
+    single-instance handover). A process we may not inspect counts as not blocked.
 
 11. **Never log keystroke content, not even temporarily while debugging.** The README promises
     the hook discards keys after matching. A debug `eprintln!` in the hook once wrote the
@@ -378,9 +385,9 @@ Mostly carried over from Kanbini, whose renderer this UI copies the look of:
 
 ## Testing
 
-`cargo test` is the gate: 172 tests, no Windows APIs required for most of them. The UI has
+`cargo test` is the gate: 184 tests, no Windows APIs required for most of them. The UI has
 `npm test` (35 Vitest tests of the pure helpers in `src/lib` and the error boundary, in
-jsdom) and `npm run e2e` (75 Playwright tests), all run locally before every release and by
+jsdom) and `npm run e2e` (79 Playwright tests), all run locally before every release and by
 CI on pull requests.
 
 - Vitest is for logic that needs no app: summaries and estimates (`lib/steps.ts`, which
@@ -423,7 +430,12 @@ CI on pull requests.
   - Content under a switch opens with `Collapse` and is `inert` until it has; wait for it
     (no `[inert]` ancestor) before typing into it.
   - CI shows the windows (`POCHINI_E2E_HEADED=1` in `ci.yml`): on a runner, a hidden window's
-    timers stopped mid-test. Tests that depend on animations set `emulateMedia` themselves.
+    timers stopped mid-test. Tests that depend on animations set `emulateMedia` themselves,
+    and check that an animation started rather than that one is still running.
+  - Test mode has no tray icon, never intercepts closing the window, keeps "start with
+    Windows" in `autostart.txt` in the data folder (never the registry), and its fake screen
+    has the color `[x, y, 0]` at (x, y), so a "wait for a color" test can name a color that
+    is already there.
 - Anything that needs a real desktop session belongs in `tools/m0-probe` or the
   `trace_macro` example, not in CI: a CI runner has no interactive session and `SendInput`
   in Session 0 is meaningless.

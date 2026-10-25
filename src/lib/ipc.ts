@@ -5,6 +5,7 @@ import type {
   HotkeyDiagnostics,
   KeyRef,
   LoadProblem,
+  RunRecord,
   Macro,
   MacroSummary,
   Modifier,
@@ -83,8 +84,28 @@ export const keyRefForVk = (vk: number) => invoke<KeyRef>("key_ref_for_vk", { vk
 
 export const runMacro = (id: string, delayMs = RUN_COUNTDOWN_MS) =>
   invoke<void>("run_macro", { id, delayMs });
-export const testSteps = (steps: Step[], delayMs = RUN_COUNTDOWN_MS) =>
-  invoke<void>("test_steps", { steps, delayMs });
+/** `name`: the macro's, for the run pill and history ("<name> (test)"). */
+export const testSteps = (steps: Step[], name?: string, delayMs = RUN_COUNTDOWN_MS) =>
+  invoke<void>("test_steps", { steps, delayMs, name: name ?? null });
+export const runHistory = () => invoke<RunRecord[]>("run_history");
+export const clearRunHistory = () => invoke<void>("clear_run_history");
+/** What runs or is queued changed. */
+export const onRunStatus = (cb: (s: RunStatus) => void): Promise<UnlistenFn> =>
+  listen<RunStatus>("run-status", (e) => cb(e.payload));
+/** A run ended, however it ended. */
+export const onRunFinished = (cb: (r: RunRecord) => void): Promise<UnlistenFn> =>
+  listen<RunRecord>("run-finished", (e) => cb(e.payload));
+/** The color at a screen point, "#rrggbb". */
+export const pixelAt = (x: number, y: number) => invoke<string>("pixel_at", { x, y });
+export const isElevated = () => invoke<boolean>("is_elevated");
+/** Restart Pochini as administrator (Windows asks first). */
+export const restartElevated = () => invoke<void>("restart_elevated");
+/** The window's "keep running in the tray?" question, answered. */
+export const answerClose = (keep: boolean) => invoke<void>("answer_close", { keep });
+/** The window was closed for the first time: ask what closing should do. */
+export const onCloseRequested = (cb: () => void): Promise<UnlistenFn> => listen("close-requested", () => cb());
+export const autostartEnabled = () => invoke<boolean>("autostart_enabled");
+export const setAutostart = (on: boolean) => invoke<void>("set_autostart", { on });
 export const stopMacro = () => invoke<void>("stop_macro");
 export const runStatus = () => invoke<RunStatus>("run_status");
 export const listApps = () => invoke<AppWindow[]>("list_apps");

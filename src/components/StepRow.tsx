@@ -1,5 +1,5 @@
 import { useState, type CSSProperties, type ReactNode, type Ref } from "react";
-import { ArrowDown, ArrowUp, ChevronRight, Copy, GripVertical, RotateCcw, Shuffle, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronRight, Copy, GripVertical, Pipette, RotateCcw, Shuffle, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
@@ -25,6 +25,7 @@ import {
   useStepColors,
   type ColorKind,
 } from "@/lib/colors";
+import { pixelAt } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 import { fmtAim, summarize, type Aim } from "@/lib/steps";
 import type { Anchor, Modifier, Step } from "@/types";
@@ -542,6 +543,8 @@ export function StepRow({
 
           {step.type === "wait" && <JitterField label="Wait" value={step.ms} onChange={(ms) => set({ ms })} />}
 
+          {step.type === "wait_color" && <WaitColorFields step={step} set={set} />}
+
           <Field
             label="Shuffle"
             help='Shuffled steps trade places with each other at random, in a new order every pass. Steps with Shuffle off never move. A "Previous point" step measures from whichever step ran just before it.'
@@ -556,5 +559,95 @@ export function StepRow({
         </div>
       </Collapse>
     </div>
+  );
+}
+
+/** A "wait for a color" step: the point to watch, the color (picked, typed,
+ *  or read from the screen as it is now), how close counts, and what to do
+ *  if it never shows. */
+function WaitColorFields({
+  step,
+  set,
+}: {
+  step: Extract<Step, { type: "wait_color" }>;
+  set: (patch: Partial<Step>) => void;
+}) {
+  const valid = /^#[0-9a-f]{6}$/i.test(step.color);
+  const [reading, setReading] = useState(false);
+  return (
+    <>
+      <Field label="Point" help="The screen pixel to watch. Pick it like a click's position.">
+        <CoordPicker x={step.x} y={step.y} onChange={(x, y) => set({ x, y })} />
+      </Field>
+      <Field
+        label="Color"
+        help="The macro waits until the pixel has this color. Read color takes the color the pixel has right now."
+        hint={valid ? undefined : "Use six hex digits, like #33aa55."}
+      >
+        <input
+          type="color"
+          aria-label="Color"
+          value={valid ? step.color.toLowerCase() : "#000000"}
+          onChange={(e) => set({ color: e.target.value })}
+          className="h-9 w-12 cursor-pointer rounded-md border border-input bg-background p-1"
+        />
+        <Input
+          aria-label="Color code"
+          className="w-28 font-mono"
+          value={step.color}
+          onChange={(e) => set({ color: e.target.value.trim() })}
+        />
+        <Button
+          variant="outline"
+          disabled={reading}
+          onClick={() => {
+            setReading(true);
+            pixelAt(step.x, step.y)
+              .then((color) => set({ color }))
+              .finally(() => setReading(false));
+          }}
+        >
+          <Pipette />
+          Read color
+        </Button>
+      </Field>
+      <Field
+        label="Tolerance"
+        help="How far each of red, green and blue may be from the color, 0 to 255. Raise it for colors that shimmer or fade."
+      >
+        <Input
+          type="number"
+          min={0}
+          max={255}
+          aria-label="Tolerance"
+          className="w-24 tabular-nums"
+          value={step.tolerance}
+          onChange={(e) => set({ tolerance: Math.min(255, Math.max(0, Math.round(+e.target.value || 0))) })}
+        />
+      </Field>
+      <Field
+        label="Give up after"
+        help="If the color has not shown by then, the macro stops (and says why), or carries on with the next step."
+      >
+        <Input
+          type="number"
+          min={0}
+          aria-label="Give up after"
+          className="w-28 tabular-nums"
+          value={step.timeout_ms}
+          onChange={(e) => set({ timeout_ms: Math.max(0, Math.round(+e.target.value || 0)) })}
+        />
+        <span className="text-xs text-muted-foreground">ms, then</span>
+        <Select value={step.on_timeout} onValueChange={(v) => set({ on_timeout: v as "stop" | "continue" })}>
+          <SelectTrigger className="w-44" aria-label="When it never shows">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="stop">Stop the macro</SelectItem>
+            <SelectItem value="continue">Carry on</SelectItem>
+          </SelectContent>
+        </Select>
+      </Field>
+    </>
   );
 }

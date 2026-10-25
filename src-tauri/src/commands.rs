@@ -496,13 +496,97 @@ pub fn run_macro(state: State<'_, Arc<AppState>>, id: String, delay_ms: u64) -> 
 /// Run an unsaved step list (the editor's Test button), with the same
 /// countdown and the same one-at-a-time rule as everything else.
 #[tauri::command]
-pub fn test_steps(state: State<'_, Arc<AppState>>, steps: Vec<Step>, delay_ms: u64) -> R<()> {
-    let mut m = Macro::new("Test run");
+pub fn test_steps(state: State<'_, Arc<AppState>>, steps: Vec<Step>, delay_ms: u64, name: Option<String>) -> R<()> {
+    let mut m = Macro::new(name.map(|n| format!("{n} (test)")).unwrap_or_else(|| "Test run".into()));
     m.steps = steps;
     state
         .tx
         .send(TriggerEvent::RunAdhoc { mac: Box::new(m), delay_ms })
         .map_err(|e| e.to_string())
+}
+
+/// The last runs, newest first, for Settings > Run history.
+#[tauri::command]
+pub fn run_history(state: State<'_, Arc<AppState>>) -> R<Vec<crate::app::RunRecord>> {
+    Ok(state.run_history())
+}
+
+#[tauri::command]
+pub fn clear_run_history(state: State<'_, Arc<AppState>>) -> R<()> {
+    state.history.lock().unwrap().clear();
+    Ok(())
+}
+
+/// The color at a screen point, "#rrggbb" (the "Read color" button).
+#[tauri::command]
+pub fn pixel_at(state: State<'_, Arc<AppState>>, x: i32, y: i32) -> R<String> {
+    state.input.pixel(x, y).map(crate::model::to_hex).map_err(|e| e.to_string())
+}
+
+/// Is Pochini itself running as administrator?
+#[tauri::command]
+pub fn is_elevated() -> R<bool> {
+    #[cfg(windows)]
+    return Ok(crate::input::win::is_elevated());
+    #[cfg(not(windows))]
+    Ok(false)
+}
+
+/// "Restart as administrator", always on the user's request (rule 10).
+#[tauri::command]
+pub fn restart_elevated(app: tauri::AppHandle) -> R<()> {
+    #[cfg(debug_assertions)]
+    if crate::e2e::active() {
+        return Err("Not in test mode.".into());
+    }
+    #[cfg(windows)]
+    crate::input::win::restart_elevated()?;
+    app.exit(0);
+    Ok(())
+}
+
+/// The answer to "keep running in the tray?" the first time the window is
+/// closed: remember it, then hide the window or quit.
+#[tauri::command]
+pub fn answer_close(app: tauri::AppHandle, state: State<'_, Arc<AppState>>, keep: bool) -> R<()> {
+    let mut s = state.settings.lock().unwrap().clone();
+    s.close_to_tray = Some(keep);
+    state.apply_settings(s)?;
+    if keep {
+        use tauri::Manager;
+        if let Some(w) = app.get_webview_window("main") {
+            let _ = w.hide();
+        }
+    } else {
+        app.exit(0);
+    }
+    Ok(())
+}
+
+/// Start with Windows (the registry's Run key, through the autostart
+/// plugin). Test mode keeps it in a file instead of touching the registry.
+#[tauri::command]
+pub fn autostart_enabled(app: tauri::AppHandle, state: State<'_, Arc<AppState>>) -> R<bool> {
+    #[cfg(debug_assertions)]
+    if crate::e2e::active() {
+        return Ok(state.store.dir().join("autostart.txt").exists());
+    }
+    let _ = state;
+    use tauri_plugin_autostart::ManagerExt;
+    app.autolaunch().is_enabled().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn set_autostart(app: tauri::AppHandle, state: State<'_, Arc<AppState>>, on: bool) -> R<()> {
+    #[cfg(debug_assertions)]
+    if crate::e2e::active() {
+        let f = state.store.dir().join("autostart.txt");
+        return if on { std::fs::write(f, "on") } else { std::fs::remove_file(f).or(Ok(())) }.map_err(|e: std::io::Error| e.to_string());
+    }
+    let _ = state;
+    use tauri_plugin_autostart::ManagerExt;
+    let l = app.autolaunch();
+    if on { l.enable() } else { l.disable() }.map_err(|e| e.to_string())
 }
 
 #[tauri::command]

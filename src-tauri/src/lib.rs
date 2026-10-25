@@ -19,6 +19,7 @@ pub mod input;
 pub mod model;
 pub mod share;
 pub mod storage;
+mod tray;
 
 use std::sync::{Arc, Mutex};
 
@@ -32,8 +33,35 @@ struct TauriNotify(tauri::AppHandle);
 impl Notify for TauriNotify {
     fn settings_changed(&self, settings: &model::Settings) {
         let _ = self.0.emit("settings-changed", settings);
+        tray::show_state(&self.0, settings.enabled);
+    }
+
+    fn run_changed(&self, status: &app::RunStatus) {
+        let _ = self.0.emit("run-status", status);
+    }
+
+    fn run_finished(&self, record: &app::RunRecord) {
+        let _ = self.0.emit("run-finished", record);
     }
 }
+
+/// What closing the window does (Settings.close_to_tray).
+#[derive(Debug, PartialEq, Eq)]
+pub enum CloseAction {
+    Hide,
+    Quit,
+    /// The first time: the window asks (answer_close remembers).
+    Ask,
+}
+
+pub fn close_action(close_to_tray: Option<bool>) -> CloseAction {
+    match close_to_tray {
+        Some(true) => CloseAction::Hide,
+        Some(false) => CloseAction::Quit,
+        None => CloseAction::Ask,
+    }
+}
+
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -51,6 +79,11 @@ pub fn run() {
     // window, no hook, nothing of the user's touched. scripts/release.mjs
     // runs it on every new exe before the old one is deleted.
     let smoke = std::env::args().any(|a| a == "--smoke");
+    // Started with Windows (autostart passes it): stay in the tray.
+    let hidden = std::env::args().any(|a| a == "--hidden");
+    // The copy "Restart as administrator" starts: the old one is on its way
+    // out, so do not hand over to it (single instance).
+    let restarted = std::env::args().any(|a| a == "--restarted");
 
     // The Playwright test mode (debug builds only), see e2e.rs.
     #[cfg(debug_assertions)]
@@ -68,7 +101,7 @@ pub fn run() {
 
     let quiet = testing || smoke;
     let mut builder = tauri::Builder::default();
-    if !quiet {
+    if !quiet && !restarted {
         // Must be the first plugin. A second copy of Pochini would install a
         // second keyboard hook and every hotkey would fire twice; instead the
         // second launch just brings the running window to the front.
@@ -79,9 +112,13 @@ pub fn run() {
                 let _ = w.set_focus();
             }
         }));
+    }
+    if !quiet {
         // Size, position and maximized state, kept between runs (never in
         // test mode: a hidden test window's state would spoil the next start).
-        builder = builder.plugin(tauri_plugin_window_state::Builder::default().build());
+        builder = builder
+            .plugin(tauri_plugin_window_state::Builder::default().build())
+            .plugin(tauri_plugin_autostart::Builder::new().args(["--hidden"]).build());
     }
 
     let app = builder
@@ -145,6 +182,7 @@ pub fn run() {
                 storage_problem: Mutex::new(opened.problem),
                 recording: std::sync::atomic::AtomicBool::new(false),
                 recording_gen: std::sync::atomic::AtomicU64::new(0),
+                history: Mutex::new(std::collections::VecDeque::new()),
             });
 
             app::spawn_worker(state.clone(), rx);
@@ -161,9 +199,13 @@ pub fn run() {
                 }
             }
 
+            let enabled = state.settings.lock().unwrap().enabled;
             app.manage(state);
             if smoke {
                 return Ok(());
+            }
+            if !quiet {
+                tray::create(app, enabled)?;
             }
 
             // The window is built here rather than by Tauri ("create": false in
@@ -177,7 +219,7 @@ pub fn run() {
                 .find(|w| w.label == "main")
                 .cloned()
                 .ok_or("tauri.conf.json has no \"main\" window")?;
-            let window = tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?;
+            let window = tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?.visible(!(hidden && !quiet));
             #[cfg(debug_assertions)]
             let window = match &e2e {
                 Some(t) => t.window(window),
@@ -185,6 +227,27 @@ pub fn run() {
             };
             window.build()?;
             Ok(())
+        })
+        .on_window_event(move |window, event| {
+            // Closing the window: keep running in the tray, quit, or ask.
+            if quiet || window.label() != "main" {
+                return;
+            }
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let state = window.state::<Arc<AppState>>();
+                let choice = state.settings.lock().unwrap().close_to_tray;
+                match close_action(choice) {
+                    CloseAction::Quit => {}
+                    CloseAction::Hide => {
+                        api.prevent_close();
+                        let _ = window.hide();
+                    }
+                    CloseAction::Ask => {
+                        api.prevent_close();
+                        let _ = window.emit("close-requested", ());
+                    }
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             commands::list_macros,
@@ -225,6 +288,14 @@ pub fn run() {
             commands::set_welcomed,
             commands::set_recording,
             commands::hotkey_clash,
+            commands::run_history,
+            commands::clear_run_history,
+            commands::pixel_at,
+            commands::is_elevated,
+            commands::restart_elevated,
+            commands::answer_close,
+            commands::autostart_enabled,
+            commands::set_autostart,
         ])
         .build(tauri::generate_context!())
         .expect("error while starting Pochini");
@@ -248,4 +319,16 @@ fn smoke_check(app: &tauri::App, store: &storage::Store) -> Result<(), String> {
         return Err("storage did not read back what it saved".into());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn closing_the_window_hides_quits_or_asks_once() {
+        assert_eq!(close_action(Some(true)), CloseAction::Hide);
+        assert_eq!(close_action(Some(false)), CloseAction::Quit);
+        assert_eq!(close_action(None), CloseAction::Ask);
+    }
 }

@@ -5,6 +5,8 @@
 //! ordering, on every press having a matching release, and on jitter staying in
 //! range - none of which you can check by squinting at a real screen.
 
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::Instant;
 
@@ -29,6 +31,11 @@ pub struct FakeInput {
     pub fail_with: Mutex<Option<&'static str>>,
     /// Where the cursor is before the first recorded move.
     start: (i32, i32),
+    /// Pixels set by a test. Any other pixel is `[x, y, 0]` (as bytes), so a
+    /// test can name a color that is already there.
+    pixels: Mutex<HashMap<(i32, i32), [u8; 3]>>,
+    /// Pretend the target runs as administrator (see `InputBackend::blocked`).
+    pub blocked: AtomicBool,
 }
 
 impl FakeInput {
@@ -39,7 +46,13 @@ impl FakeInput {
             events: Mutex::new(Vec::new()),
             fail_with: Mutex::new(None),
             start: (0, 0),
+            pixels: Mutex::new(HashMap::new()),
+            blocked: AtomicBool::new(false),
         }
+    }
+
+    pub fn set_pixel(&self, x: i32, y: i32, rgb: [u8; 3]) {
+        self.pixels.lock().unwrap().insert((x, y), rgb);
     }
 
     /// A fake whose cursor starts at (x, y), for activation-point tests.
@@ -152,5 +165,13 @@ impl InputBackend for FakeInput {
 
     fn unicode(&self, unit: u16, down: bool) -> Result<()> {
         self.push(Event::Unicode(unit, down))
+    }
+
+    fn pixel(&self, x: i32, y: i32) -> Result<[u8; 3]> {
+        Ok(self.pixels.lock().unwrap().get(&(x, y)).copied().unwrap_or([x as u8, y as u8, 0]))
+    }
+
+    fn blocked(&self, _at: Option<(i32, i32)>) -> bool {
+        self.blocked.load(Ordering::SeqCst)
     }
 }

@@ -15,7 +15,8 @@ use rand::{Rng, SeedableRng};
 use crate::input::coords::jitter_point;
 use crate::input::{InputBackend, InputError};
 use crate::model::{
-    Anchor, ClickAction, Jitter, KeyAction, KeyRef, Macro, Modifier, MouseButton, Repeat, Step,
+    parse_hex, to_hex, Anchor, ClickAction, Jitter, KeyAction, KeyRef, Macro, Modifier, MouseButton, Repeat, Step,
+    TimeoutAction,
 };
 
 pub use timer::CancelToken;
@@ -29,6 +30,17 @@ pub enum EngineError {
     /// A bug in Pochini stopped the run (a panic, caught).
     #[error("the macro stopped on an internal error")]
     Internal,
+    /// A "wait for a color" step timed out and was set to stop the run.
+    #[error("Waited {ms} ms for ({x}, {y}) to turn {want}, but it stayed {saw}.")]
+    ColorTimeout { x: i32, y: i32, want: String, saw: String, ms: u64 },
+}
+
+/// How often a "wait for a color" step looks at the screen.
+pub const COLOR_POLL_MS: u64 = 25;
+
+/// Every channel within `tolerance`.
+pub fn color_matches(got: [u8; 3], want: [u8; 3], tolerance: u8) -> bool {
+    got.iter().zip(want).all(|(g, w)| g.abs_diff(w) <= tolerance)
 }
 
 pub type Result<T> = std::result::Result<T, EngineError>;
@@ -149,7 +161,7 @@ impl Engine {
         let ended_normally = match &result {
             Ok(()) => true,
             Err(EngineError::Cancelled) => cancel.is_soft_stop(),
-            Err(EngineError::Input(_) | EngineError::Internal) => false,
+            Err(EngineError::Input(_) | EngineError::Internal | EngineError::ColorTimeout { .. }) => false,
         };
         if m.return_to_start && ended_normally {
             let (x, y) = self.activation;
@@ -303,6 +315,10 @@ impl Engine {
             } => {
                 let p = self.resolve_point(*anchor, (*x, *y), (*dx, *dy), *coord_jitter_px);
                 self.glide(p, *move_duration_ms, cancel)?;
+                // Windows would drop the click without a word (UIPI): say so.
+                if self.input.blocked(Some(p)) {
+                    return Err(InputError::AccessDenied.into());
+                }
                 // Held keys go down after the travel, so nothing reacts to
                 // Shift+move, and stay down through both settles.
                 let pressed = self.hold_keys(modifiers, held_key.as_ref(), held)?;
@@ -340,10 +356,41 @@ impl Engine {
             }
 
             Step::Scroll { amount, axis, at, .. } => {
+                let target = at.or_else(|| self.input.cursor_pos().ok());
+                if target.is_some_and(|p| self.input.blocked(Some(p))) {
+                    return Err(InputError::AccessDenied.into());
+                }
                 self.input.scroll(*axis, *amount, *at)?;
             }
 
+            Step::WaitColor { x, y, color, tolerance, timeout_ms, on_timeout, .. } => {
+                let want = parse_hex(color).unwrap_or([0, 0, 0]);
+                let started = std::time::Instant::now();
+                loop {
+                    let got = self.input.pixel(*x, *y)?;
+                    if color_matches(got, want, *tolerance) {
+                        break;
+                    }
+                    if started.elapsed().as_millis() >= u128::from(*timeout_ms) {
+                        if *on_timeout == TimeoutAction::Continue {
+                            break;
+                        }
+                        return Err(EngineError::ColorTimeout {
+                            x: *x,
+                            y: *y,
+                            want: to_hex(want),
+                            saw: to_hex(got),
+                            ms: *timeout_ms,
+                        });
+                    }
+                    self.wait(COLOR_POLL_MS, cancel)?;
+                }
+            }
+
             Step::Key { key, action, modifiers, hold_ms, .. } => {
+                if self.input.blocked(None) {
+                    return Err(InputError::AccessDenied.into());
+                }
                 for m in modifiers {
                     self.input.modifier(*m, true)?;
                     held.modifier(*m, true);
@@ -377,6 +424,9 @@ impl Engine {
             }
 
             Step::Text { value, per_char_ms, .. } => {
+                if self.input.blocked(None) {
+                    return Err(InputError::AccessDenied.into());
+                }
                 for unit in value.encode_utf16() {
                     if cancel.is_cancelled() {
                         return Err(EngineError::Cancelled);
@@ -506,6 +556,9 @@ mod tests {
         }
         fn unicode(&self, unit: u16, down: bool) -> crate::input::Result<()> {
             self.0.unicode(unit, down)
+        }
+        fn pixel(&self, x: i32, y: i32) -> crate::input::Result<[u8; 3]> {
+            self.0.pixel(x, y)
         }
     }
 
@@ -1283,6 +1336,77 @@ mod tests {
         assert!(took >= std::time::Duration::from_millis(55) && took < std::time::Duration::from_millis(400), "{took:?}");
         assert!(f.still_held().is_empty(), "{:?}", f.still_held());
         assert_eq!(f.events().last(), Some(&Event::Move(7, 8)), "a normal end moves the mouse back");
+    }
+
+    fn wait_color(x: i32, y: i32, color: &str, timeout_ms: u64, on_timeout: TimeoutAction) -> Step {
+        Step::WaitColor { id: "wc".into(), shuffle: false, x, y, color: color.into(), tolerance: 8, timeout_ms, on_timeout }
+    }
+
+    #[test]
+    fn wait_color_carries_on_once_the_pixel_turns() {
+        let (f, mut e) = engine();
+        f.set_pixel(10, 10, [0, 0, 0]);
+        let f2 = f.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(60));
+            f2.set_pixel(10, 10, [250, 4, 4]); // within the tolerance of #ff0000
+        });
+        let t = std::time::Instant::now();
+        let m = mac(vec![wait_color(10, 10, "#ff0000", 2_000, TimeoutAction::Stop), Step::Scroll {
+            id: "s".into(),
+            shuffle: false,
+            amount: 1,
+            axis: ScrollAxis::Vertical,
+            at: None,
+        }]);
+        e.run(&m, &CancelToken::new()).unwrap();
+        assert!(t.elapsed() >= std::time::Duration::from_millis(55), "{:?}", t.elapsed());
+        assert_eq!(f.events().len(), 1, "the step after it ran");
+    }
+
+    #[test]
+    fn wait_color_stops_the_run_or_carries_on_when_it_never_shows() {
+        let (f, mut e) = engine();
+        f.set_pixel(3, 4, [1, 2, 3]);
+        let stop = mac(vec![wait_color(3, 4, "#ffffff", 50, TimeoutAction::Stop)]);
+        match e.run(&stop, &CancelToken::new()) {
+            Err(EngineError::ColorTimeout { want, saw, .. }) => assert_eq!((want.as_str(), saw.as_str()), ("#ffffff", "#010203")),
+            other => panic!("{other:?}"),
+        }
+        let go_on = mac(vec![wait_color(3, 4, "#ffffff", 50, TimeoutAction::Continue)]);
+        assert!(e.run(&go_on, &CancelToken::new()).is_ok());
+    }
+
+    #[test]
+    fn wait_color_is_cancellable() {
+        let (_, mut e) = engine();
+        let m = mac(vec![wait_color(3, 4, "#ffffff", 60_000, TimeoutAction::Stop)]);
+        let cancel = CancelToken::new();
+        let c2 = cancel.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(40));
+            c2.cancel();
+        });
+        let t = std::time::Instant::now();
+        assert!(matches!(e.run(&m, &cancel), Err(EngineError::Cancelled)));
+        assert!(t.elapsed() < std::time::Duration::from_millis(500));
+    }
+
+    #[test]
+    fn input_to_an_app_running_as_administrator_stops_the_run_with_the_reason() {
+        let (f, mut e) = engine();
+        f.blocked.store(true, std::sync::atomic::Ordering::SeqCst);
+        let m = mac(vec![click_holding(0, vec![Modifier::Shift], None)]);
+        assert!(matches!(e.run(&m, &CancelToken::new()), Err(EngineError::Input(InputError::AccessDenied))));
+        assert!(f.still_held().is_empty());
+        assert!(!f.events().iter().any(|ev| matches!(ev, Event::Button(..))), "no click was sent into the void");
+    }
+
+    #[test]
+    fn colors_match_within_the_tolerance_on_every_channel() {
+        assert!(color_matches([100, 100, 100], [110, 90, 100], 10));
+        assert!(!color_matches([100, 100, 100], [111, 100, 100], 10));
+        assert!(color_matches([0, 0, 0], [0, 0, 0], 0));
     }
 
     /// Regression: "Until stopped" with no steps looped with nothing to wait

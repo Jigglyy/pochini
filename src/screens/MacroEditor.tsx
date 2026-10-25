@@ -10,6 +10,7 @@ import {
   Keyboard,
   MousePointerClick,
   Move,
+  Pipette,
   Play,
   Save,
   Timer,
@@ -45,6 +46,7 @@ const ADD: { kind: NewStepKind; label: string; Icon: typeof Play; hint: string }
   { kind: "key", label: "Key", Icon: Keyboard, hint: "Press a key" },
   { kind: "text", label: "Type text", Icon: Type, hint: "Type a string" },
   { kind: "wait", label: "Wait", Icon: Timer, hint: "Pause" },
+  { kind: "wait_color", label: "Wait for color", Icon: Pipette, hint: "Wait until a point on screen turns a color" },
   { kind: "scroll", label: "Scroll", Icon: ArrowUpDown, hint: "Scroll the wheel" },
 ];
 
@@ -191,7 +193,7 @@ export function MacroEditor({
   function runTest() {
     if (!m || m.steps.length === 0) return;
     onRun(`${m.name} (test)`);
-    testSteps(m.steps).catch((e) => setErr(String(e)));
+    testSteps(m.steps, m.name).catch((e) => setErr(String(e)));
   }
 
   const t = m.trigger;

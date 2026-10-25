@@ -19,7 +19,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { RunIndicator, type PendingRun } from "@/components/RunIndicator";
 import { Welcome } from "@/components/Welcome";
 import { StorageNotice } from "@/components/StorageNotice";
-import { getSettings, onSettingsChanged, setEnabled, setWelcomed } from "@/lib/ipc";
+import { answerClose, getSettings, onCloseRequested, onSettingsChanged, setEnabled, setWelcomed } from "@/lib/ipc";
 import { useShortcut, withKeys } from "@/lib/shortcuts";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
@@ -38,6 +38,8 @@ export default function App() {
   const [theme, setTheme] = useTheme();
   const [editorDirty, setEditorDirty] = useState(false);
   const [pendingNav, setPendingNav] = useState<Route | null>(null);
+  /** The window was closed for the first time: tray or quit? */
+  const [asking, setAsking] = useState(false);
 
   const go = (to: Route) => setRoute(to);
 
@@ -55,8 +57,10 @@ export default function App() {
     // The toggle hotkey can flip the master switch while we are in the
     // background; keep the switch on screen honest.
     const un = onSettingsChanged(setSettings);
+    const close = onCloseRequested(() => setAsking(true));
     return () => {
       void un.then((f) => f());
+      void close.then((f) => f());
     };
   }, []);
 
@@ -196,6 +200,22 @@ export default function App() {
           }}
         />
       )}
+
+      <AlertDialog open={asking} onOpenChange={setAsking}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Keep Pochini running in the tray?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Your hotkeys keep working while the window is closed. Open it again from the tray icon
+              (bottom right, by the clock), or quit from its menu. You can change this in Settings.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => void answerClose(false)}>Quit Pochini</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void answerClose(true)}>Keep running in the tray</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={pendingNav !== null} onOpenChange={(o) => !o && setPendingNav(null)}>
         <AlertDialogContent>

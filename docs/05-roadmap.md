@@ -88,7 +88,7 @@ Rebuilt on ShadCN + Tailwind v4 in Kanbini's style.
 - [x] Motion: animated expand / collapse, gliding lists, screen fades (reduced motion respected)
 - [x] Playwright e2e suite against the real app in a headless test mode (`npm run e2e`)
 - [ ] Coordinate picking via a hook-armed key, with a magnifier
-- [ ] Tray icon (closing the window currently quits the app and its hotkeys)
+- [x] Tray icon (see M5)
 - [x] First-run welcome (panic key, real input, hook privacy, admin apps)
 - [x] Undo/redo in the editor, Undo after deleting a step or macro, in-window shortcuts
 - [x] Search box on the macro list, Copy as text / Paste, Export all
@@ -97,9 +97,10 @@ Rebuilt on ShadCN + Tailwind v4 in Kanbini's style.
 
 ## M5 - Next
 
-- [ ] Tray icon, close to tray, opt-in start with Windows
-- [ ] Run history, with engine errors shown
-- [ ] "Wait until a pixel has a color" step
+- [x] Tray icon, close to tray (asked the first time), opt-in start with Windows
+- [x] Run history, with engine errors shown, and Restart as administrator when Windows blocks
+      input to an app running as administrator
+- [x] "Wait until a pixel has a color" step
 - [ ] Record mode (clicks, keys and the waits between them)
 - [ ] Pick key armed by the hook, with a magnifier
 - [ ] Coordinates relative to the "App only" window

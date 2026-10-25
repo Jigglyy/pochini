@@ -17,7 +17,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-single-instance = "2"
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
@@ -28,6 +28,7 @@ ulid = { version = "1", features = ["serde"] }
 arc-swap = "1"
 time = { version = "0.3", features = ["formatting", "parsing", "serde-well-known"] }
 tauri-plugin-window-state = "2"
+tauri-plugin-autostart = "2"
 
 [target.'cfg(windows)'.dependencies.windows]
 version = "0.58"
@@ -43,6 +44,7 @@ features = [
     "Win32_System_Threading",
     "Win32_UI_HiDpi",
     "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
 ]
 

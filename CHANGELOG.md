@@ -4,6 +4,32 @@ All notable changes to Pochini. Versions follow [semantic versioning](https://se
 while the major version is 0, a minor bump may change behaviour or the macro file format.
 Each version is built with `npm run release` into `release/Pochini-<version>.exe`.
 
+## Unreleased
+
+### Added
+
+- **Tray icon.** Pochini keeps running in the tray with the window closed, so hotkeys keep
+  working; the first time you close the window it asks whether to keep running or quit (change
+  it in Settings > Window). The tray menu opens the window, turns macros on or off, stops a
+  running macro, or quits.
+- **Start with Windows**, off unless you turn it on in Settings > Window: Pochini starts in
+  the tray when you sign in.
+- **Wait for color**: a new step that waits until a point on screen turns a color (within a
+  tolerance), then carries on. If it never does, the macro stops and says which color it saw,
+  or carries on, as you choose. Read color takes the point's color as it is now.
+- **Run history** in Settings: the last runs and how each ended.
+- **Clear reasons when a run fails.** The run pill stays with what went wrong. When Windows
+  blocks the input because the app in front runs as administrator (it would otherwise drop
+  every click silently), the run stops, says so, and offers to restart Pochini as
+  administrator. Settings > Window shows whether it runs as administrator.
+- A run that finishes shows "Finished" for a moment.
+
+### Changed
+
+- The run pill follows the app's run events instead of asking every 200 ms.
+- The macros file is now version 2 (for the new step). Older versions refuse it rather than
+  lose macros that use it; 0.11.1 and later say so plainly.
+
 ## 0.12.0 - 2026-10-25
 
 ### Added

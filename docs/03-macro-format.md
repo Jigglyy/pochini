@@ -201,6 +201,23 @@ Uses `KEYEVENTF_UNICODE`. Not suitable for game input - the UI should say so inl
 { "id": "…", "type": "wait", "ms": { "base": 500, "jitter": 200 } }
 ```
 
+### `wait_color` (schema 2)
+
+```jsonc
+{ "id": "…", "type": "wait_color",
+  "x": 1623, "y": 592,         // the screen pixel to watch, virtual-desktop pixels
+  "color": "#33aa55",
+  "tolerance": 16,             // each of r, g, b may differ by this much (0 to 255)
+  "timeout_ms": 5000,
+  "on_timeout": "stop" }       // or "continue": carry on with the next step
+```
+
+Waits until the pixel has the color, checking every 25 ms (`COLOR_POLL_MS`). On a timeout
+with `"stop"` the run ends with an error that says which color it saw. It reads the screen
+with documented APIs (`GetPixel`); a game in exclusive fullscreen may read as black. Older
+builds cannot read this step, which is why the schema went to version 2; a shared file says
+`"version": 2` only if it contains one.
+
 This is the original spec's "wait a bit, with a tick for randomness and how much time the randomness
 adds." `jitter: 0` means exact; `jitter: n` means `base + uniform(0, n)`.
 
@@ -218,6 +235,7 @@ plus a checkbox that reveals a second number field, matching the original descri
 {
   "panic_key": { "vk": 27, "scancode": 1, "extended": false, "label": "Esc" },
   "welcomed": true,              // the first-run welcome has been closed
+  "close_to_tray": null,         // true: closing keeps running in the tray; false: quits; null: ask
   "enabled": true,               // master switch: false = every hotkey ignored
   "rng_seed": null,              // set to make runs reproducible while debugging
   "toggle_hotkey": {             // flips `enabled` from anywhere; null = none

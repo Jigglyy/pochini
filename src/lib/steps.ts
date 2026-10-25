@@ -64,6 +64,18 @@ export function blankStep(kind: NewStepKind): Step {
       return { type: "text", id, shuffle: false, value: "", per_char_ms: { base: 20, jitter: 15 } };
     case "wait":
       return { type: "wait", id, shuffle: false, ms: { base: 500, jitter: 0 } };
+    case "wait_color":
+      return {
+        type: "wait_color",
+        id,
+        shuffle: false,
+        x: 0,
+        y: 0,
+        color: "#ffffff",
+        tolerance: 16,
+        timeout_ms: 5000,
+        on_timeout: "stop",
+      };
   }
 }
 
@@ -147,6 +159,8 @@ export function summarize(s: Step): string {
       return s.value ? `Type "${s.value.length > 32 ? s.value.slice(0, 32) + "..." : s.value}"` : "Type text";
     case "wait":
       return `Wait ${ms(s.ms)}`;
+    case "wait_color":
+      return `Wait until (${s.x}, ${s.y}) is ${s.color} (up to ${fmtRange([s.timeout_ms, s.timeout_ms])})`;
   }
 }
 
@@ -175,6 +189,8 @@ export function stepRange(s: Step): [number, number] {
       return [s.move_duration_ms, s.move_duration_ms];
     case "scroll":
       return [0, 0];
+    case "wait_color":
+      return [0, s.timeout_ms];
   }
 }
 

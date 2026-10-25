@@ -85,7 +85,21 @@ export type Step =
       hold_ms: Jitter;
     }
   | { type: "text"; id: string; shuffle: boolean; value: string; per_char_ms: Jitter }
-  | { type: "wait"; id: string; shuffle: boolean; ms: Jitter };
+  | { type: "wait"; id: string; shuffle: boolean; ms: Jitter }
+  | {
+      /** Wait until the pixel at (x, y) has `color`, each channel within
+       *  `tolerance`; after `timeout_ms`, stop the run or carry on. */
+      type: "wait_color";
+      id: string;
+      shuffle: boolean;
+      x: number;
+      y: number;
+      /** "#rrggbb" */
+      color: string;
+      tolerance: number;
+      timeout_ms: number;
+      on_timeout: "stop" | "continue";
+    };
 
 export type StepKind = Step["type"];
 
@@ -161,6 +175,24 @@ export type Settings = {
   toggle_hotkey: Hotkey | null;
   /** The first-run welcome has been seen. */
   welcomed: boolean;
+  /** Closing the window keeps Pochini in the tray (true) or quits (false);
+   *  null asks the first time. */
+  close_to_tray: boolean | null;
+};
+
+/** How a run ended (app.rs Outcome). */
+export type Outcome =
+  | { kind: "finished" }
+  | { kind: "stopped" }
+  | { kind: "cancelled" }
+  | { kind: "failed"; message: string; admin: boolean };
+
+export type RunRecord = {
+  name: string;
+  macro_id: string;
+  at_ms: number;
+  duration_ms: number;
+  outcome: Outcome;
 };
 
 export type AppWindow = { process: string; title: string };

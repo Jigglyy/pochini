@@ -5,7 +5,10 @@
 
 use serde::{Deserialize, Serialize};
 
-pub const SCHEMA_VERSION: u32 = 1;
+/// 2: the "wait until a pixel has a color" step (`Step::WaitColor`). Older
+/// builds cannot read it, so they refuse the file as newer instead of losing
+/// macros that use it.
+pub const SCHEMA_VERSION: u32 = 2;
 
 /// A duration with optional uniform jitter: `base + uniform(0, jitter)`.
 ///
@@ -226,6 +229,56 @@ pub enum Step {
         shuffle: bool,
         ms: Jitter,
     },
+    /// Wait until the screen pixel at (x, y) has `color` ("#rrggbb"), each
+    /// channel within `tolerance`, checking every few milliseconds. After
+    /// `timeout_ms` the run stops or carries on (`on_timeout`). It reads the
+    /// screen with documented APIs; a game in exclusive fullscreen may read
+    /// as black.
+    WaitColor {
+        id: String,
+        #[serde(default)]
+        shuffle: bool,
+        x: i32,
+        y: i32,
+        color: String,
+        #[serde(default = "default_tolerance")]
+        tolerance: u8,
+        #[serde(default = "default_color_timeout")]
+        timeout_ms: u64,
+        #[serde(default)]
+        on_timeout: TimeoutAction,
+    },
+}
+
+fn default_tolerance() -> u8 {
+    16
+}
+
+fn default_color_timeout() -> u64 {
+    5_000
+}
+
+/// What a `WaitColor` step does when the color never shows.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TimeoutAction {
+    #[default]
+    Stop,
+    Continue,
+}
+
+/// "#rrggbb" (or "rrggbb") to bytes.
+pub fn parse_hex(s: &str) -> Option<[u8; 3]> {
+    let h = s.trim().trim_start_matches('#');
+    if h.len() != 6 || !h.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    let b = |i: usize| u8::from_str_radix(&h[i..i + 2], 16).ok();
+    Some([b(0)?, b(2)?, b(4)?])
+}
+
+pub fn to_hex(c: [u8; 3]) -> String {
+    format!("#{:02x}{:02x}{:02x}", c[0], c[1], c[2])
 }
 
 impl Step {
@@ -237,7 +290,8 @@ impl Step {
             | Step::Scroll { shuffle, .. }
             | Step::Key { shuffle, .. }
             | Step::Text { shuffle, .. }
-            | Step::Wait { shuffle, .. } => *shuffle,
+            | Step::Wait { shuffle, .. }
+            | Step::WaitColor { shuffle, .. } => *shuffle,
         }
     }
 
@@ -256,7 +310,8 @@ impl Step {
             | Step::Scroll { id, .. }
             | Step::Key { id, .. }
             | Step::Text { id, .. }
-            | Step::Wait { id, .. } => *id = new,
+            | Step::Wait { id, .. }
+            | Step::WaitColor { id, .. } => *id = new,
         }
     }
 }
@@ -295,7 +350,8 @@ impl Step {
             | Step::Scroll { id, .. }
             | Step::Key { id, .. }
             | Step::Text { id, .. }
-            | Step::Wait { id, .. } => id,
+            | Step::Wait { id, .. }
+            | Step::WaitColor { id, .. } => id,
         }
     }
 
@@ -340,6 +396,7 @@ impl Step {
                 move_duration_ms, ..
             } => (*move_duration_ms as u64, *move_duration_ms as u64),
             Step::Scroll { .. } => (0, 0),
+            Step::WaitColor { timeout_ms, .. } => (0, *timeout_ms),
         }
     }
 }
@@ -593,6 +650,10 @@ pub struct Settings {
     /// The first-run welcome has been seen.
     #[serde(default)]
     pub welcomed: bool,
+    /// Closing the window keeps Pochini running in the tray (true) or quits
+    /// (false). `None`: ask the first time.
+    #[serde(default)]
+    pub close_to_tray: Option<bool>,
 }
 
 /// Esc: the instinctive "stop" key (docs/06-open-questions.md #3).
@@ -626,6 +687,7 @@ impl Default for Settings {
             rng_seed: None,
             toggle_hotkey: default_toggle_hotkey(),
             welcomed: false,
+            close_to_tray: None,
         }
     }
 }
@@ -949,6 +1011,29 @@ mod tests {
         assert!(f.insert_at(Macro::new("d"), 99), "past the end means at the end");
         assert_eq!(f.macros[3].name, "d");
         let _ = (a, c);
+    }
+
+    #[test]
+    fn hex_colors_parse_and_print() {
+        assert_eq!(parse_hex("#33aa5F"), Some([0x33, 0xaa, 0x5f]));
+        assert_eq!(parse_hex("33aa5f"), Some([0x33, 0xaa, 0x5f]));
+        assert_eq!(parse_hex("#33aa5"), None);
+        assert_eq!(parse_hex("#zzzzzz"), None);
+        assert_eq!(to_hex([1, 0xab, 255]), "#01abff");
+    }
+
+    #[test]
+    fn a_wait_color_step_roundtrips_with_defaults() {
+        let s: Step = serde_json::from_str(r##"{"type":"wait_color","id":"c","x":5,"y":6,"color":"#ff0000"}"##).unwrap();
+        match &s {
+            Step::WaitColor { tolerance, timeout_ms, on_timeout, .. } => {
+                assert_eq!((*tolerance, *timeout_ms, *on_timeout), (16, 5_000, TimeoutAction::Stop));
+            }
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(s.duration_range(), (0, 5_000));
+        let back: Step = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
+        assert_eq!(back, s);
     }
 
     #[test]

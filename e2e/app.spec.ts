@@ -118,3 +118,19 @@ test("--smoke starts, checks itself and exits cleanly", async () => {
   });
   expect(code).toBe(0);
 });
+
+test("Settings > Window: tray, start with Windows, administrator", async ({ app: { page, dataDir } }) => {
+  await page.getByRole("button", { name: "Settings" }).click();
+  await expect(page.getByText("Pochini asks the first time you close the window.")).toBeVisible();
+  await page.getByRole("switch", { name: /^Keep running in the tray/ }).click();
+  await expect
+    .poll(async () => JSON.parse(await readFile(join(dataDir, "settings.json"), "utf8")).close_to_tray)
+    .toBe(true);
+
+  // Test mode keeps "start with Windows" in a file, never in the registry.
+  await page.getByRole("switch", { name: /^Start with Windows/ }).click();
+  await expect.poll(async () => (await readFile(join(dataDir, "autostart.txt"), "utf8").catch(() => ""))).toBe("on");
+
+  await expect(page.getByText("Not running as administrator")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Restart as administrator" })).toBeVisible();
+});

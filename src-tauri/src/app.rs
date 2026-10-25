@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
-use crate::engine::{timer, CancelToken, Engine};
+use crate::engine::{timer, CancelToken, Engine, EngineError};
 use crate::hotkey::logic::{Seen, SeenResult, Via};
 use crate::hotkey::{BindingTable, TriggerEvent};
 use crate::input::InputBackend;
@@ -22,6 +22,58 @@ pub const MAX_QUEUE: usize = 50;
 /// than a Tauri `AppHandle` so tests can run without a window.
 pub trait Notify: Send + Sync {
     fn settings_changed(&self, settings: &Settings);
+    /// What runs, or is queued, changed (replaces polling in the UI).
+    fn run_changed(&self, _status: &RunStatus) {}
+    /// A run ended, however it ended.
+    fn run_finished(&self, _record: &RunRecord) {}
+}
+
+/// How a run ended, for the run history and the run pill.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Outcome {
+    Finished,
+    /// Panic key, Stop, switching off, or its own hotkey.
+    Stopped,
+    /// Cancelled during the countdown, before it touched anything.
+    Cancelled,
+    /// `admin`: Windows was blocking input to an app running as
+    /// administrator, which restarting Pochini as administrator fixes.
+    Failed { message: String, admin: bool },
+}
+
+/// One run, newest first in the history.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct RunRecord {
+    pub name: String,
+    pub macro_id: String,
+    /// Unix milliseconds when it started (or was cancelled).
+    pub at_ms: u64,
+    pub duration_ms: u64,
+    pub outcome: Outcome,
+}
+
+/// How many runs Settings > Run history keeps (in memory only).
+pub const HISTORY: usize = 30;
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// What a run's result means for the user.
+pub fn outcome_of(started: bool, result: &Result<(), EngineError>) -> Outcome {
+    match (started, result) {
+        (false, _) => Outcome::Cancelled,
+        (true, Ok(())) => Outcome::Finished,
+        (true, Err(EngineError::Cancelled)) => Outcome::Stopped,
+        (true, Err(e)) => Outcome::Failed {
+            message: e.to_string(),
+            admin: matches!(e, EngineError::Input(crate::input::InputError::AccessDenied)),
+        },
+    }
 }
 
 pub struct AppState {
@@ -45,6 +97,8 @@ pub struct AppState {
     pub recording: AtomicBool,
     /// Bumped on every `set_recording`, so an old expiry timer does nothing.
     pub recording_gen: AtomicU64,
+    /// The last runs, newest first (Settings > Run history).
+    pub history: Mutex<VecDeque<RunRecord>>,
 }
 
 /// A recording that is never finished (the window crashed, say) stops
@@ -149,37 +203,69 @@ impl AppState {
             .cloned()
     }
 
+    /// Tell the UI what runs now. Never call it while holding `running` or
+    /// `queue`: it locks both.
+    pub fn notify_status(&self) {
+        if let Some(n) = &self.notify {
+            n.run_changed(&self.run_status());
+        }
+    }
+
+    pub fn record_run(&self, r: RunRecord) {
+        {
+            let mut h = self.history.lock().unwrap();
+            h.push_front(r.clone());
+            h.truncate(HISTORY);
+        }
+        if let Some(n) = &self.notify {
+            n.run_finished(&r);
+        }
+    }
+
+    pub fn run_history(&self) -> Vec<RunRecord> {
+        self.history.lock().unwrap().iter().cloned().collect()
+    }
+
     /// Stop whatever is running or counting down, and drop everything queued.
     pub fn abort(&self) {
-        let mut g = self.running.lock().unwrap();
-        self.queue.lock().unwrap().clear();
-        if let Some(h) = g.take() {
-            h.cancel.cancel();
+        {
+            let mut g = self.running.lock().unwrap();
+            self.queue.lock().unwrap().clear();
+            if let Some(h) = g.take() {
+                h.cancel.cancel();
+            }
         }
+        self.notify_status();
     }
 
     /// Stop `macro_id` if it is the one running, and drop its queued runs.
     /// Other macros' queued runs still go ahead.
     pub fn abort_if(&self, macro_id: &str) {
-        let mut g = self.running.lock().unwrap();
-        self.queue.lock().unwrap().retain(|p| p.mac.id != macro_id);
-        if g.as_ref().is_some_and(|h| h.macro_id == macro_id) {
-            if let Some(h) = g.take() {
-                h.cancel.cancel();
+        {
+            let mut g = self.running.lock().unwrap();
+            self.queue.lock().unwrap().retain(|p| p.mac.id != macro_id);
+            if g.as_ref().is_some_and(|h| h.macro_id == macro_id) {
+                if let Some(h) = g.take() {
+                    h.cancel.cancel();
+                }
             }
         }
+        self.notify_status();
     }
 
     /// End `macro_id`'s run the way its own hotkey does (a hold-to-repeat key
     /// released, a toggle pressed again): a normal end, not an abort, so
     /// "move mouse back" still happens.
     pub fn stop_if(&self, macro_id: &str) {
-        let mut g = self.running.lock().unwrap();
-        if g.as_ref().is_some_and(|h| h.macro_id == macro_id) {
-            if let Some(h) = g.take() {
-                h.cancel.stop();
+        {
+            let mut g = self.running.lock().unwrap();
+            if g.as_ref().is_some_and(|h| h.macro_id == macro_id) {
+                if let Some(h) = g.take() {
+                    h.cancel.stop();
+                }
             }
         }
+        self.notify_status();
     }
 
     pub fn running_id(&self) -> Option<String> {
@@ -336,7 +422,7 @@ fn claim(slot: &mut Option<RunHandle>, mac: &Macro) -> (u64, CancelToken) {
 /// is already running. The run thread drains the queue before it exits, so
 /// queued runs follow each other back to back.
 fn launch(state: &Arc<AppState>, first: Pending, queueable: bool) {
-    let (run_id, cancel) = {
+    let claimed = {
         let mut g = state.running.lock().unwrap();
         if g.is_some() {
             if queueable {
@@ -345,9 +431,14 @@ fn launch(state: &Arc<AppState>, first: Pending, queueable: bool) {
                     q.push_back(first);
                 }
             }
-            return;
+            None
+        } else {
+            Some((claim(&mut g, &first.mac), first))
         }
-        claim(&mut g, &first.mac)
+    };
+    state.notify_status();
+    let Some(((run_id, cancel), first)) = claimed else {
+        return;
     };
 
     let st = state.clone();
@@ -361,6 +452,9 @@ fn launch(state: &Arc<AppState>, first: Pending, queueable: bool) {
             // gets throttled the moment the user switches to the game, which
             // is exactly what the countdown is for. It is cancellable.
             let go = p.delay_ms == 0 || timer::wait(p.delay_ms, &cancel);
+            let started = std::time::Instant::now();
+            let at_ms = now_ms();
+            let mut result = Ok(());
             if go {
                 let at = match chain_start {
                     Some(start) if p.from_chain_start => Some(start),
@@ -372,29 +466,39 @@ fn launch(state: &Arc<AppState>, first: Pending, queueable: bool) {
                 chain_start = chain_start.or(at);
                 let seed = st.settings.lock().unwrap().rng_seed;
                 let mut engine = Engine::new(st.input.clone(), seed);
-                let _ = engine.run_at(&p.mac, &cancel, at);
+                result = engine.run_at(&p.mac, &cancel, at);
             }
+            st.record_run(RunRecord {
+                name: p.mac.name.clone(),
+                macro_id: p.mac.id.clone(),
+                at_ms,
+                duration_ms: started.elapsed().as_millis() as u64,
+                outcome: outcome_of(go, &result),
+            });
 
             // Hand over to the next queued run, or release the slot. If an
             // abort already took the slot (panic clears the queue; disabling
             // one macro only drops its own entries), whatever is left still
             // runs, unless a fresh press has claimed the slot in the meantime.
-            let mut g = st.running.lock().unwrap();
-            let ours = g.as_ref().is_some_and(|h| h.run_id == run_id);
-            if ours || g.is_none() {
-                let next = st.queue.lock().unwrap().pop_front();
-                match next {
-                    Some(n) => {
-                        let (id, c) = claim(&mut g, &n.mac);
-                        job = Some((n, id, c));
-                    }
-                    None => {
-                        if ours {
-                            *g = None;
+            {
+                let mut g = st.running.lock().unwrap();
+                let ours = g.as_ref().is_some_and(|h| h.run_id == run_id);
+                if ours || g.is_none() {
+                    let next = st.queue.lock().unwrap().pop_front();
+                    match next {
+                        Some(n) => {
+                            let (id, c) = claim(&mut g, &n.mac);
+                            job = Some((n, id, c));
+                        }
+                        None => {
+                            if ours {
+                                *g = None;
+                            }
                         }
                     }
                 }
             }
+            st.notify_status();
         }
     });
     if spawned.is_err() {
@@ -435,6 +539,7 @@ mod tests {
             storage_problem: Mutex::new(None),
             recording: AtomicBool::new(false),
             recording_gen: AtomicU64::new(0),
+            history: Mutex::new(VecDeque::new()),
         });
         (st, input, rec)
     }
@@ -913,6 +1018,46 @@ mod tests {
         *st.storage_problem.lock().unwrap() = None;
         st.persist().unwrap();
         assert_eq!(st.store.load_macros().unwrap().macros[0].name, "made while locked");
+    }
+
+    #[test]
+    fn every_run_lands_in_the_history_with_how_it_ended() {
+        let (st, input, _) = state_with(vec![marker("ok", false, Anchor::Fixed), long_wait("slow")]);
+        handle(&st, start("ok"));
+        assert!(wait_until(|| st.run_history().len() == 1, 1000));
+        handle(&st, start("slow"));
+        assert!(wait_until(|| st.running_id().is_some(), 500));
+        handle(&st, TriggerEvent::Panic);
+        assert!(wait_until(|| st.run_history().len() == 2, 1000));
+        handle(&st, TriggerEvent::Start { macro_id: "ok".into(), delay_ms: 5_000, at: None });
+        assert!(wait_until(|| st.running_id().is_some(), 500));
+        handle(&st, TriggerEvent::Panic); // during the countdown
+        assert!(wait_until(|| st.run_history().len() == 3, 1000));
+        input.blocked.store(true, Ordering::SeqCst);
+        let mut typing = Macro::new("types");
+        typing.id = "types".into();
+        typing.steps.push(Step::Text { id: "t".into(), shuffle: false, value: "x".into(), per_char_ms: Jitter::exact(0) });
+        st.macros.lock().unwrap().macros.push(typing);
+        handle(&st, start("types"));
+        assert!(wait_until(|| st.run_history().len() == 4, 1000));
+
+        let h = st.run_history();
+        let names: Vec<&str> = h.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(names, ["types", "ok", "slow", "ok"], "newest first");
+        assert!(matches!(&h[0].outcome, Outcome::Failed { admin: true, .. }), "{:?}", h[0].outcome);
+        assert_eq!(h[1].outcome, Outcome::Cancelled);
+        assert_eq!(h[2].outcome, Outcome::Stopped);
+        assert_eq!(h[3].outcome, Outcome::Finished);
+    }
+
+    #[test]
+    fn the_history_is_capped() {
+        let (st, _, _) = state_with(vec![]);
+        for i in 0..(HISTORY + 5) {
+            st.record_run(RunRecord { name: i.to_string(), macro_id: "m".into(), at_ms: 0, duration_ms: 0, outcome: Outcome::Finished });
+        }
+        assert_eq!(st.run_history().len(), HISTORY);
+        assert_eq!(st.run_history()[0].name, (HISTORY + 4).to_string());
     }
 
     #[test]

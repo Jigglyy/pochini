@@ -6,6 +6,7 @@ import {
   Keyboard,
   MousePointerClick,
   Move,
+  Pipette,
   RotateCcw,
   Timer,
   Type,
@@ -41,6 +42,7 @@ export const KIND_ICONS: Record<ColorKind, LucideIcon> = {
   key: Keyboard,
   text: Type,
   wait: Timer,
+  wait_color: Pipette,
   scroll: ArrowUpDown,
 };
 

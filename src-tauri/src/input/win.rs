@@ -230,6 +230,116 @@ impl InputBackend for WinInput {
         }
         Self::send(&[Self::kbd(unit, flags)])
     }
+
+    fn pixel(&self, x: i32, y: i32) -> Result<[u8; 3]> {
+        use windows::Win32::Graphics::Gdi::{GetDC, GetPixel, ReleaseDC, CLR_INVALID};
+        // SAFETY: the screen DC is released right after one GetPixel. Virtual
+        // desktop coordinates work as is: the screen DC's origin is the
+        // primary monitor's top-left, like ours.
+        let c = unsafe {
+            let dc = GetDC(None);
+            let c = GetPixel(dc, x, y);
+            ReleaseDC(None, dc);
+            c
+        };
+        if c.0 == CLR_INVALID {
+            return Err(InputError::NoDisplays);
+        }
+        Ok([(c.0 & 0xFF) as u8, ((c.0 >> 8) & 0xFF) as u8, ((c.0 >> 16) & 0xFF) as u8])
+    }
+
+    fn blocked(&self, at: Option<(i32, i32)>) -> bool {
+        use windows::Win32::Foundation::POINT;
+        use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId, WindowFromPoint};
+        if is_elevated() {
+            return false;
+        }
+        // SAFETY: plain window queries on handles the system just gave us.
+        let pid = unsafe {
+            let hwnd = match at {
+                Some((x, y)) => WindowFromPoint(POINT { x, y }),
+                None => GetForegroundWindow(),
+            };
+            if hwnd.0.is_null() {
+                return false;
+            }
+            let mut pid = 0u32;
+            GetWindowThreadProcessId(hwnd, Some(&mut pid));
+            pid
+        };
+        pid != 0 && process_elevated(pid) == Some(true)
+    }
+}
+
+/// Does `pid` run as administrator? `None` if we may not look (a protected
+/// process), which callers treat as "no".
+fn process_elevated(pid: u32) -> Option<bool> {
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+    // SAFETY: the handle is checked, used for one query, and closed.
+    unsafe {
+        let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
+        let r = token_elevated(h);
+        let _ = CloseHandle(h);
+        r
+    }
+}
+
+/// Is this process (Pochini) running as administrator? Asked once.
+pub fn is_elevated() -> bool {
+    static ELEVATED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ELEVATED.get_or_init(|| {
+        // SAFETY: the pseudo-handle of our own process needs no closing.
+        unsafe { token_elevated(windows::Win32::System::Threading::GetCurrentProcess()) }.unwrap_or(false)
+    })
+}
+
+/// SAFETY: `process` must be a live process handle with query rights.
+unsafe fn token_elevated(process: windows::Win32::Foundation::HANDLE) -> Option<bool> {
+    use windows::Win32::Foundation::{CloseHandle, HANDLE};
+    use windows::Win32::Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY};
+    use windows::Win32::System::Threading::OpenProcessToken;
+    let mut token = HANDLE::default();
+    OpenProcessToken(process, TOKEN_QUERY, &mut token).ok()?;
+    let mut e = TOKEN_ELEVATION::default();
+    let mut len = 0u32;
+    let ok = GetTokenInformation(
+        token,
+        TokenElevation,
+        Some(&mut e as *mut _ as *mut core::ffi::c_void),
+        std::mem::size_of::<TOKEN_ELEVATION>() as u32,
+        &mut len,
+    )
+    .is_ok();
+    let _ = CloseHandle(token);
+    ok.then_some(e.TokenIsElevated != 0)
+}
+
+/// "Restart as administrator": start a copy of Pochini with the UAC prompt
+/// (`runas`), passing `--restarted` so it does not hand over to this one.
+/// Only ever on the user's request (CLAUDE.md rule 10). Ok if it started.
+pub fn restart_elevated() -> std::result::Result<(), String> {
+    use windows::core::HSTRING;
+    use windows::Win32::UI::Shell::ShellExecuteW;
+    use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    // SAFETY: all strings live until the call returns; no window handle.
+    let r = unsafe {
+        ShellExecuteW(
+            None,
+            &HSTRING::from("runas"),
+            &HSTRING::from(exe.as_os_str()),
+            &HSTRING::from("--restarted"),
+            None,
+            SW_SHOWNORMAL,
+        )
+    };
+    // ShellExecute reports success as a value above 32.
+    if r.0 as isize > 32 {
+        Ok(())
+    } else {
+        Err("Pochini was not restarted (the Windows prompt was declined).".into())
+    }
 }
 
 unsafe extern "system" fn enum_proc(

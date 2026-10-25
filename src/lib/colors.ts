@@ -39,7 +39,7 @@ export const COLOR_CHOICES: readonly StepColor[] = [...ACCENTS.map((a) => a.name
  *  from a fixed-position Click, matching the editor's Add buttons. */
 export type ColorKind = NewStepKind;
 
-export const KINDS: readonly ColorKind[] = ["click", "click_here", "move", "key", "text", "wait", "scroll"];
+export const KINDS: readonly ColorKind[] = ["click", "click_here", "move", "key", "text", "wait", "wait_color", "scroll"];
 
 export const KIND_LABELS: Record<ColorKind, string> = {
   click: "Click",
@@ -48,6 +48,7 @@ export const KIND_LABELS: Record<ColorKind, string> = {
   key: "Key",
   text: "Type text",
   wait: "Wait",
+  wait_color: "Wait for color",
   scroll: "Scroll",
 };
 
@@ -58,6 +59,7 @@ export const DEFAULT_COLORS: Record<ColorKind, StepColor> = {
   key: "orange",
   text: "amber",
   wait: "green",
+  wait_color: "lime",
   scroll: "pink",
 };
 
