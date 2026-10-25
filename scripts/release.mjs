@@ -55,10 +55,14 @@ if (!bumped.includes(`version = "${next}"`)) {
 }
 writeFileSync(cargoPath, bumped);
 
-// 2. Build the release executable (no installer bundle).
+// 2. The third-party notices: the exe embeds them, and the Release workflow
+//    refuses a commit whose notices do not match its dependencies.
+run("node scripts/notices.mjs");
+
+// 3. Build the release executable (no installer bundle).
 run("npm run tauri build -- --no-bundle");
 
-// 3. Keep exactly one build in release/.
+// 4. Keep exactly one build in release/.
 const targetDir = path.join(root, "src-tauri", "target", "release");
 const built = ["Pochini.exe", "pochini.exe"].map((f) => path.join(targetDir, f)).find(existsSync);
 if (!built) {

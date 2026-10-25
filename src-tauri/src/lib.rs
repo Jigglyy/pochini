@@ -198,6 +198,7 @@ pub fn run() {
             commands::storage_problem,
             commands::clear_storage_problem,
             commands::open_data_dir,
+            commands::third_party_notices,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

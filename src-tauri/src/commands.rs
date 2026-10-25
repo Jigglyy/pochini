@@ -347,6 +347,13 @@ pub fn open_data_dir(state: State<'_, Arc<AppState>>) -> R<()> {
         .map_err(|e| format!("Could not open the folder: {e}"))
 }
 
+/// The licenses of the open source software inside the exe, for Settings >
+/// About. Built in, because the exe is shipped on its own.
+#[tauri::command]
+pub fn third_party_notices() -> R<&'static str> {
+    Ok(include_str!("../../THIRD_PARTY_NOTICES.md"))
+}
+
 #[tauri::command]
 pub fn list_monitors(state: State<'_, Arc<AppState>>) -> R<Vec<Monitor>> {
     state.input.monitors().map_err(|e| e.to_string())

@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
-import { Monitor, Moon, Sun } from "lucide-react";
+import { FileText, FolderOpen, Monitor, Moon, Sun } from "lucide-react";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { HotkeyCheck } from "@/components/HotkeyCheck";
 import { StepColorSettings } from "@/components/StepColors";
 import { KeyCapture, comboLabel } from "@/components/KeyCapture";
 import { Field, Section } from "@/components/layout";
 import { DEFAULT_COLORS, KINDS, resetStepColors, useStepColors } from "@/lib/colors";
-import { appInfo, saveSettings, type AppInfo } from "@/lib/ipc";
+import { appInfo, openDataDir, saveSettings, thirdPartyNotices, type AppInfo } from "@/lib/ipc";
 import type { ThemePref } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import type { Settings as SettingsT } from "@/types";
@@ -30,6 +31,7 @@ export function Settings({
   onTheme: (t: ThemePref) => void;
 }) {
   const [info, setInfo] = useState<AppInfo | null>(null);
+  const [notices, setNotices] = useState<string | null>(null);
   const colors = useStepColors();
   const customColors = KINDS.some((k) => colors[k] !== DEFAULT_COLORS[k]);
   useEffect(() => {
@@ -129,12 +131,37 @@ export function Settings({
             label="Data folder"
             help="macros.json holds your macros (macros.bak is the previous save) and settings.json your settings."
           >
-            <code className="select-text break-all pt-2 font-mono text-xs text-muted-foreground">
+            <code className="min-w-0 flex-1 select-text break-all pt-2 font-mono text-xs text-muted-foreground">
               {info.data_dir}
             </code>
+            <Button variant="outline" onClick={() => void openDataDir()}>
+              <FolderOpen />
+              Open
+            </Button>
+          </Field>
+          <Field label="License">
+            <span className="flex-1 pt-2 text-sm text-muted-foreground">
+              MIT. Pochini also contains open source software by others.
+            </span>
+            <Button variant="outline" onClick={() => thirdPartyNotices().then(setNotices)}>
+              <FileText />
+              Third-party licenses
+            </Button>
           </Field>
         </Section>
       )}
+
+      <Dialog open={notices !== null} onOpenChange={(o) => !o && setNotices(null)}>
+        <DialogContent className="flex max-h-[85vh] flex-col sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Third-party licenses</DialogTitle>
+            <DialogDescription>The open source software inside Pochini, and its licenses.</DialogDescription>
+          </DialogHeader>
+          <pre className="min-h-0 flex-1 overflow-auto rounded-md border border-border bg-card/40 p-3 font-mono text-xs whitespace-pre-wrap select-text">
+            {notices}
+          </pre>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

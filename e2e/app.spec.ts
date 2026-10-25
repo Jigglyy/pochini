@@ -66,3 +66,14 @@ test("runs under a content security policy, and the app breaks none of it", asyn
   await expect(page.getByText("Panic stop", { exact: true })).toBeVisible();
   expect(violations).toEqual([]);
 });
+
+test("Settings > About shows the third-party licenses built into the app", async ({ app: { page } }) => {
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByRole("button", { name: "Third-party licenses" }).click();
+  const dialog = page.getByRole("dialog", { name: "Third-party licenses" });
+  await expect(dialog).toContainText("# Third-party notices");
+  await expect(dialog).toContainText("Microsoft WebView2 SDK");
+  await expect(dialog).toContainText("tauri ");
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+});

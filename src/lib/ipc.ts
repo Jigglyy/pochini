@@ -57,6 +57,8 @@ export const storageProblem = () => invoke<LoadProblem | null>("storage_problem"
 /** Dismiss the notice; for a locked library, "Start fresh". */
 export const clearStorageProblem = () => invoke<void>("clear_storage_problem");
 export const openDataDir = () => invoke<void>("open_data_dir");
+/** THIRD_PARTY_NOTICES.md, built into the exe. */
+export const thirdPartyNotices = () => invoke<string>("third_party_notices");
 
 export const listMonitors = () => invoke<Monitor[]>("list_monitors");
 export const cursorPos = () => invoke<[number, number]>("cursor_pos");
