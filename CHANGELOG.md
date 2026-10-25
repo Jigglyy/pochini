@@ -4,7 +4,7 @@ All notable changes to Pochini. Versions follow [semantic versioning](https://se
 while the major version is 0, a minor bump may change behaviour or the macro file format.
 Each version is built with `npm run release` into `release/Pochini-<version>.exe`.
 
-## Unreleased
+## 0.13.0 - 2026-10-25
 
 ### Added
 
