@@ -1,6 +1,10 @@
 # Weekly dependency updates, grouped so each ecosystem is one pull request.
 # CI checks every one; run `npm run notices` before the next release so the
 # third-party notices match (scripts/release.mjs does it).
+#
+# Breaking upgrades are left out: major versions everywhere, and minor
+# versions of the 0.x crates whose minors break (windows, rand). Bundled into
+# one pull request they could not compile; they get migrated by hand.
 version: 2
 updates:
   - package-ecosystem: npm
@@ -10,6 +14,9 @@ updates:
     groups:
       npm:
         patterns: ["*"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     open-pull-requests-limit: 3
 
   - package-ecosystem: cargo
@@ -19,6 +26,13 @@ updates:
     groups:
       cargo:
         patterns: ["*"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "windows"
+        update-types: ["version-update:semver-minor"]
+      - dependency-name: "rand"
+        update-types: ["version-update:semver-minor"]
     open-pull-requests-limit: 3
 
   # Keeps the commit-pinned actions in the workflows current.

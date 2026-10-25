@@ -153,6 +153,8 @@ test("leaving straight after Save does not ask about unsaved changes", async ({ 
   await page.getByRole("button", { name: "Create your first macro" }).click();
   await page.getByRole("textbox", { name: "Macro name" }).fill("Quick");
   await page.keyboard.press("Control+s");
+  // Once it says Saved (before that, asking is right: the save is not done).
+  await expect(page.getByRole("button", { name: "Saved", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Macros", exact: true }).click();
   await expect(page.getByRole("alertdialog")).toHaveCount(0);
   await expect(page.locator("li[data-macro-id]").filter({ hasText: "Quick" })).toBeVisible();

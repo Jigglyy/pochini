@@ -104,7 +104,9 @@ async function launch(seed: Seed): Promise<{ app: App; close: () => Promise<void
 
   async function attach(): Promise<Page> {
     // WebView2 opens the DevTools port once the window exists.
-    const deadline = Date.now() + 45_000;
+    // A cold CI runner can take well over 45 s to start WebView2 the first time.
+    const launchMs = process.env.CI ? 90_000 : 45_000;
+    const deadline = Date.now() + launchMs;
     for (;;) {
       if (exited !== null) throw new Error(`Pochini exited (${exited}) before its window opened:\n${stderr}`);
       try {
