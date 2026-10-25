@@ -238,7 +238,11 @@ export function MacroEditor({
       // Tell the app now, not in an effect a render later: navigating away
       // right after Save asked "Discard unsaved changes?" for nothing.
       onDirtyChange(false);
-      setSaved(JSON.stringify(m));
+      // Saving from the editor counts as checking an imported macro (the
+      // backend clears `review`); say so here too, not only after a reload.
+      const now = m.review ? { ...m, review: false } : m;
+      if (now !== m) setHist((h) => h && { ...h, present: now });
+      setSaved(JSON.stringify(now));
       setSaves((n) => n + 1);
       setErr(null);
     } catch (e) {

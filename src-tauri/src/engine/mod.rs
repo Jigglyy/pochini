@@ -36,6 +36,10 @@ pub enum EngineError {
     /// A step aims inside the app's window, and there is none.
     #[error("{0}")]
     NoWindow(String),
+    /// "Stop after" ran out during a wait. Never leaves the engine: `run_at`
+    /// turns it into a normal end.
+    #[error("time up")]
+    TimeUp,
 }
 
 /// A dry run pauses this long on each point it shows.
@@ -112,6 +116,8 @@ pub struct Engine {
     pub on_step: Option<Box<dyn Fn(usize) + Send>>,
     /// The macro's "App only" app, for points inside its window.
     window_app: Option<String>,
+    /// When "stop after" runs out: waits end there instead of running on.
+    deadline: Option<std::time::Instant>,
     input: Arc<dyn InputBackend>,
     rng: StdRng,
     /// Cursor position when the current run started. See `Anchor::Activation`.
@@ -127,6 +133,7 @@ impl Engine {
             dry: false,
             on_step: None,
             window_app: None,
+            deadline: None,
             input,
             rng: match seed {
                 Some(s) => StdRng::seed_from_u64(s),
@@ -166,8 +173,16 @@ impl Engine {
         let mut held = HeldState::default();
         // A bug in a step must not leave a key held down across the whole OS:
         // catch the panic, run the release pass, report it as an error.
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.run_inner(m, cancel, &mut held)))
-            .unwrap_or(Err(EngineError::Internal));
+        self.deadline = m
+            .stop_after_ms
+            .map(|ms| std::time::Instant::now() + std::time::Duration::from_millis(ms));
+        let result = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.run_inner(m, cancel, &mut held)))
+            .unwrap_or(Err(EngineError::Internal))
+        {
+            // "Stop after" ended it in the middle of a wait: a normal end.
+            Err(EngineError::TimeUp) => Ok(()),
+            r => r,
+        };
         // The release pass runs on success, on error and on cancellation.
         // It comes before the return move, or a held button would drag.
         self.release_all(&mut held);
@@ -182,7 +197,8 @@ impl Engine {
                 EngineError::Input(_)
                 | EngineError::Internal
                 | EngineError::ColorTimeout { .. }
-                | EngineError::NoWindow(_),
+                | EngineError::NoWindow(_)
+                | EngineError::TimeUp,
             ) => false,
         };
         if m.return_to_start && ended_normally {
@@ -258,11 +274,19 @@ impl Engine {
     }
 
     fn wait(&self, ms: u64, cancel: &CancelToken) -> Result<()> {
-        if timer::wait(ms, cancel) {
-            Ok(())
-        } else {
-            Err(EngineError::Cancelled)
+        // A wait never runs past "stop after".
+        let left = self.deadline.map(|d| d.saturating_duration_since(std::time::Instant::now()).as_millis() as u64);
+        let (ms, time_up) = match left {
+            Some(left) if left <= ms => (left, true),
+            _ => (ms, false),
+        };
+        if !timer::wait(ms, cancel) {
+            return Err(EngineError::Cancelled);
         }
+        if time_up {
+            return Err(EngineError::TimeUp);
+        }
+        Ok(())
     }
 
     /// A dry run's step: show where a click or move lands, do nothing else.
@@ -1362,6 +1386,28 @@ mod tests {
         });
         assert!(matches!(e.run(&m, &cancel), Err(EngineError::Cancelled)));
         assert!(f.still_held().is_empty());
+    }
+
+    /// Regression: the limit was only checked between steps, so a long wait
+    /// (or a color that never came) ran on past it.
+    #[test]
+    fn stop_after_cuts_a_long_wait_short() {
+        let (f, mut e) = engine();
+        let mut m = mac(vec![
+            Step::Wait { id: "w".into(), shuffle: false, ms: Jitter::exact(30_000) },
+            Step::Scroll { id: "s".into(), shuffle: false, amount: 1, axis: ScrollAxis::Vertical, at: None },
+        ]);
+        m.stop_after_ms = Some(80);
+        let t = std::time::Instant::now();
+        e.run(&m, &CancelToken::new()).unwrap();
+        assert!(t.elapsed() < std::time::Duration::from_millis(1_000), "{:?}", t.elapsed());
+        assert!(f.events().is_empty(), "the step after the wait never ran");
+
+        let mut m = mac(vec![wait_color(3, 4, "#ffffff", 30_000, TimeoutAction::Stop)]);
+        m.stop_after_ms = Some(80);
+        let t = std::time::Instant::now();
+        assert!(e.run(&m, &CancelToken::new()).is_ok(), "time up is a normal end, not a color timeout");
+        assert!(t.elapsed() < std::time::Duration::from_millis(1_000), "{:?}", t.elapsed());
     }
 
     #[test]

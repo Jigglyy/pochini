@@ -695,8 +695,10 @@ pub fn hotkey_diagnostics(state: State<'_, Arc<AppState>>) -> R<HotkeyDiagnostic
 }
 
 /// Running applications for the "App only" picker.
+/// Async: it walks every window and asks each process its name, which is
+/// no work for the main thread.
 #[tauri::command]
-pub fn list_apps() -> R<Vec<crate::input::win::AppWindow>> {
+pub async fn list_apps() -> R<Vec<crate::input::win::AppWindow>> {
     #[cfg(windows)]
     return Ok(crate::input::win::list_apps());
     #[cfg(not(windows))]

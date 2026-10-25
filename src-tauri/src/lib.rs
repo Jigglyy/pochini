@@ -60,6 +60,20 @@ impl Notify for TauriNotify {
     }
 }
 
+/// The pid in `--restarted=<pid>`: the copy "Restart as administrator"
+/// started, and the process it replaces.
+pub fn restarted_from(args: impl IntoIterator<Item = String>) -> Option<u32> {
+    args.into_iter().find_map(|a| a.strip_prefix("--restarted=").and_then(|p| p.parse().ok()))
+}
+
+/// What the window-state plugin keeps between runs: everything but whether
+/// the window is shown. Restoring "shown" opened the window when Pochini
+/// started with Windows (it starts in the tray), and closing to the tray
+/// would have saved "hidden" for the next normal start.
+pub fn window_state_flags() -> tauri_plugin_window_state::StateFlags {
+    tauri_plugin_window_state::StateFlags::all() & !tauri_plugin_window_state::StateFlags::VISIBLE
+}
+
 /// What closing the window does (Settings.close_to_tray).
 #[derive(Debug, PartialEq, Eq)]
 pub enum CloseAction {
@@ -96,9 +110,13 @@ pub fn run() {
     let smoke = std::env::args().any(|a| a == "--smoke");
     // Started with Windows (autostart passes it): stay in the tray.
     let hidden = std::env::args().any(|a| a == "--hidden");
-    // The copy "Restart as administrator" starts: the old one is on its way
-    // out, so do not hand over to it (single instance).
-    let restarted = std::env::args().any(|a| a == "--restarted");
+    // The copy "Restart as administrator" starts: wait for the old one to
+    // exit, so this one passes the single-instance check instead of handing
+    // over to it, and the two keyboard hooks never overlap.
+    #[cfg(windows)]
+    if let Some(pid) = restarted_from(std::env::args()) {
+        input::win::wait_for_exit(pid, 10_000);
+    }
 
     // The Playwright test mode (debug builds only), see e2e.rs.
     #[cfg(debug_assertions)]
@@ -116,7 +134,7 @@ pub fn run() {
 
     let quiet = testing || smoke;
     let mut builder = tauri::Builder::default();
-    if !quiet && !restarted {
+    if !quiet {
         // Must be the first plugin. A second copy of Pochini would install a
         // second keyboard hook and every hotkey would fire twice; instead the
         // second launch just brings the running window to the front.
@@ -132,7 +150,7 @@ pub fn run() {
         // Size, position and maximized state, kept between runs (never in
         // test mode: a hidden test window's state would spoil the next start).
         builder = builder
-            .plugin(tauri_plugin_window_state::Builder::default().build())
+            .plugin(tauri_plugin_window_state::Builder::default().with_state_flags(window_state_flags()).build())
             .plugin(tauri_plugin_autostart::Builder::new().args(["--hidden"]).build());
     }
 
@@ -223,6 +241,14 @@ pub fn run() {
             }
             if !quiet {
                 tray::create(app, enabled)?;
+                // Start with Windows points at the exe that turned it on. A
+                // new version is a new file (and the old one gets deleted),
+                // so point it at this one.
+                use tauri_plugin_autostart::ManagerExt;
+                let launch = app.autolaunch();
+                if launch.is_enabled().unwrap_or(false) {
+                    let _ = launch.enable();
+                }
             }
 
             // The window is built here rather than by Tauri ("create": false in
@@ -346,6 +372,21 @@ fn smoke_check(app: &tauri::App, store: &storage::Store) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_restarted_copy_knows_which_process_it_replaces() {
+        let args = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(restarted_from(args(&["pochini.exe", "--restarted=4242"])), Some(4242));
+        assert_eq!(restarted_from(args(&["pochini.exe", "--hidden"])), None);
+        assert_eq!(restarted_from(args(&["pochini.exe", "--restarted"])), None, "the old form waits for nothing");
+    }
+
+    #[test]
+    fn the_window_state_never_decides_whether_the_window_shows() {
+        let f = window_state_flags();
+        assert!(!f.contains(tauri_plugin_window_state::StateFlags::VISIBLE));
+        assert!(f.contains(tauri_plugin_window_state::StateFlags::SIZE | tauri_plugin_window_state::StateFlags::POSITION));
+    }
 
     #[test]
     fn closing_the_window_hides_quits_or_asks_once() {

@@ -1,7 +1,7 @@
 //! Application state and the engine worker.
 
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
@@ -70,6 +70,10 @@ pub struct RunRecord {
 
 /// How many runs Settings > Run history keeps (in memory only).
 pub const HISTORY: usize = 30;
+
+/// The step a run is on goes to the window at most this often, so a macro of
+/// instant steps on repeat does not send it a thousand events a second.
+pub const STEP_REPORT_MS: u64 = 30;
 
 fn now_ms() -> u64 {
     std::time::SystemTime::now()
@@ -545,13 +549,33 @@ fn launch(state: &Arc<AppState>, first: Pending, queueable: bool) {
                 let seed = st.settings.lock().unwrap().rng_seed;
                 let mut engine = Engine::new(st.input.clone(), seed);
                 engine.dry = p.dry;
+                // The engine notes each step; a reporter sends the latest one
+                // every STEP_REPORT_MS while it changes, and stops the moment
+                // the run ends (dropping `stop` wakes it).
+                let current = Arc::new(AtomicUsize::new(usize::MAX));
+                let note = current.clone();
+                engine.on_step = Some(Box::new(move |i| note.store(i, Ordering::Relaxed)));
+                let (stop, ended) = std::sync::mpsc::channel::<()>();
                 let (who, id) = (st.clone(), p.mac.id.clone());
-                engine.on_step = Some(Box::new(move |i| {
-                    if let Some(n) = &who.notify {
-                        n.run_step(&id, i);
+                let reporter = std::thread::Builder::new().name("run-steps".into()).spawn(move || {
+                    let mut sent = usize::MAX;
+                    while let Err(std::sync::mpsc::RecvTimeoutError::Timeout) =
+                        ended.recv_timeout(std::time::Duration::from_millis(STEP_REPORT_MS))
+                    {
+                        let i = current.load(Ordering::Relaxed);
+                        if i != sent && i != usize::MAX {
+                            if let Some(n) = &who.notify {
+                                n.run_step(&id, i);
+                            }
+                            sent = i;
+                        }
                     }
-                }));
+                });
                 result = engine.run_at(&p.mac, &cancel, at);
+                drop(stop);
+                if let Ok(r) = reporter {
+                    let _ = r.join();
+                }
             }
             st.record_run(RunRecord {
                 name: p.mac.name.clone(),
@@ -598,10 +622,13 @@ mod tests {
     use crate::model::{Anchor, Jitter, KeyRef, Step, Trigger};
     use std::time::{Duration, Instant};
 
-    struct Recorder(Mutex<Vec<bool>>);
+    struct Recorder(Mutex<Vec<bool>>, Mutex<Vec<usize>>);
     impl Notify for Arc<Recorder> {
         fn settings_changed(&self, s: &Settings) {
             self.0.lock().unwrap().push(s.enabled);
+        }
+        fn run_step(&self, _macro_id: &str, index: usize) {
+            self.1.lock().unwrap().push(index);
         }
     }
 
@@ -609,7 +636,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("ccm-app-{}", ulid::Ulid::new()));
         std::fs::create_dir_all(&dir).unwrap();
         let input = Arc::new(FakeInput::new());
-        let rec = Arc::new(Recorder(Mutex::new(Vec::new())));
+        let rec = Arc::new(Recorder(Mutex::new(Vec::new()), Mutex::new(Vec::new())));
         let (tx, _rx) = std::sync::mpsc::channel();
         let st = Arc::new(AppState {
             store: Store::new(dir),
@@ -1167,6 +1194,36 @@ mod tests {
         st.start_pick();
         handle(&st, TriggerEvent::CaptureEnd);
         assert!(!st.picking.load(Ordering::SeqCst));
+    }
+
+    /// Regression: every step sent an event to the window, so a macro of
+    /// instant steps on repeat sent about a thousand a second.
+    #[test]
+    fn step_reports_are_coalesced_and_end_on_the_current_step() {
+        let mut m = Macro::new("fast");
+        m.id = "fast".into();
+        m.repeat = Repeat::Forever;
+        for id in ["a", "b"] {
+            m.steps.push(Step::Scroll { id: id.into(), shuffle: false, amount: 1, axis: crate::model::ScrollAxis::Vertical, at: None });
+        }
+        m.steps.push(Step::Wait { id: "slow".into(), shuffle: false, ms: Jitter::exact(0) });
+        let (st, _, rec) = state_with(vec![m]);
+        handle(&st, start("fast"));
+        std::thread::sleep(Duration::from_millis(300));
+        handle(&st, TriggerEvent::Panic);
+        assert!(wait_until(|| st.running_id().is_none(), 500));
+        let n = rec.1.lock().unwrap().len();
+        assert!((1..=20).contains(&n), "{n} step reports in 300 ms");
+
+        // A long step still gets reported, however quick the one before.
+        let mut m = Macro::new("long");
+        m.id = "long".into();
+        m.steps.push(Step::Scroll { id: "q".into(), shuffle: false, amount: 1, axis: crate::model::ScrollAxis::Vertical, at: None });
+        m.steps.push(Step::Wait { id: "w".into(), shuffle: false, ms: Jitter::exact(300) });
+        let (st, _, rec) = state_with(vec![m]);
+        handle(&st, start("long"));
+        assert!(wait_until(|| rec.1.lock().unwrap().last() == Some(&1), 250), "{:?}", rec.1.lock().unwrap());
+        st.abort();
     }
 
     #[test]

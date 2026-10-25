@@ -1,4 +1,4 @@
-import { useState, type CSSProperties, type ReactNode, type Ref } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode, type Ref } from "react";
 import { ArrowDown, ArrowUp, ChevronRight, Copy, Crosshair, GripVertical, Pipette, RotateCcw, Shuffle, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,7 +25,7 @@ import {
   useStepColors,
   type ColorKind,
 } from "@/lib/colors";
-import { pixelAt, windowOrigin } from "@/lib/ipc";
+import { cancelPick, pixelAt, windowOrigin } from "@/lib/ipc";
 import { pickPoint } from "@/lib/pick";
 import { cn } from "@/lib/utils";
 import { fmtAim, summarize, type Aim } from "@/lib/steps";
@@ -676,6 +676,14 @@ function WaitColorFields({
 function WindowPick({ process, onPick }: { process: string; onPick: (dx: number, dy: number) => void }) {
   const [busy, setBusy] = useState(false);
   const [why, setWhy] = useState<string | null>(null);
+  // Leaving while a pick waits cancels it (see CoordPicker).
+  const waiting = useRef(false);
+  useEffect(
+    () => () => {
+      if (waiting.current) void cancelPick();
+    },
+    [],
+  );
   if (!process) {
     return (
       <span className="basis-full text-xs text-warning">
@@ -691,7 +699,9 @@ function WindowPick({ process, onPick }: { process: string; onPick: (dx: number,
         onClick={async () => {
           setBusy(true);
           setWhy(null);
+          waiting.current = true;
           const at = await pickPoint();
+          waiting.current = false;
           if (at) {
             const origin = await windowOrigin(process).catch(() => null);
             if (origin) onPick(at[0] - origin[0], at[1] - origin[1]);

@@ -103,6 +103,30 @@ pub fn held_modifiers(buf: &mut [Modifier; 4], injected: u8, down: impl Fn(i32) 
     &buf[..n]
 }
 
+/// What click-to-pick does with a mouse button event.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PickClick {
+    /// Not ours: pass it on.
+    Pass,
+    /// The pick: report it, and keep it from the app under the cursor.
+    Pick,
+    /// The release of the picking click: keep it from the app too.
+    Swallow,
+    /// A click on Pochini's own window: cancel the pick and let the click
+    /// through, so the button it was meant for still works.
+    Cancel,
+}
+
+pub fn pick_click(left: bool, down: bool, over_own_window: bool) -> PickClick {
+    match (left, down, over_own_window) {
+        (_, true, true) => PickClick::Cancel,
+        (_, false, true) => PickClick::Pass,
+        (true, true, false) => PickClick::Pick,
+        (true, false, false) => PickClick::Swallow,
+        (false, _, false) => PickClick::Pass,
+    }
+}
+
 /// What the callback should do with the event it just saw.
 #[derive(Debug, Default, PartialEq)]
 pub struct Outcome {
@@ -236,6 +260,27 @@ impl KeyLogic {
             swallow: h.swallowed,
             seen: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod pick_tests {
+    use super::*;
+
+    #[test]
+    fn a_left_click_elsewhere_picks_and_is_kept_from_the_app() {
+        assert_eq!(pick_click(true, true, false), PickClick::Pick);
+        assert_eq!(pick_click(true, false, false), PickClick::Swallow);
+        assert_eq!(pick_click(false, true, false), PickClick::Pass, "right clicks are left alone");
+    }
+
+    /// Regression: a click on Pochini's own window (say, its Macros button)
+    /// was taken as the pick and never reached the button.
+    #[test]
+    fn a_click_on_pochini_cancels_the_pick_and_goes_through() {
+        assert_eq!(pick_click(true, true, true), PickClick::Cancel);
+        assert_eq!(pick_click(true, false, true), PickClick::Pass);
+        assert_eq!(pick_click(false, true, true), PickClick::Cancel);
     }
 }
 

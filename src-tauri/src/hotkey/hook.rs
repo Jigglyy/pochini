@@ -44,7 +44,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 use super::bindings::BindingTable;
-use super::logic::{self, mod_bits, KeyContext, KeyLogic, Seen, SeenResult, Via};
+use super::logic::{self, mod_bits, pick_click, KeyContext, KeyLogic, PickClick, Seen, SeenResult, Via};
 use super::{Capture, HookStatus, TriggerEvent};
 use crate::input::{INJECTED, INJECT_STAMP};
 use crate::model::{Modifier, MouseButton, ScrollAxis};
@@ -448,12 +448,18 @@ unsafe extern "system" fn mouse_callback(code: i32, wparam: WPARAM, lparam: LPAR
     };
     let capture = CAPTURE.load(Ordering::Relaxed);
     if capture == Capture::Pick as u8 {
-        // The left click picks, and is kept from the app under it.
-        if let Some((MouseButton::Left, down)) = button {
-            if down {
-                let _ = state.tx.send(TriggerEvent::Picked { x, y });
+        if let Some((b, down)) = button {
+            match pick_click(b == MouseButton::Left, down, over_own_window(x, y)) {
+                PickClick::Pick => {
+                    let _ = state.tx.send(TriggerEvent::Picked { x, y });
+                    return LRESULT(1);
+                }
+                PickClick::Swallow => return LRESULT(1),
+                PickClick::Cancel => {
+                    let _ = state.tx.send(TriggerEvent::CaptureEnd);
+                }
+                PickClick::Pass => {}
             }
-            return LRESULT(1);
         }
     } else if capture == Capture::Record as u8 && !over_own_window(x, y) {
         let rec = match button {

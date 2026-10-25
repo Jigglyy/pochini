@@ -368,7 +368,8 @@ unsafe fn token_elevated(process: windows::Win32::Foundation::HANDLE) -> Option<
 }
 
 /// "Restart as administrator": start a copy of Pochini with the UAC prompt
-/// (`runas`), passing `--restarted` so it does not hand over to this one.
+/// (`runas`), passing `--restarted=<this pid>` so it waits for this one to
+/// exit before it takes over (see `wait_for_exit`).
 /// Only ever on the user's request (CLAUDE.md rule 10). Ok if it started.
 pub fn restart_elevated() -> std::result::Result<(), String> {
     use windows::core::HSTRING;
@@ -381,7 +382,7 @@ pub fn restart_elevated() -> std::result::Result<(), String> {
             None,
             &HSTRING::from("runas"),
             &HSTRING::from(exe.as_os_str()),
-            &HSTRING::from("--restarted"),
+            &HSTRING::from(format!("--restarted={}", std::process::id())),
             None,
             SW_SHOWNORMAL,
         )
@@ -617,4 +618,21 @@ pub fn capture(x: i32, y: i32, w: i32, h: i32) -> Option<Vec<[u8; 3]>> {
         lines
     };
     (lines > 0).then(|| buf.as_chunks::<4>().0.iter().map(|p| [p[2], p[1], p[0]]).collect())
+}
+
+/// Wait (at most `ms`) for process `pid` to exit: the copy started by
+/// "Restart as administrator" waits for the old one, so the single-instance
+/// check and the keyboard hook are never doubled. True if it is gone.
+pub fn wait_for_exit(pid: u32, ms: u32) -> bool {
+    use windows::Win32::Foundation::{CloseHandle, WAIT_OBJECT_0};
+    use windows::Win32::System::Threading::{OpenProcess, WaitForSingleObject, PROCESS_SYNCHRONIZE};
+    // SAFETY: the handle is checked, waited on once, and closed.
+    unsafe {
+        let Ok(h) = OpenProcess(PROCESS_SYNCHRONIZE, false, pid) else {
+            return true; // already gone (or not ours to wait for)
+        };
+        let r = WaitForSingleObject(h, ms);
+        let _ = CloseHandle(h);
+        r == WAIT_OBJECT_0
+    }
 }

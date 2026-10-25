@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Crosshair, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { listMonitors, previewPoint } from "@/lib/ipc";
+import { cancelPick, listMonitors, previewPoint } from "@/lib/ipc";
 import { pickPoint } from "@/lib/pick";
 import { cn } from "@/lib/utils";
 import type { CaptureMeta } from "@/types";
@@ -25,10 +25,26 @@ export function CoordPicker({
   const [picking, setPicking] = useState(false);
   /** Bumped on each pick, so the fields flash to say "got it". */
   const [picked, setPicked] = useState(0);
+  const mounted = useRef(true);
+  const waiting = useRef(false);
+
+  // Leaving (a closed step, another screen) while a pick waits cancels it,
+  // or the next click anywhere would still be taken as the pick. Only then:
+  // a cancel sent after the pick ended could cancel the next one.
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      if (waiting.current) void cancelPick();
+    };
+  }, []);
 
   const pick = async () => {
     setPicking(true);
+    waiting.current = true;
     const at = await pickPoint();
+    waiting.current = false;
+    if (!mounted.current) return;
     setPicking(false);
     if (!at) return;
     const [cx, cy] = at;

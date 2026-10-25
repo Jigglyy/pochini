@@ -4,6 +4,26 @@ All notable changes to Pochini. Versions follow [semantic versioning](https://se
 while the major version is 0, a minor bump may change behaviour or the macro file format.
 Each version is built with `npm run release` into `release/Pochini-<version>.exe`.
 
+## 0.14.3 - 2026-10-25
+
+### Fixed
+
+- **Start with Windows opened the window** instead of staying in the tray: the saved window
+  state also restored "shown". It now keeps only the size, position and maximized state.
+- **Start with Windows stopped working after an update**: it pointed at the exe that turned it
+  on, and each version is a new file. Pochini now points it at itself every time it starts.
+- **Restart as administrator** could leave a second Pochini able to start later (two keyboard
+  hooks, every hotkey firing twice). The new copy now waits for the old one to quit and then
+  takes over properly.
+- **Pick** no longer takes a click on Pochini's own window as the point: clicking Pochini
+  cancels the pick and the click goes through. Leaving a step or screen while a pick waits
+  cancels it, so your next click is not swallowed.
+- Saving an imported macro in the editor now clears its "check it" notice at once.
+- "Stop after" now ends a run on time even in the middle of a long wait or a color wait.
+- A macro of very quick steps on repeat no longer floods the window with step updates (the
+  highlight is sent at most about 30 times a second).
+- The running apps list for App only is built off the app's main thread.
+
 ## 0.14.2 - 2026-10-25
 
 ### Fixed
