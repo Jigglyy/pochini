@@ -117,11 +117,39 @@ export function Settings({
         </Field>
       </Section>
 
-      <Section
-        title="Hotkey check"
-        help="Shows what Pochini receives when you press one of your hotkeys, to explain one that does nothing. Only keys you have set up are listed, never other typing."
-      >
-        <HotkeyCheck toggleCombo={settings.toggle_hotkey ? comboLabel(settings.toggle_hotkey) : null} />
+      <Section title="Window">
+        <ToggleRow
+          label="Keep running in the tray when the window is closed"
+          help="Closing the window then leaves Pochini in the tray (by the clock), with every hotkey still working. Quit from the tray icon's menu."
+          hint={settings.close_to_tray === null ? "Pochini asks the first time you close the window." : undefined}
+          checked={settings.close_to_tray === true}
+          onChange={(on) => save({ ...settings, close_to_tray: on })}
+        />
+        <ToggleRow
+          label="Start with Windows"
+          help="Pochini starts in the tray when you sign in to Windows, so your hotkeys are ready. Off unless you turn it on."
+          checked={autostart === true}
+          disabled={autostart === null}
+          onChange={(on) =>
+            setAutostart(on)
+              .then(() => setAutostartState(on))
+              .catch(() => {})
+          }
+        />
+        <Field
+          label="Administrator"
+          help="Windows only lets programs that also run as administrator send input to apps that run as administrator. Pochini never asks for it on its own."
+        >
+          <span className="flex flex-1 items-center gap-1.5 pt-2 text-sm text-muted-foreground">
+            {elevated && <ShieldCheck className="size-4 text-success" />}
+            {elevated === null ? "" : elevated ? "Running as administrator" : "Not running as administrator"}
+          </span>
+          {elevated === false && (
+            <Button variant="outline" onClick={() => void restartElevated()}>
+              Restart as administrator
+            </Button>
+          )}
+        </Field>
       </Section>
 
       <Section title="Appearance">
@@ -165,37 +193,26 @@ export function Settings({
         <StepColorSettings />
       </Section>
 
-      <Section title="Window">
-        <ToggleRow
-          label="Keep running in the tray when the window is closed"
-          help="Closing the window then leaves Pochini in the tray (by the clock), with every hotkey still working. Quit from the tray icon's menu."
-          hint={settings.close_to_tray === null ? "Pochini asks the first time you close the window." : undefined}
-          checked={settings.close_to_tray === true}
-          onChange={(on) => save({ ...settings, close_to_tray: on })}
-        />
-        <ToggleRow
-          label="Start with Windows"
-          help="Pochini starts in the tray when you sign in to Windows, so your hotkeys are ready. Off unless you turn it on."
-          checked={autostart === true}
-          disabled={autostart === null}
-          onChange={(on) =>
-            setAutostart(on)
-              .then(() => setAutostartState(on))
-              .catch(() => {})
-          }
-        />
-        <Field
-          label="Administrator"
-          help="Windows only lets programs that also run as administrator send input to apps that run as administrator. Pochini never asks for it on its own."
-        >
-          <span className="flex flex-1 items-center gap-1.5 pt-2 text-sm text-muted-foreground">
-            {elevated && <ShieldCheck className="size-4 text-success" />}
-            {elevated === null ? "" : elevated ? "Running as administrator" : "Not running as administrator"}
-          </span>
-          {elevated === false && (
-            <Button variant="outline" onClick={() => void restartElevated()}>
-              Restart as administrator
-            </Button>
+      <Section
+        title="Backup"
+        help="Saves every macro to one file you choose. Import on the macro list reads it back, here or on another PC."
+      >
+        <Field label="All macros">
+          <Button
+            variant="outline"
+            onClick={() =>
+              exportAll()
+                .then((path) => path && setBackup({ ok: true, text: `Saved to ${path}` }))
+                .catch((e) => setBackup({ ok: false, text: String(e) }))
+            }
+          >
+            <Download />
+            Export all macros...
+          </Button>
+          {backup && (
+            <span role="status" className={cn("min-w-0 text-xs break-all", backup.ok ? "text-muted-foreground" : "text-destructive")}>
+              {backup.text}
+            </span>
           )}
         </Field>
       </Section>
@@ -240,27 +257,10 @@ export function Settings({
       </Section>
 
       <Section
-        title="Backup"
-        help="Saves every macro to one file you choose. Import on the macro list reads it back, here or on another PC."
+        title="Hotkey check"
+        help="Shows what Pochini receives when you press one of your hotkeys, to explain one that does nothing. Only keys you have set up are listed, never other typing."
       >
-        <Field label="All macros">
-          <Button
-            variant="outline"
-            onClick={() =>
-              exportAll()
-                .then((path) => path && setBackup({ ok: true, text: `Saved to ${path}` }))
-                .catch((e) => setBackup({ ok: false, text: String(e) }))
-            }
-          >
-            <Download />
-            Export all macros...
-          </Button>
-          {backup && (
-            <span role="status" className={cn("min-w-0 text-xs break-all", backup.ok ? "text-muted-foreground" : "text-destructive")}>
-              {backup.text}
-            </span>
-          )}
-        </Field>
+        <HotkeyCheck toggleCombo={settings.toggle_hotkey ? comboLabel(settings.toggle_hotkey) : null} />
       </Section>
 
       <Section
