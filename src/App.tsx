@@ -180,6 +180,7 @@ export default function App() {
               onName={setEditorName}
               onRun={onRun}
               onDirtyChange={setEditorDirty}
+              panicKey={settings?.panic_key.label ?? "Esc"}
             />
           )}
           {route.kind === "settings" && (

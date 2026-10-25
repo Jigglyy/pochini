@@ -29,8 +29,13 @@ pressing a button.
 
 ## Features
 
-- **Steps:** click at a fixed point, where the mouse was when you pressed the hotkey, or an
-  offset from it or from the previous click; move; press or hold keys; type text; scroll; wait.
+- **Steps:** click at a fixed point, where the mouse was when you pressed the hotkey, an offset
+  from it or from the previous click, or a point in an app's window that follows the window;
+  move; press or hold keys; type text; scroll; wait; or wait until a point on screen turns a
+  color.
+- **Record** your clicks, keys and wheel turns in any app as steps, pauses included, or build
+  them by hand. **Pick** a point by clicking it, with a magnifier.
+- **Dry run** shows where every click lands by moving the mouse there, without clicking.
 - **Natural timing:** any wait or click position can vary at random within limits you set, and
   chosen steps can **shuffle** into a new order on every run.
 - **Hotkeys that work everywhere**, even inside fullscreen games: run once per press, repeat
@@ -78,9 +83,9 @@ the previous save) and `settings.json`. To uninstall, delete the exe, that folde
 ## Quick start
 
 1. **New macro**, give it a name.
-2. Add steps. For a click, press **Pick** and hold the mouse over the spot you want until the
-   3 second countdown ends; or use **Click at mouse** to click wherever the mouse is when the
-   macro runs.
+2. Add steps. For a click, press **Pick** and click the spot you want (the click does not
+   reach the app there), or use **Click at mouse** to click wherever the mouse is when the macro
+   runs. Or press **Record steps** and just do it.
 3. Under **Trigger**, press **Record** and press the key or combination to bind.
 4. **Save**. Press the hotkey in any app to run the macro, and **Esc** to stop it.
 
@@ -104,8 +109,12 @@ To notice your hotkey whatever window has focus, Pochini installs a global keybo
 features, so SmartScreen and some antivirus products are suspicious of any program that does.
 
 - The hook compares each key with the hotkeys you set up, then lets it go. **No keystroke is
-  stored, logged or sent anywhere.**
+  stored, logged or sent anywhere.** The one exception is when you press **Record steps**: until
+  you stop (a red banner says so), the clicks and keys you make become the macro's steps, in
+  memory, and nowhere else.
 - Pochini makes **no network connections**: no telemetry, no update check, no accounts.
+- It lives in the tray while its window is closed, so hotkeys keep working; quit from the tray
+  icon. It only starts with Windows if you turn that on.
 - Exported macros leave out your window titles and monitor layout.
 
 The source is all here to check, and [SECURITY.md](SECURITY.md) says how to report a problem.

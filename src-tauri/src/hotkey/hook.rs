@@ -24,7 +24,7 @@
 //!   and keeps it at the front of the hook chain, ahead of hooks other apps
 //!   installed later that might swallow keys before we see them.
 
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
 
@@ -36,16 +36,19 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, DispatchMessageW, GetMessageW, KillTimer, PostThreadMessageW, SetTimer,
-    SetWindowsHookExW, TranslateMessage, UnhookWindowsHookEx, HHOOK, KBDLLHOOKSTRUCT, MSG,
-    WH_KEYBOARD_LL, WM_APP, WM_HOTKEY, WM_KEYDOWN, WM_KEYUP, WM_QUIT, WM_SYSKEYDOWN, WM_SYSKEYUP,
-    WM_TIMER,
+    SetWindowsHookExW, TranslateMessage, UnhookWindowsHookEx, HHOOK, KBDLLHOOKSTRUCT, LLKHF_EXTENDED,
+    LLMHF_INJECTED, MSG, MSLLHOOKSTRUCT, WH_KEYBOARD_LL, WH_MOUSE_LL, WM_APP, WM_HOTKEY, WM_KEYDOWN,
+    WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEWHEEL,
+    WM_QUIT, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TIMER, WM_XBUTTONDOWN,
+    WM_XBUTTONUP,
 };
 
 use super::bindings::BindingTable;
 use super::logic::{self, mod_bits, KeyContext, KeyLogic, Seen, SeenResult, Via};
-use super::{HookStatus, TriggerEvent};
+use super::{Capture, HookStatus, TriggerEvent};
 use crate::input::{INJECTED, INJECT_STAMP};
-use crate::model::Modifier;
+use crate::model::{Modifier, MouseButton, ScrollAxis};
+use crate::record::Rec;
 
 /// RegisterHotKey id for the on/off toggle.
 const TOGGLE_HOTKEY_ID: i32 = 1;
@@ -54,6 +57,47 @@ const TOGGLE_HOTKEY_ID: i32 = 1;
 const WM_REREGISTER: u32 = WM_APP + 1;
 /// How often the hook is reinstalled.
 const REINSTALL_MS: u32 = 30_000;
+/// Posted to the hook thread when capture starts or ends (wParam: Capture),
+/// so it installs or removes the mouse hook, which only exists meanwhile.
+const WM_CAPTURE: u32 = WM_APP + 2;
+
+/// The current `Capture`, read by both callbacks.
+static CAPTURE: AtomicU8 = AtomicU8::new(0);
+
+/// Start or end record mode or click-to-pick (see `Capture`).
+pub fn set_capture(c: Capture) {
+    CAPTURE.store(c as u8, Ordering::SeqCst);
+    let tid = HOOK_TID.load(Ordering::Relaxed);
+    if tid != 0 {
+        // SAFETY: posting to a thread id; a stale id simply fails.
+        unsafe {
+            let _ = PostThreadMessageW(tid, WM_CAPTURE, WPARAM(c as usize), LPARAM(0));
+        }
+    }
+}
+
+fn install_mouse() -> Option<HHOOK> {
+    // SAFETY: as for the keyboard hook: no module handle, a static callback.
+    unsafe { SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_callback), None, 0) }.ok()
+}
+
+/// Is (x, y) over one of Pochini's own windows? Record mode leaves those
+/// clicks out, so its Stop button is not recorded.
+fn over_own_window(x: i32, y: i32) -> bool {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::System::Threading::GetCurrentProcessId;
+    use windows::Win32::UI::WindowsAndMessaging::{GetAncestor, GetWindowThreadProcessId, WindowFromPoint, GA_ROOT};
+    // SAFETY: plain window queries on handles the system just gave us.
+    unsafe {
+        let hwnd = WindowFromPoint(POINT { x, y });
+        if hwnd.0.is_null() {
+            return false;
+        }
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(GetAncestor(hwnd, GA_ROOT), Some(&mut pid));
+        pid == GetCurrentProcessId()
+    }
+}
 
 static INSTALLED: AtomicBool = AtomicBool::new(false);
 static TOGGLE_REGISTERED: AtomicBool = AtomicBool::new(false);
@@ -191,10 +235,22 @@ impl HookThread {
 
                 // SetWindowsHookEx requires a message pump on the installing
                 // thread; without one the callback never fires.
+                let mut mouse: Option<HHOOK> = None;
                 let mut msg = MSG::default();
                 // SAFETY: `msg` is a valid, owned MSG for each call.
                 while unsafe { GetMessageW(&mut msg, None, 0, 0) }.as_bool() {
                     match msg.message {
+                        WM_CAPTURE => match (msg.wParam.0 != 0, mouse) {
+                            (true, None) => mouse = install_mouse(),
+                            (false, Some(h)) => {
+                                // SAFETY: the mouse hook we installed and still own.
+                                unsafe {
+                                    let _ = UnhookWindowsHookEx(h);
+                                }
+                                mouse = None;
+                            }
+                            _ => {}
+                        },
                         WM_HOTKEY if msg.wParam.0 == TOGGLE_HOTKEY_ID as usize => on_windows_toggle(),
                         WM_TIMER => {
                             // New hook first, then drop the old one: no gap.
@@ -222,6 +278,9 @@ impl HookThread {
 
                 // SAFETY: handles we created and have not freed.
                 unsafe {
+                    if let Some(h) = mouse {
+                        let _ = UnhookWindowsHookEx(h);
+                    }
                     let _ = UnregisterHotKey(None, TOGGLE_HOTKEY_ID);
                     let _ = KillTimer(None, timer);
                     let _ = UnhookWindowsHookEx(hook);
@@ -316,6 +375,23 @@ unsafe extern "system" fn callback(code: i32, wparam: WPARAM, lparam: LPARAM) ->
 
     let vk = k.vkCode as u16;
     let table = state.table.load();
+
+    // Record mode and click-to-pick: no hotkeys. The panic key ends them;
+    // in record mode every other key is reported. Nothing is swallowed.
+    let capture = CAPTURE.load(Ordering::Relaxed);
+    if capture != Capture::Off as u8 {
+        if vk == table.panic_vk {
+            if down {
+                let _ = state.tx.send(TriggerEvent::CaptureEnd);
+            }
+        } else if capture == Capture::Record as u8 {
+            let extended = k.flags.0 & LLKHF_EXTENDED.0 != 0;
+            let rec = Rec::Key { vk, scan: k.scanCode as u16, extended, down, t: k.time };
+            let _ = state.tx.send(TriggerEvent::Recorded(rec));
+        }
+        return CallNextHookEx(None, code, wparam, lparam);
+    }
+
     let mut buf = [Modifier::Ctrl; 4];
     let mods = held_modifiers(&mut buf);
     let outcome = match state.logic.try_lock() {
@@ -336,6 +412,64 @@ unsafe extern "system" fn callback(code: i32, wparam: WPARAM, lparam: LPARAM) ->
 
     if outcome.swallow {
         return LRESULT(1);
+    }
+    CallNextHookEx(None, code, wparam, lparam)
+}
+
+/// `WH_MOUSE_LL`, installed only while recording or picking. The same rules
+/// as the keyboard callback: no blocking, no panics, only physical input.
+unsafe extern "system" fn mouse_callback(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    if code != 0 {
+        return CallNextHookEx(None, code, wparam, lparam);
+    }
+    let Some(state) = STATE.get() else {
+        return CallNextHookEx(None, code, wparam, lparam);
+    };
+    // SAFETY: for WH_MOUSE_LL with HC_ACTION, Windows passes a pointer to an
+    // MSLLHOOKSTRUCT that is valid for the duration of this call.
+    let m = &*(lparam.0 as *const MSLLHOOKSTRUCT);
+    // Only the user's own input: never ours, and never another tool's.
+    if m.flags & LLMHF_INJECTED != 0 {
+        return CallNextHookEx(None, code, wparam, lparam);
+    }
+    let msg = wparam.0 as u32;
+    let (x, y, t) = (m.pt.x, m.pt.y, m.time);
+    let xbutton = if (m.mouseData >> 16) & 0xFFFF == 2 { MouseButton::X2 } else { MouseButton::X1 };
+    let button = match msg {
+        WM_LBUTTONDOWN => Some((MouseButton::Left, true)),
+        WM_LBUTTONUP => Some((MouseButton::Left, false)),
+        WM_RBUTTONDOWN => Some((MouseButton::Right, true)),
+        WM_RBUTTONUP => Some((MouseButton::Right, false)),
+        WM_MBUTTONDOWN => Some((MouseButton::Middle, true)),
+        WM_MBUTTONUP => Some((MouseButton::Middle, false)),
+        WM_XBUTTONDOWN => Some((xbutton, true)),
+        WM_XBUTTONUP => Some((xbutton, false)),
+        _ => None,
+    };
+    let capture = CAPTURE.load(Ordering::Relaxed);
+    if capture == Capture::Pick as u8 {
+        // The left click picks, and is kept from the app under it.
+        if let Some((MouseButton::Left, down)) = button {
+            if down {
+                let _ = state.tx.send(TriggerEvent::Picked { x, y });
+            }
+            return LRESULT(1);
+        }
+    } else if capture == Capture::Record as u8 && !over_own_window(x, y) {
+        let rec = match button {
+            Some((button, down)) => Some(Rec::Button { button, down, x, y, t }),
+            None if msg == WM_MOUSEWHEEL || msg == WM_MOUSEHWHEEL => {
+                let delta = (m.mouseData >> 16) as u16 as i16 as i32;
+                // A smooth wheel sends less than a notch at a time.
+                let notches = if delta.abs() >= 120 { delta / 120 } else { delta.signum() };
+                let axis = if msg == WM_MOUSEWHEEL { ScrollAxis::Vertical } else { ScrollAxis::Horizontal };
+                (notches != 0).then_some(Rec::Wheel { axis, notches, x, y, t })
+            }
+            None => None,
+        };
+        if let Some(rec) = rec {
+            let _ = state.tx.send(TriggerEvent::Recorded(rec));
+        }
     }
     CallNextHookEx(None, code, wparam, lparam)
 }

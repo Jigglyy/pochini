@@ -13,7 +13,7 @@ export type TriggerMode = "once" | "hold_repeat" | "toggle";
 /** Where a click or move aims: its own x/y ("fixed"), or dx/dy away from
  *  where the mouse was when the macro started ("activation") or from where the
  *  previous click or move aimed ("previous"). See Anchor in model.rs. */
-export type Anchor = "fixed" | "activation" | "previous";
+export type Anchor = "fixed" | "activation" | "previous" | "window";
 
 export type KeyRef = {
   vk: number;

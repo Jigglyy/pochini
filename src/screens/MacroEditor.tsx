@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { closestCenter, DndContext, type DragEndEvent } from "@dnd-kit/core";
 import { arrayMove, SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import {
   ArrowUpDown,
   Check,
+  CircleDot,
+  Route,
+  Square,
   Redo2,
   Undo2,
   Crosshair,
@@ -25,7 +28,16 @@ import { SortableStepRow, StepFace } from "@/components/StepRow";
 import { FloatingOverlay, useDragSensors } from "@/components/sortable";
 import { HelpTip } from "@/components/HelpTip";
 import { Field, Notice, Section, Segmented, ToggleRow } from "@/components/layout";
-import { getMacro, saveMacro, testSteps } from "@/lib/ipc";
+import {
+  getMacro,
+  onRecordingDone,
+  onRunFinished,
+  onRunStep,
+  saveMacro,
+  startRecording,
+  stopRecording,
+  testSteps,
+} from "@/lib/ipc";
 import { tone, useStepColors } from "@/lib/colors";
 import { record, redo, start, undo, type History } from "@/lib/history";
 import { useFlip } from "@/lib/motion";
@@ -63,12 +75,14 @@ export function MacroEditor({
   onName,
   onRun,
   onDirtyChange,
+  panicKey,
 }: {
   id: string;
   onName: (name: string) => void;
   onRun: (label: string) => void;
   /** Lets the app ask before navigating away from unsaved changes. */
   onDirtyChange: (dirty: boolean) => void;
+  panicKey: string;
 }) {
   // The unsaved macro, with undo and redo (lib/history.ts).
   const [hist, setHist] = useState<History<Macro> | null>(null);
@@ -80,6 +94,13 @@ export function MacroEditor({
   const dirty = m !== null && JSON.stringify(m) !== saved;
   /** The step just deleted, for its "Undo" line. */
   const [deleted, setDeleted] = useState<string | null>(null);
+  /** Record mode is on (the hooks report every click and key). */
+  const [recording, setRecordingMode] = useState(false);
+  const recordingRef = useRef(false);
+  /** "Recorded 5 steps." after a recording, with Undo. */
+  const [recorded, setRecorded] = useState<string | null>(null);
+  /** The step a run of this macro is on, to light it up. */
+  const [runningStep, setRunningStep] = useState<number | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [justAdded, setJustAdded] = useState<string | null>(null);
   const [draggingStep, setDraggingStep] = useState<string | null>(null);
@@ -101,6 +122,38 @@ export function MacroEditor({
   useEffect(() => {
     onDirtyChange(dirty);
   }, [dirty, onDirtyChange]);
+
+  // A recording's steps go on the end, as one undoable edit.
+  useEffect(() => {
+    const un = onRecordingDone((steps) => {
+      recordingRef.current = false;
+      setRecordingMode(false);
+      if (steps.length === 0) {
+        setRecorded("Nothing was recorded.");
+        return;
+      }
+      flip.prepare();
+      setDeleted(null);
+      setHist((h) => h && record(h, { ...h.present, steps: [...h.present.steps, ...steps] }, performance.now()));
+      setRecorded(`Recorded ${steps.length} step${steps.length === 1 ? "" : "s"}.`);
+    });
+    return () => {
+      void un.then((f) => f());
+      // Leaving mid-recording ends it: nothing else would.
+      if (recordingRef.current) void stopRecording();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Light up the step a run of this macro is on (hotkey, Run, Test, dry run).
+  useEffect(() => {
+    const a = onRunStep((mid, i) => mid === id && setRunningStep(i));
+    const b = onRunFinished((r) => r.macro_id === id && setRunningStep(null));
+    return () => {
+      void a.then((f) => f());
+      void b.then((f) => f());
+    };
+  }, [id]);
 
   // The header shows the name as it is now, undo included.
   const name = m?.name;
@@ -190,11 +243,27 @@ export function MacroEditor({
     }
   }
 
-  function runTest() {
+  function runTest(dry = false) {
     if (!m || m.steps.length === 0) return;
-    onRun(`${m.name} (test)`);
-    testSteps(m.steps, m.name).catch((e) => setErr(String(e)));
+    onRun(`${m.name} (${dry ? "dry run" : "test"})`);
+    testSteps(m.steps, m.name, { id: m.id, guard: m.guard, dry }).catch((e) => setErr(String(e)));
   }
+
+  const toggleRecording = async () => {
+    setErr(null);
+    setRecorded(null);
+    try {
+      if (recordingRef.current) {
+        await stopRecording(); // the steps arrive through onRecordingDone
+      } else {
+        await startRecording(true);
+        recordingRef.current = true;
+        setRecordingMode(true);
+      }
+    } catch (e) {
+      setErr(String(e));
+    }
+  };
 
   const t = m.trigger;
   const risky = t?.swallow && t.modifiers.length === 0 && COMMON.has(t.key.vk);
@@ -228,12 +297,24 @@ export function MacroEditor({
         </div>
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant="outline" size="lg" disabled={m.steps.length === 0} onClick={runTest}>
+            <Button variant="outline" size="lg" disabled={m.steps.length === 0} onClick={() => runTest()}>
               <Play />
               Test
             </Button>
           </TooltipTrigger>
           <TooltipContent>{withKeys("Runs these steps after a 3 second countdown", "Ctrl+Enter")}</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="outline" size="lg" disabled={m.steps.length === 0} onClick={() => runTest(true)}>
+              <Route />
+              Dry run
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            After a 3 second countdown, moves the mouse to each click and move point in turn, without clicking
+            or typing
+          </TooltipContent>
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -450,15 +531,59 @@ export function MacroEditor({
         title="Steps"
         bare
         action={
-          m.steps.length > 0 && (
-            <span className="text-xs text-muted-foreground">
-              Takes {fmtRange(est)}
-              {m.repeat.kind === "count" ? `, ${m.repeat.n} times` : ""}
-              {shuffled > 1 ? `, ${shuffled} steps shuffled` : ""}
-            </span>
-          )
+          <div className="flex items-center gap-3">
+            {m.steps.length > 0 && (
+              <span className="text-xs text-muted-foreground">
+                Takes {fmtRange(est)}
+                {m.repeat.kind === "count" ? `, ${m.repeat.n} times` : ""}
+                {shuffled > 1 ? `, ${shuffled} steps shuffled` : ""}
+              </span>
+            )}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant={recording ? "destructive" : "outline"} size="sm" onClick={toggleRecording}>
+                  {recording ? <Square className="fill-current" /> : <CircleDot className="text-destructive" />}
+                  {recording ? "Stop recording" : "Record steps"}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {recording
+                  ? `Or press ${panicKey}`
+                  : "Records your clicks, keys and wheel turns in any app as steps, with the pauses between them"}
+              </TooltipContent>
+            </Tooltip>
+          </div>
         }
       >
+        {recording && (
+          <div
+            role="status"
+            className="sticky top-0 z-20 flex animate-in items-center gap-3 rounded-md border border-destructive/50 bg-[color-mix(in_oklab,var(--destructive)_12%,var(--background))] px-3 py-2.5 text-sm shadow-sm fade-in-0 motion-reduce:animate-none"
+          >
+            <span className="relative flex size-2.5 shrink-0">
+              <span className="absolute inline-flex size-full animate-ping rounded-full bg-destructive opacity-60" />
+              <span className="relative inline-flex size-2.5 rounded-full bg-destructive" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="font-medium">Recording.</span> Click, type and scroll in any app; clicks in this
+              window are left out. Press {panicKey} or Stop recording when you are done.
+            </span>
+          </div>
+        )}
+        {recorded && !recording && (
+          <div
+            role="status"
+            className="flex animate-in items-center gap-3 rounded-md border border-border bg-muted/50 px-3 py-2 text-sm fade-in-0 motion-reduce:animate-none"
+          >
+            <span className="min-w-0 flex-1">{recorded}</span>
+            {recorded.startsWith("Recorded") && (
+              <Button variant="outline" size="sm" onClick={() => (setRecorded(null), step(undo))}>
+                <Undo2 />
+                Undo
+              </Button>
+            )}
+          </div>
+        )}
         {deleted && (
           <div
             role="status"
@@ -494,6 +619,8 @@ export function MacroEditor({
                     aim={aims[i]}
                     hasEarlierPoint={aims.slice(0, i).some((a) => a !== null)}
                     shuffled={shuffled}
+                    running={runningStep === i}
+                    guard={m.guard}
                     defaultOpen={s.id === justAdded}
                     onChange={(ns) => setStep(i, ns)}
                     onDelete={() => {

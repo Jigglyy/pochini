@@ -1,5 +1,5 @@
 import { useState, type CSSProperties, type ReactNode, type Ref } from "react";
-import { ArrowDown, ArrowUp, ChevronRight, Copy, GripVertical, Pipette, RotateCcw, Shuffle, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronRight, Copy, Crosshair, GripVertical, Pipette, RotateCcw, Shuffle, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
@@ -25,10 +25,11 @@ import {
   useStepColors,
   type ColorKind,
 } from "@/lib/colors";
-import { pixelAt } from "@/lib/ipc";
+import { pixelAt, windowOrigin } from "@/lib/ipc";
+import { pickPoint } from "@/lib/pick";
 import { cn } from "@/lib/utils";
 import { fmtAim, summarize, type Aim } from "@/lib/steps";
-import type { Anchor, Modifier, Step } from "@/types";
+import type { Anchor, Guard, Modifier, Step } from "@/types";
 import { CoordPicker } from "./CoordPicker";
 import { JitterField } from "./JitterField";
 import { KeyCapture } from "./KeyCapture";
@@ -100,6 +101,7 @@ const TARGETS = [
   { value: "fixed", label: "Fixed position" },
   { value: "activation", label: "Mouse start + offset" },
   { value: "previous", label: "Previous point + offset" },
+  { value: "window", label: "App window + offset" },
 ] as const;
 
 function TargetPicker({ anchor, onChange }: { anchor: Anchor; onChange: (a: Anchor) => void }) {
@@ -119,6 +121,10 @@ const TARGET_HELP = (
       <span className="font-medium">Previous point + offset</span>: measured from where the previous click or
       move aimed. Jitter never adds up along a chain. With Repeat, a chain that starts this way keeps going
       on the next pass.
+    </p>
+    <p>
+      <span className="font-medium">App window + offset</span>: measured from the top-left of the App only
+      app's window, so the point moves with the window.
     </p>
   </div>
 );
@@ -163,6 +169,10 @@ type StepRowProps = {
   hasEarlierPoint?: boolean;
   /** How many steps of the macro are marked to shuffle, this one included. */
   shuffled?: number;
+  /** A run is on this step right now. */
+  running?: boolean;
+  /** The macro's App only app, for points in its window. */
+  guard?: Guard | null;
 };
 
 /** A StepRow inside the editor's sortable list: drag its header to reorder. */
@@ -263,6 +273,8 @@ export function StepRow({
   aim,
   hasEarlierPoint = false,
   shuffled = 0,
+  running = false,
+  guard = null,
   itemRef,
   style,
   handle,
@@ -283,7 +295,11 @@ export function StepRow({
       data-step-id={step.id}
       data-flip={step.id}
       style={{ ...style, ...outlineStyle(tone(color)) }}
-      className="group/step rounded-lg border border-l-[3px] border-border bg-card text-card-foreground transition-[border-color,box-shadow] duration-200 ease-smooth"
+      data-running={running || undefined}
+      className={cn(
+        "group/step rounded-lg border border-l-[3px] border-border bg-card text-card-foreground transition-[border-color,box-shadow] duration-200 ease-smooth",
+        running && "ring-2 ring-primary ring-offset-2 ring-offset-background",
+      )}
     >
       <ContextMenu>
         <ContextMenuTrigger asChild>
@@ -381,6 +397,9 @@ export function StepRow({
                   }
                 >
                   <OffsetField dx={step.dx} dy={step.dy} onChange={(dx, dy) => set({ dx, dy })} />
+                  {step.anchor === "window" && (
+                    <WindowPick process={guard?.process ?? ""} onPick={(dx, dy) => set({ dx, dy })} />
+                  )}
                 </Field>
               )}
               <Field
@@ -648,6 +667,43 @@ function WaitColorFields({
           </SelectContent>
         </Select>
       </Field>
+    </>
+  );
+}
+
+/** Pick a point inside the App only app's window: the click's screen point,
+ *  less the window's top-left. */
+function WindowPick({ process, onPick }: { process: string; onPick: (dx: number, dy: number) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [why, setWhy] = useState<string | null>(null);
+  if (!process) {
+    return (
+      <span className="basis-full text-xs text-warning">
+        Turn on App only above and choose the app: the point is measured from its window.
+      </span>
+    );
+  }
+  return (
+    <>
+      <Button
+        variant="outline"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          setWhy(null);
+          const at = await pickPoint();
+          if (at) {
+            const origin = await windowOrigin(process).catch(() => null);
+            if (origin) onPick(at[0] - origin[0], at[1] - origin[1]);
+            else setWhy(`${process} has no window open.`);
+          }
+          setBusy(false);
+        }}
+      >
+        <Crosshair />
+        {busy ? "Click in the window... (Esc cancels)" : "Pick in the window"}
+      </Button>
+      {why && <span className="basis-full text-xs text-warning">{why}</span>}
     </>
   );
 }

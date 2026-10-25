@@ -101,10 +101,13 @@ Rebuilt on ShadCN + Tailwind v4 in Kanbini's style.
 - [x] Run history, with engine errors shown, and Restart as administrator when Windows blocks
       input to an app running as administrator
 - [x] "Wait until a pixel has a color" step
-- [ ] Record mode (clicks, keys and the waits between them)
-- [ ] Pick key armed by the hook, with a magnifier
-- [ ] Coordinates relative to the "App only" window
-- [ ] Dry-run overlay: where each click will land
+- [x] Record mode (clicks, keys, wheel turns and the waits between them)
+- [x] Click-to-pick through the hook (the click is kept from the app), with a magnifier
+- [x] Coordinates relative to the "App only" app's window
+- [x] Dry run: the mouse visits each click and move point in turn; the running step lights up
+      in the editor. (A drawn overlay was set aside: one window per monitor at mixed scaling,
+      and nothing draws over a game in exclusive fullscreen; moving the real cursor works
+      everywhere.)
 
 ## M4 - Ship
 

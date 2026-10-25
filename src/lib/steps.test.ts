@@ -85,6 +85,16 @@ describe("aim points", () => {
     expect(fmtAim({ from: "start", x: 1, y: -1 })).toBe("mouse start + (1, -1)");
   });
 
+  it("points in the app's window chain from the window", () => {
+    const steps = [click({ anchor: "window", dx: 10, dy: 5 }), click({ anchor: "previous", dx: 0, dy: 20 })];
+    expect(aimPoints(steps)).toEqual([
+      { from: "window", x: 10, y: 5 },
+      { from: "window", x: 10, y: 25 },
+    ]);
+    expect(fmtAim({ from: "window", x: 10, y: 25 })).toBe("app window + (10, 25)");
+    expect(summarize(steps[0])).toBe("Click at (10, 5) in the app's window");
+  });
+
   it("phrases every direction", () => {
     expect(aimPhrase("activation", 0, 0)).toBe("where the mouse started");
     expect(aimPhrase("previous", 0, 0)).toBe("at the previous point");

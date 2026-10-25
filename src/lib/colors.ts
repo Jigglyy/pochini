@@ -66,7 +66,7 @@ export const DEFAULT_COLORS: Record<ColorKind, StepColor> = {
 /** A click aimed relative to the mouse (start or previous point) counts as
  *  "Click at mouse". */
 export function colorKind(s: Step): ColorKind {
-  return s.type === "click" && s.anchor !== "fixed" ? "click_here" : s.type;
+  return s.type === "click" && (s.anchor === "activation" || s.anchor === "previous") ? "click_here" : s.type;
 }
 
 /** A stored color (a macro's, say), as one of ours: unknown or missing is "none". */

@@ -1,19 +1,18 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Crosshair, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { cursorPos, listMonitors, previewPoint } from "@/lib/ipc";
+import { listMonitors, previewPoint } from "@/lib/ipc";
+import { pickPoint } from "@/lib/pick";
 import { cn } from "@/lib/utils";
 import type { CaptureMeta } from "@/types";
 
-const PICK_SECONDS = 3;
-
-/** Coordinate capture: arm it, move the real cursor over the target anywhere
- *  on screen (including over a fullscreen game an overlay could not cover),
- *  and the position is read when the countdown ends, with the monitor it is
- *  on (`capture`, for noticing a changed display layout later). Typing a
- *  number instead clears `capture`: the point was not picked there. */
+/** Coordinate capture: press Pick, then click the point anywhere on screen
+ *  (the click never reaches the app there; Esc cancels). A magnifier follows
+ *  the cursor meanwhile. The point is saved with the monitor it is on
+ *  (`capture`, for noticing a changed display layout later). Typing a number
+ *  instead clears `capture`: the point was not picked there. */
 export function CoordPicker({
   x,
   y,
@@ -23,42 +22,22 @@ export function CoordPicker({
   y: number;
   onChange: (x: number, y: number, capture: CaptureMeta | null) => void;
 }) {
-  const [left, setLeft] = useState<number | null>(null);
+  const [picking, setPicking] = useState(false);
   /** Bumped on each pick, so the fields flash to say "got it". */
   const [picked, setPicked] = useState(0);
-  const [live, setLive] = useState<[number, number] | null>(null);
-  const tick = useRef<number | null>(null);
 
-  useEffect(() => {
-    if (left === null) return;
-    const poll = window.setInterval(() => {
-      cursorPos().then(setLive).catch(() => {});
-    }, 60);
-    tick.current = window.setTimeout(async () => {
-      if (left > 1) {
-        setLeft(left - 1);
-        return;
-      }
-      window.clearInterval(poll);
-      try {
-        const [cx, cy] = await cursorPos();
-        const mon = (await listMonitors().catch(() => [])).find(
-          (m) => cx >= m.rect[0] && cx < m.rect[2] && cy >= m.rect[1] && cy < m.rect[3],
-        );
-        onChange(cx, cy, mon ? { monitor: mon.device, monitor_rect: mon.rect, dpi: mon.dpi } : null);
-        setPicked((n) => n + 1);
-      } catch {
-        /* leave the value alone */
-      }
-      setLeft(null);
-      setLive(null);
-    }, 1000);
-    return () => {
-      window.clearInterval(poll);
-      if (tick.current) window.clearTimeout(tick.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [left]);
+  const pick = async () => {
+    setPicking(true);
+    const at = await pickPoint();
+    setPicking(false);
+    if (!at) return;
+    const [cx, cy] = at;
+    const mon = (await listMonitors().catch(() => [])).find(
+      (m) => cx >= m.rect[0] && cx < m.rect[2] && cy >= m.rect[1] && cy < m.rect[3],
+    );
+    onChange(cx, cy, mon ? { monitor: mon.device, monitor_rect: mon.rect, dpi: mon.dpi } : null);
+    setPicked((n) => n + 1);
+  };
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -82,9 +61,9 @@ export function CoordPicker({
           aria-label="Y"
         />
       </div>
-      <Button variant="outline" onClick={() => setLeft(PICK_SECONDS)} disabled={left !== null}>
+      <Button variant="outline" onClick={pick} disabled={picking}>
         <Crosshair />
-        {left === null ? "Pick" : `Picking in ${left}...`}
+        {picking ? "Click the point... (Esc cancels)" : "Pick"}
       </Button>
       <Tooltip>
         <TooltipTrigger asChild>
@@ -94,11 +73,6 @@ export function CoordPicker({
         </TooltipTrigger>
         <TooltipContent>Move the cursor here to check the point</TooltipContent>
       </Tooltip>
-      {live && (
-        <span className="text-xs tabular-nums text-muted-foreground">
-          cursor at ({live[0]}, {live[1]})
-        </span>
-      )}
     </div>
   );
 }

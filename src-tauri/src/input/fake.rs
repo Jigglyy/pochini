@@ -36,6 +36,9 @@ pub struct FakeInput {
     pixels: Mutex<HashMap<(i32, i32), [u8; 3]>>,
     /// Pretend the target runs as administrator (see `InputBackend::blocked`).
     pub blocked: AtomicBool,
+    /// Where every app's window is (`InputBackend::window_origin`); `None`:
+    /// no app has a window open.
+    pub window: Mutex<Option<(i32, i32)>>,
 }
 
 impl FakeInput {
@@ -48,6 +51,7 @@ impl FakeInput {
             start: (0, 0),
             pixels: Mutex::new(HashMap::new()),
             blocked: AtomicBool::new(false),
+            window: Mutex::new(Some((100, 50))),
         }
     }
 
@@ -173,5 +177,9 @@ impl InputBackend for FakeInput {
 
     fn blocked(&self, _at: Option<(i32, i32)>) -> bool {
         self.blocked.load(Ordering::SeqCst)
+    }
+
+    fn window_origin(&self, _process: &str) -> Option<(i32, i32)> {
+        *self.window.lock().unwrap()
     }
 }

@@ -5,10 +5,11 @@
 
 use serde::{Deserialize, Serialize};
 
-/// 2: the "wait until a pixel has a color" step (`Step::WaitColor`). Older
-/// builds cannot read it, so they refuse the file as newer instead of losing
-/// macros that use it.
-pub const SCHEMA_VERSION: u32 = 2;
+/// 2: the "wait until a pixel has a color" step (`Step::WaitColor`).
+/// 3: points relative to the app's window (`Anchor::Window`).
+/// Older builds cannot read these, so they refuse the file as newer instead
+/// of losing macros that use them.
+pub const SCHEMA_VERSION: u32 = 3;
 
 /// A duration with optional uniform jitter: `base + uniform(0, jitter)`.
 ///
@@ -127,6 +128,10 @@ pub enum Anchor {
     /// `Previous` keeps going on the next pass, one that starts from
     /// `Activation` starts over. `x`/`y` are ignored.
     Previous,
+    /// `dx`/`dy` from the top-left of the client area of the macro's "App
+    /// only" app's window (the foreground one if it is that app's), so the
+    /// point follows the window when it moves. `x`/`y` are ignored.
+    Window,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

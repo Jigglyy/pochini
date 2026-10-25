@@ -188,7 +188,8 @@ fn migrate(v: serde_json::Value) -> Result<MacroFile> {
     }
     // Each version that changed something adds an arm here, oldest first,
     // upgrading `v` in place before the final deserialize. 1 -> 2 only added
-    // a step type, so a version 1 file reads as is; the next save writes 2.
+    // a step type and 2 -> 3 an anchor, so older files read as is; the next
+    // save writes the current version.
     let _ = found;
     Ok(serde_json::from_value(v)?)
 }

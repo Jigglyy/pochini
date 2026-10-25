@@ -278,3 +278,79 @@ test.describe("picking a point", () => {
     expect((await savedSteps(dataDir))[0].capture).toBeNull();
   });
 });
+
+test.describe("record mode", () => {
+  // Test mode installs no hooks: Record "records" the events in record.json.
+  const events = [
+    { kind: "button", button: "left", down: true, x: 10, y: 20, t: 1000 },
+    { kind: "button", button: "left", down: false, x: 10, y: 20, t: 1060 },
+    { kind: "key", vk: 0x11, scan: 0x1d, extended: false, down: true, t: 1800 },
+    { kind: "key", vk: 0x43, scan: 0x2e, extended: false, down: true, t: 1820 },
+    { kind: "key", vk: 0x43, scan: 0x2e, extended: false, down: false, t: 1870 },
+    { kind: "key", vk: 0x11, scan: 0x1d, extended: false, down: false, t: 1890 },
+  ];
+  test.use({ seed: { macros: [macro("Recorded")], files: { "record.json": JSON.stringify(events) } } });
+
+  test("Record, then Stop, adds the clicks, keys and pauses as steps; Undo takes them back", async ({ app: { page } }) => {
+    await page.getByRole("button", { name: /^Recorded/ }).click();
+    await page.getByRole("button", { name: "Record steps" }).click();
+    await expect(page.getByRole("status").filter({ hasText: "Recording." })).toContainText("Press Esc or Stop recording");
+    await page.getByRole("button", { name: "Stop recording" }).click();
+
+    await expect(page.getByText("Recorded 3 steps.")).toBeVisible();
+    const headers = page.locator('[data-step-id] [role="button"][aria-expanded]');
+    await expect(headers).toHaveCount(3);
+    await expect(headers.nth(0)).toContainText("Click at (10, 20)");
+    await expect(headers.nth(1)).toContainText("Wait 760 ms"); // from the release to the C press
+    await expect(headers.nth(2)).toContainText("Press Ctrl+C");
+
+    await page.getByRole("status").filter({ hasText: "Recorded 3 steps." }).getByRole("button", { name: "Undo" }).click();
+    await expect(headers).toHaveCount(0);
+  });
+});
+
+test.describe("points in the app's window", () => {
+  const inWindow = { ...clickAt(0, 0), id: "cw", anchor: "window" as const, dx: 10, dy: 5 };
+  test.describe("with App only set", () => {
+    test.use({ seed: { macros: [macro("Windowed", { guard: { process: "game.exe", label: "" }, steps: [inWindow] })] } });
+
+    test("say where they land, and a dry run shows them without clicking", async ({ app: { page } }) => {
+      await page.getByRole("button", { name: /^Windowed/ }).click();
+      await header(page, "cw").click();
+      await expect(step(page, "cw").getByTestId("lands-at")).toContainText("Lands at app window + (10, 5)");
+      await expect(header(page, "cw")).toContainText("Click at (10, 5) in the app's window");
+      await expect(step(page, "cw").getByRole("button", { name: "Pick in the window" })).toBeVisible();
+
+      await page.getByRole("button", { name: "Dry run" }).click();
+      await expect(page.getByRole("status").filter({ hasText: "Finished" })).toContainText("Finished Windowed (dry run)", {
+        timeout: 8_000,
+      });
+    });
+  });
+
+  test.describe("without App only", () => {
+    test.use({ seed: { macros: [macro("No app", { steps: [inWindow] })] } });
+
+    test("say what is missing", async ({ app: { page } }) => {
+      await page.getByRole("button", { name: /^No app/ }).click();
+      await header(page, "cw").click();
+      await expect(step(page, "cw").getByText("Turn on App only above and choose the app")).toBeVisible();
+      await page.getByRole("button", { name: "Test", exact: true }).click();
+      await expect(page.getByRole("alert").filter({ hasText: "stopped" })).toContainText(
+        "A step aims inside the app's window, but the macro has no App only app.",
+        { timeout: 8_000 },
+      );
+    });
+  });
+});
+
+test.describe("while a run is on a step", () => {
+  test.use({ seed: { macros: [macro("Lit", { steps: [{ ...wait(1500), id: "w1" }, { ...wait(10), id: "w2" }] })] } });
+
+  test("that step lights up", async ({ app: { page } }) => {
+    await page.getByRole("button", { name: /^Lit/ }).click();
+    await page.getByRole("button", { name: "Test", exact: true }).click();
+    await expect(step(page, "w1")).toHaveAttribute("data-running", "true", { timeout: 6_000 });
+    await expect(page.locator("[data-running]")).toHaveCount(0, { timeout: 6_000 });
+  });
+});

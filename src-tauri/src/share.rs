@@ -16,13 +16,14 @@
 //! star, the window title its app was picked from, and the monitor each point
 //! was picked on.
 
-use crate::model::{normalize_color, Macro, MacroFile, Step};
+use crate::model::{normalize_color, Anchor, Macro, MacroFile, Step};
 
 pub const FORMAT: &str = "pochini.macros";
-/// The newest format this build reads. A file is written as version 1
-/// unless it needs 2 (a "wait for a color" step), so older builds still
-/// import everything they can run, and say "update" for the rest.
-pub const VERSION: u32 = 2;
+/// The newest format this build reads. A file is written as the oldest
+/// version that can hold it (2: a "wait for a color" step, 3: a point in the
+/// app's window), so older builds still import everything they can run, and
+/// say "update" for the rest.
+pub const VERSION: u32 = 3;
 /// A shared macro is a few kilobytes; anything near this is not one.
 pub const MAX_BYTES: usize = 2 * 1024 * 1024;
 pub const MAX_MACROS: usize = 500;
@@ -62,10 +63,20 @@ pub fn export_compact(macros: &[Macro]) -> String {
 }
 
 fn share_file(macros: &[Macro]) -> ShareFile {
-    let needs_2 = macros.iter().flat_map(|m| &m.steps).any(|s| matches!(s, Step::WaitColor { .. }));
+    let steps = || macros.iter().flat_map(|m| &m.steps);
+    let in_window = |s: &Step| {
+        matches!(s, Step::Click { anchor: Anchor::Window, .. } | Step::Move { anchor: Anchor::Window, .. })
+    };
+    let version = if steps().any(in_window) {
+        3
+    } else if steps().any(|s| matches!(s, Step::WaitColor { .. })) {
+        2
+    } else {
+        1
+    };
     ShareFile {
         format: FORMAT.into(),
-        version: if needs_2 { 2 } else { 1 },
+        version,
         macros: macros
             .iter()
             .cloned()
@@ -238,6 +249,26 @@ mod tests {
         let text = export(&[m]);
         assert!(text.contains(r#""version": 2"#), "{text}");
         assert_eq!(import(&text, &[], NOW).unwrap()[0].steps.len(), 3);
+    }
+
+    #[test]
+    fn a_point_in_the_apps_window_needs_version_3() {
+        let mut m = sample("window");
+        m.steps.push(Step::Move {
+            id: "mv".into(),
+            shuffle: false,
+            x: 0,
+            y: 0,
+            anchor: Anchor::Window,
+            dx: 5,
+            dy: 5,
+            coord_jitter_px: 0,
+            move_duration_ms: 0,
+            capture: None,
+        });
+        let text = export(&[m]);
+        assert!(text.contains(r#""version": 3"#), "{text}");
+        assert!(import(&text, &[], NOW).is_ok());
     }
 
     #[test]

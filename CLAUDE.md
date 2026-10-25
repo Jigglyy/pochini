@@ -28,17 +28,16 @@ this app owns.
 ## Status
 
 Implemented and building. `src-tauri/` has the full Rust core (model, storage, input,
-hotkey, engine, IPC) with **184 passing unit tests**; `src/` is a ShadCN + Tailwind v4 UI
-styled after Kanbini (macro list, step editor, settings), with **35 Vitest unit tests** for its
-helpers and **79 Playwright e2e tests** against the real app. `npm run tauri dev` opens the app.
+hotkey, engine, IPC) with **201 passing unit tests**; `src/` is a ShadCN + Tailwind v4 UI
+styled after Kanbini (macro list, step editor, settings), with **36 Vitest unit tests** for its
+helpers and **83 Playwright e2e tests** against the real app. `npm run tauri dev` opens the app.
 
 The M0/M1 Win32 assumptions were measured before being ported; see
 [tools/m0-probe/README.md](tools/m0-probe/README.md). That harness found three errors in the
 original design docs; the numbered rules below are the corrected versions and each one has a
 regression test. Read [docs/README.md](docs/README.md) before changing behaviour.
 
-Not yet done: ts-rs type generation, code signing, installer; record mode and the rest of
-the roadmap's M5.
+Not yet done: ts-rs type generation, code signing, installer.
 The toggle hotkey once did nothing; fixed in 0.2.1 by RegisterHotKey plus a hook watchdog
 ([docs/06-open-questions.md](docs/06-open-questions.md) #9).
 See [docs/05-roadmap.md](docs/05-roadmap.md).
@@ -174,6 +173,8 @@ src-tauri/src/
   input/fake.rs           recording backend for tests
   input/clipboard.rs      plain-text clipboard (Copy as text / Paste)  (unsafe)
   tray.rs                 tray icon and menu; closing the window hides it there (lib.rs)
+  record.rs               record mode: captured input -> steps   (pure, tested)
+  magnifier.rs            the click-to-pick magnifier window (page: components/Magnifier.tsx)
   engine/mod.rs           step execution, jitter, settle, activation point, release pass
   engine/timer.rs         high-resolution interruptible wait
   hotkey/bindings.rs      binding table + matching        (pure, tested)
@@ -223,7 +224,11 @@ These are the things that silently break this category of app. Full reasoning in
    while that holds, the hook does not send the toggle itself (no double flip). While a key
    is being recorded in the window (`set_recording`), the table is `paused`: macros and the
    toggle stand aside (and the registration is dropped) so the combo is recorded instead of
-   firing; the panic key still works, and a forgotten recording expires after 60 s. A 30 s thread
+   firing; the panic key still works, and a forgotten recording expires after 60 s.
+   Record mode and click-to-pick are `hotkey::Capture` modes (`set_capture`): no hotkeys,
+   the panic key ends them, and a `WH_MOUSE_LL` hook is installed on the hook thread only
+   while they last. Its callback follows the same rules, ignores all injected input
+   (`LLMHF_INJECTED`), and in pick mode swallows only the picking left click. A 30 s thread
    timer reinstalls the hook (new before old is removed), because Windows removes a slow hook
    silently and permanently.
 
@@ -266,7 +271,8 @@ These are the things that silently break this category of app. Full reasoning in
     single-instance handover). A process we may not inspect counts as not blocked.
 
 11. **Never log keystroke content, not even temporarily while debugging.** The README promises
-    the hook discards keys after matching. A debug `eprintln!` in the hook once wrote the
+    the hook discards keys after matching. Record mode is the one place keys are kept: as
+    `record::Rec` events in memory, turned into steps when it ends, never written elsewhere. A debug `eprintln!` in the hook once wrote the
     user's real typing to a log file. To debug hotkeys, use Settings > Hotkey check (it reports
     only keys the user has bound, via `BindingTable::is_watched`) or `KeyLogic` unit tests.
 
@@ -385,9 +391,9 @@ Mostly carried over from Kanbini, whose renderer this UI copies the look of:
 
 ## Testing
 
-`cargo test` is the gate: 184 tests, no Windows APIs required for most of them. The UI has
+`cargo test` is the gate: 201 tests, no Windows APIs required for most of them. The UI has
 `npm test` (35 Vitest tests of the pure helpers in `src/lib` and the error boundary, in
-jsdom) and `npm run e2e` (79 Playwright tests), all run locally before every release and by
+jsdom) and `npm run e2e` (83 Playwright tests), all run locally before every release and by
 CI on pull requests.
 
 - Vitest is for logic that needs no app: summaries and estimates (`lib/steps.ts`, which
@@ -432,6 +438,8 @@ CI on pull requests.
   - CI shows the windows (`POCHINI_E2E_HEADED=1` in `ci.yml`): on a runner, a hidden window's
     timers stopped mid-test. Tests that depend on animations set `emulateMedia` themselves,
     and check that an animation started rather than that one is still running.
+  - Record steps reads its events from `record.json` in the data folder in test mode (no
+    hooks there), and Pick picks wherever the fake mouse is, at once.
   - Test mode has no tray icon, never intercepts closing the window, keeps "start with
     Windows" in `autostart.txt` in the data folder (never the registry), and its fake screen
     has the color `[x, y, 0]` at (x, y), so a "wait for a color" test can name a color that

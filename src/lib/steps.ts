@@ -86,6 +86,7 @@ export const modLabel = (m: Modifier) => m[0].toUpperCase() + m.slice(1);
 /** "where the mouse started", "20 px right of the previous point",
  *  "20 px right and 5 px up from where the mouse started". */
 export function aimPhrase(anchor: Anchor, dx: number, dy: number): string {
+  if (anchor === "window") return `at (${dx}, ${dy}) in the app's window`;
   const place = anchor === "previous" ? "the previous point" : "where the mouse started";
   if (dx === 0 && dy === 0) return anchor === "previous" ? `at ${place}` : place;
   if (dy === 0) return dx > 0 ? `${dx} px right of ${place}` : `${-dx} px left of ${place}`;
@@ -98,7 +99,7 @@ export function aimPhrase(anchor: Anchor, dx: number, dy: number): string {
 /** Where a click or move step aims on the first pass: a fixed screen point,
  *  or an offset from where the mouse started. Mirrors Engine::resolve_point
  *  (before jitter). */
-export type Aim = { from: "screen" | "start"; x: number; y: number };
+export type Aim = { from: "screen" | "start" | "window"; x: number; y: number };
 
 /** The aim of every step (null for steps without a point), following
  *  "previous point" chains. Later passes of a repeat can differ: a chain that
@@ -112,7 +113,9 @@ export function aimPoints(steps: Step[]): (Aim | null)[] {
         ? { from: "screen", x: s.x, y: s.y }
         : s.anchor === "activation"
           ? { from: "start", x: s.dx, y: s.dy }
-          : { from: prev.from, x: prev.x + s.dx, y: prev.y + s.dy };
+          : s.anchor === "window"
+            ? { from: "window", x: s.dx, y: s.dy }
+            : { from: prev.from, x: prev.x + s.dx, y: prev.y + s.dy };
     prev = aim;
     return aim;
   });
@@ -120,6 +123,7 @@ export function aimPoints(steps: Step[]): (Aim | null)[] {
 
 export function fmtAim(a: Aim): string {
   if (a.from === "screen") return `(${a.x}, ${a.y})`;
+  if (a.from === "window") return `app window + (${a.x}, ${a.y})`;
   return a.x === 0 && a.y === 0 ? "where the mouse started" : `mouse start + (${a.x}, ${a.y})`;
 }
 

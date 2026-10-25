@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::engine::{timer, CancelToken, Engine, EngineError};
 use crate::hotkey::logic::{Seen, SeenResult, Via};
-use crate::hotkey::{BindingTable, TriggerEvent};
+use crate::hotkey::{BindingTable, Capture, TriggerEvent};
 use crate::input::InputBackend;
 use crate::model::{Macro, MacroFile, QueueFrom, Repeat, Settings, TriggerMode};
 use crate::storage::{LoadProblem, Store};
@@ -26,7 +26,22 @@ pub trait Notify: Send + Sync {
     fn run_changed(&self, _status: &RunStatus) {}
     /// A run ended, however it ended.
     fn run_finished(&self, _record: &RunRecord) {}
+    /// Record mode ended (Stop, or the panic key): the steps it made.
+    fn recording_done(&self, _steps: &[crate::model::Step]) {}
+    /// Click-to-pick ended: where the user clicked, or `None` if cancelled.
+    fn picked(&self, _at: Option<(i32, i32)>) {}
+    /// A run reached step `index` of macro `macro_id`.
+    fn run_step(&self, _macro_id: &str, _index: usize) {}
 }
+
+/// Record mode in progress: the events so far, in memory only.
+pub struct Recording {
+    pub events: Vec<crate::record::Rec>,
+    pub options: crate::record::Options,
+}
+
+/// A recording keeps at most this many events (hours of clicking).
+pub const MAX_RECORDED: usize = 20_000;
 
 /// How a run ended, for the run history and the run pill.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -99,6 +114,10 @@ pub struct AppState {
     pub recording_gen: AtomicU64,
     /// The last runs, newest first (Settings > Run history).
     pub history: Mutex<VecDeque<RunRecord>>,
+    /// Record mode, while it lasts.
+    pub recorder: Mutex<Option<Recording>>,
+    /// Click-to-pick is waiting for its click.
+    pub picking: AtomicBool,
 }
 
 /// A recording that is never finished (the window crashed, say) stops
@@ -123,6 +142,8 @@ pub struct Pending {
     /// Queued with `QueueFrom::FirstPress`: start from where the chain of
     /// back-to-back runs started instead of from `at`.
     pub from_chain_start: bool,
+    /// A dry run (see `Engine::dry`).
+    pub dry: bool,
 }
 
 /// How many recent hotkey reports the Settings "Hotkey check" keeps.
@@ -164,8 +185,53 @@ impl AppState {
         if let Some(h) = &settings.toggle_hotkey {
             t = t.with_toggle(h.key.vk, h.modifiers.clone());
         }
-        t.paused = self.recording.load(Ordering::SeqCst);
+        // Hotkeys stand aside while a key is recorded, a macro is recorded,
+        // or a point is picked.
+        t.paused = self.recording.load(Ordering::SeqCst)
+            || self.recorder.lock().unwrap().is_some()
+            || self.picking.load(Ordering::SeqCst);
         Arc::new(t)
+    }
+
+    /// Start record mode: every physical key, click and wheel turn until
+    /// Stop or the panic key becomes a step. `seed`: events to start with
+    /// (the e2e test mode, which has no hooks, records from a file).
+    pub fn start_recording(&self, options: crate::record::Options, seed: Vec<crate::record::Rec>) {
+        *self.recorder.lock().unwrap() = Some(Recording { events: seed, options });
+        self.refresh_bindings();
+        crate::hotkey::set_capture(Capture::Record);
+    }
+
+    /// End record mode and turn what it caught into steps. `None` if it was
+    /// not recording.
+    pub fn finish_recording(&self) -> Option<Vec<crate::model::Step>> {
+        let rec = self.recorder.lock().unwrap().take()?;
+        crate::hotkey::set_capture(Capture::Off);
+        self.refresh_bindings();
+        let steps = crate::record::to_steps(&rec.events, rec.options);
+        if let Some(n) = &self.notify {
+            n.recording_done(&steps);
+        }
+        Some(steps)
+    }
+
+    /// Wait for the next left click anywhere (kept from the app under it).
+    pub fn start_pick(&self) {
+        self.picking.store(true, Ordering::SeqCst);
+        self.refresh_bindings();
+        crate::hotkey::set_capture(Capture::Pick);
+    }
+
+    /// End click-to-pick: where it was clicked, or `None` for cancelled.
+    pub fn finish_pick(&self, at: Option<(i32, i32)>) {
+        if !self.picking.swap(false, Ordering::SeqCst) {
+            return;
+        }
+        crate::hotkey::set_capture(Capture::Off);
+        self.refresh_bindings();
+        if let Some(n) = &self.notify {
+            n.picked(at);
+        }
     }
 
     /// The window starts or stops recording a key: hotkeys stand aside
@@ -397,12 +463,24 @@ fn handle(state: &Arc<AppState>, ev: TriggerEvent) {
             // Queueing only makes sense for one run per press.
             let queueable = m.queue && matches!(mode, None | Some(TriggerMode::Once));
             let from_chain_start = queueable && m.queue_from == QueueFrom::FirstPress;
-            launch(state, Pending { mac: m, delay_ms, at, from_chain_start }, queueable);
+            launch(state, Pending { mac: m, delay_ms, at, from_chain_start, dry: false }, queueable);
         }
-        TriggerEvent::RunAdhoc { mac, delay_ms } => {
-            launch(state, Pending { mac: *mac, delay_ms, at: None, from_chain_start: false }, false)
+        TriggerEvent::RunAdhoc { mac, delay_ms, dry } => {
+            launch(state, Pending { mac: *mac, delay_ms, at: None, from_chain_start: false, dry }, false)
         }
         TriggerEvent::Seen(seen) => state.record_seen(seen),
+        TriggerEvent::Recorded(rec) => {
+            if let Some(r) = state.recorder.lock().unwrap().as_mut() {
+                if r.events.len() < MAX_RECORDED {
+                    r.events.push(rec);
+                }
+            }
+        }
+        TriggerEvent::CaptureEnd => {
+            state.finish_recording();
+            state.finish_pick(None);
+        }
+        TriggerEvent::Picked { x, y } => state.finish_pick(Some((x, y))),
     }
 }
 
@@ -466,6 +544,13 @@ fn launch(state: &Arc<AppState>, first: Pending, queueable: bool) {
                 chain_start = chain_start.or(at);
                 let seed = st.settings.lock().unwrap().rng_seed;
                 let mut engine = Engine::new(st.input.clone(), seed);
+                engine.dry = p.dry;
+                let (who, id) = (st.clone(), p.mac.id.clone());
+                engine.on_step = Some(Box::new(move |i| {
+                    if let Some(n) = &who.notify {
+                        n.run_step(&id, i);
+                    }
+                }));
                 result = engine.run_at(&p.mac, &cancel, at);
             }
             st.record_run(RunRecord {
@@ -540,6 +625,8 @@ mod tests {
             recording: AtomicBool::new(false),
             recording_gen: AtomicU64::new(0),
             history: Mutex::new(VecDeque::new()),
+            recorder: Mutex::new(None),
+            picking: AtomicBool::new(false),
         });
         (st, input, rec)
     }
@@ -1048,6 +1135,38 @@ mod tests {
         assert_eq!(h[1].outcome, Outcome::Cancelled);
         assert_eq!(h[2].outcome, Outcome::Stopped);
         assert_eq!(h[3].outcome, Outcome::Finished);
+    }
+
+    #[test]
+    fn record_mode_collects_events_pauses_hotkeys_and_makes_steps() {
+        use crate::model::MouseButton;
+        use crate::record::{Options, Rec};
+        let (st, _, _) = state_with(vec![]);
+        st.start_recording(Options { keep_timing: true }, vec![]);
+        assert!(st.binding_table().paused, "no hotkeys while recording");
+        for (down, t) in [(true, 100), (false, 140)] {
+            handle(&st, TriggerEvent::Recorded(Rec::Button { button: MouseButton::Left, down, x: 4, y: 5, t }));
+        }
+        handle(&st, TriggerEvent::CaptureEnd); // the panic key
+        assert!(st.recorder.lock().unwrap().is_none());
+        assert!(!st.binding_table().paused);
+        assert!(st.finish_recording().is_none(), "already over");
+        // Events after the end are dropped.
+        handle(&st, TriggerEvent::Recorded(Rec::Button { button: MouseButton::Left, down: true, x: 1, y: 1, t: 999 }));
+        assert!(st.recorder.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn a_pick_ends_with_its_click_or_the_panic_key() {
+        let (st, _, _) = state_with(vec![]);
+        st.start_pick();
+        assert!(st.binding_table().paused);
+        handle(&st, TriggerEvent::Picked { x: 7, y: 8 });
+        assert!(!st.picking.load(Ordering::SeqCst));
+        assert!(!st.binding_table().paused);
+        st.start_pick();
+        handle(&st, TriggerEvent::CaptureEnd);
+        assert!(!st.picking.load(Ordering::SeqCst));
     }
 
     #[test]

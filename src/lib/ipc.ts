@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   AppWindow,
+  Guard,
   HotkeyDiagnostics,
   KeyRef,
   LoadProblem,
@@ -84,9 +85,40 @@ export const keyRefForVk = (vk: number) => invoke<KeyRef>("key_ref_for_vk", { vk
 
 export const runMacro = (id: string, delayMs = RUN_COUNTDOWN_MS) =>
   invoke<void>("run_macro", { id, delayMs });
-/** `name`: the macro's, for the run pill and history ("<name> (test)"). */
-export const testSteps = (steps: Step[], name?: string, delayMs = RUN_COUNTDOWN_MS) =>
-  invoke<void>("test_steps", { steps, delayMs, name: name ?? null });
+/** The editor's Test, or a dry run (`dry`: the mouse visits each point and
+ *  nothing is pressed). `name` and `id`: the macro's, for the pill, the
+ *  history and step highlighting; `guard`: its App only app, for points in
+ *  that app's window. */
+export const testSteps = (
+  steps: Step[],
+  name?: string,
+  opts: { id?: string; guard?: Guard | null; dry?: boolean } = {},
+  delayMs = RUN_COUNTDOWN_MS,
+) =>
+  invoke<void>("test_steps", {
+    steps,
+    delayMs,
+    name: name ?? null,
+    id: opts.id ?? null,
+    guard: opts.guard ?? null,
+    dry: opts.dry ?? false,
+  });
+/** A run reached step `index` of macro `id`. */
+export const onRunStep = (cb: (id: string, index: number) => void): Promise<UnlistenFn> =>
+  listen<[string, number]>("run-step", (e) => cb(e.payload[0], e.payload[1]));
+/** Record mode on: physical clicks, keys and wheel turns become steps, until
+ *  `stopRecording` or the panic key; the steps arrive as `onRecordingDone`. */
+export const startRecording = (keepTiming: boolean) => invoke<void>("start_recording", { keepTiming });
+export const stopRecording = () => invoke<Step[]>("stop_recording");
+export const onRecordingDone = (cb: (steps: Step[]) => void): Promise<UnlistenFn> =>
+  listen<Step[]>("recording-done", (e) => cb(e.payload));
+/** Click-to-pick (see lib/pick.ts). */
+export const startPick = () => invoke<void>("start_pick");
+export const cancelPick = () => invoke<void>("cancel_pick");
+export const onPicked = (cb: (at: [number, number] | null) => void): Promise<UnlistenFn> =>
+  listen<[number, number] | null>("picked", (e) => cb(e.payload));
+/** Where an app's window is (client area top-left), or null if none is open. */
+export const windowOrigin = (process: string) => invoke<[number, number] | null>("window_origin", { process });
 export const runHistory = () => invoke<RunRecord[]>("run_history");
 export const clearRunHistory = () => invoke<void>("clear_run_history");
 /** What runs or is queued changed. */

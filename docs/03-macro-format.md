@@ -12,7 +12,8 @@ of truth; `src/types.ts` mirrors them by hand (generating it with `ts-rs` is sti
 }
 ```
 
-`schema_version` is bumped whenever a field is removed or its meaning changes. Adding an
+`schema_version` is bumped whenever a field is removed or its meaning changes, or a value
+appears that older builds cannot read (2: the `wait_color` step; 3: the `window` anchor). Adding an
 optional field with a serde default does not require a bump. Every bump needs a migration
 step in `migrate` (`src-tauri/src/storage.rs`) and a round-trip test with a real file from the
 previous version.
@@ -157,6 +158,14 @@ Target switch: "Fixed position" / "Mouse start + offset" / "Previous point + off
 Offset field and a "Lands at" readout that follows the chain for the first pass
 (`aimPoints` in `src/lib/steps.ts`, mirroring `Engine::resolve_point`). "Click at mouse" adds
 a click aimed at the activation point.
+
+#### The `window` anchor (schema 3)
+
+`"anchor": "window"` aims `dx`/`dy` from the top-left of the client area of the macro's
+"App only" app's window: the foreground window if it is that app's, otherwise its first
+visible top-level window. The point follows the window when it moves or the app starts
+somewhere else. A run stops with a reason if the macro has no App only app or the app has no
+window open. `x`/`y` are ignored.
 
 ### `move`
 

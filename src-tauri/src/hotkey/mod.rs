@@ -21,8 +21,9 @@ pub enum TriggerEvent {
     /// mouse was when the hotkey was pressed (the activation point); `None`
     /// means "read it when the run starts", which is what a countdown wants.
     Start { macro_id: String, delay_ms: u64, at: Option<(i32, i32)> },
-    /// Run an unsaved step list (the editor's Test button).
-    RunAdhoc { mac: Box<Macro>, delay_ms: u64 },
+    /// Run an unsaved step list (the editor's Test button), or with `dry` a
+    /// dry run of it (the mouse visits each point; nothing is pressed).
+    RunAdhoc { mac: Box<Macro>, delay_ms: u64, dry: bool },
     /// A `HoldRepeat` binding's key came up.
     Stop { macro_id: String },
     /// The panic key. Aborts whatever is running, including a countdown.
@@ -31,6 +32,24 @@ pub enum TriggerEvent {
     ToggleEnabled,
     /// A watched key was pressed; for the Settings "Hotkey check".
     Seen(logic::Seen),
+    /// Record mode: one physical key, button or wheel event.
+    Recorded(crate::record::Rec),
+    /// The panic key while recording or picking: stop that.
+    CaptureEnd,
+    /// Click-to-pick: the user clicked here (the click never reached the app).
+    Picked { x: i32, y: i32 },
+}
+
+/// What the hooks capture besides hotkeys. Only ever on the user's request,
+/// with Pochini's window saying so, and only until it ends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Capture {
+    Off = 0,
+    /// Every physical key, button and wheel event becomes a `Recorded`
+    /// (clicks on Pochini's own window excepted). Nothing is swallowed.
+    Record = 1,
+    /// The next left click is a `Picked` and is kept from the app under it.
+    Pick = 2,
 }
 
 /// Health of the keyboard layer, for the Settings "Hotkey check".
@@ -49,7 +68,10 @@ pub struct HookStatus {
 }
 
 #[cfg(windows)]
-pub use hook::{status as hook_status, HookThread};
+pub use hook::{set_capture, status as hook_status, HookThread};
+
+#[cfg(not(windows))]
+pub fn set_capture(_: Capture) {}
 
 #[cfg(not(windows))]
 pub fn hook_status() -> HookStatus {

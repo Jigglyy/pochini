@@ -27,7 +27,7 @@ test.describe("a library from a newer Pochini", () => {
     await expect(alert).toHaveCount(0);
     await page.getByRole("button", { name: "New macro" }).click();
     await expect(page.getByRole("textbox", { name: "Macro name" })).toBeVisible();
-    expect(JSON.parse(await readFile(join(dataDir, "macros.json"), "utf8")).schema_version).toBe(2);
+    expect(JSON.parse(await readFile(join(dataDir, "macros.json"), "utf8")).schema_version).toBe(3);
   });
 });
 

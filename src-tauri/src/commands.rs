@@ -495,14 +495,39 @@ pub fn run_macro(state: State<'_, Arc<AppState>>, id: String, delay_ms: u64) -> 
 
 /// Run an unsaved step list (the editor's Test button), with the same
 /// countdown and the same one-at-a-time rule as everything else.
+/// The editor's Test (or, with `dry`, Dry run): the unsaved steps, with
+/// the same countdown and one-at-a-time rule as everything else. `id` is the
+/// editor's macro, so its steps light up as they run; `guard` its App only
+/// app, for points inside that app's window.
 #[tauri::command]
-pub fn test_steps(state: State<'_, Arc<AppState>>, steps: Vec<Step>, delay_ms: u64, name: Option<String>) -> R<()> {
-    let mut m = Macro::new(name.map(|n| format!("{n} (test)")).unwrap_or_else(|| "Test run".into()));
+pub fn test_steps(
+    state: State<'_, Arc<AppState>>,
+    steps: Vec<Step>,
+    delay_ms: u64,
+    name: Option<String>,
+    id: Option<String>,
+    guard: Option<crate::model::Guard>,
+    dry: Option<bool>,
+) -> R<()> {
+    let dry = dry.unwrap_or(false);
+    let label = if dry { "dry run" } else { "test" };
+    let mut m = Macro::new(name.map(|n| format!("{n} ({label})")).unwrap_or_else(|| "Test run".into()));
+    if let Some(id) = id {
+        m.id = id;
+    }
     m.steps = steps;
+    m.guard = guard;
     state
         .tx
-        .send(TriggerEvent::RunAdhoc { mac: Box::new(m), delay_ms })
+        .send(TriggerEvent::RunAdhoc { mac: Box::new(m), delay_ms, dry })
         .map_err(|e| e.to_string())
+}
+
+/// Where `process`'s window is (its client area's top-left), for picking a
+/// point inside it; `None` if it has no window open.
+#[tauri::command]
+pub fn window_origin(state: State<'_, Arc<AppState>>, process: String) -> R<Option<(i32, i32)>> {
+    Ok(state.input.window_origin(&process))
 }
 
 /// The last runs, newest first, for Settings > Run history.
@@ -587,6 +612,52 @@ pub fn set_autostart(app: tauri::AppHandle, state: State<'_, Arc<AppState>>, on:
     use tauri_plugin_autostart::ManagerExt;
     let l = app.autolaunch();
     if on { l.enable() } else { l.disable() }.map_err(|e| e.to_string())
+}
+
+/// Record mode on: every physical key, click and wheel turn becomes a step,
+/// until `stop_recording` or the panic key. In memory only. The e2e test
+/// mode, which installs no hooks, "records" the events in record.json.
+#[tauri::command]
+pub fn start_recording(state: State<'_, Arc<AppState>>, keep_timing: bool) -> R<()> {
+    #[allow(unused_mut)]
+    let mut seed = Vec::new();
+    #[cfg(debug_assertions)]
+    if crate::e2e::active() {
+        if let Ok(text) = std::fs::read_to_string(state.store.dir().join("record.json")) {
+            seed = serde_json::from_str(&text).map_err(|e| format!("record.json: {e}"))?;
+        }
+    }
+    state.start_recording(crate::record::Options { keep_timing }, seed);
+    Ok(())
+}
+
+/// Record mode off: the steps it made (also sent as "recording-done").
+#[tauri::command]
+pub fn stop_recording(state: State<'_, Arc<AppState>>) -> R<Vec<Step>> {
+    Ok(state.finish_recording().unwrap_or_default())
+}
+
+/// Click-to-pick: the next left click anywhere is the point (sent as
+/// "picked"), and never reaches the app under it. The panic key cancels.
+/// A small magnifier follows the cursor meanwhile. The e2e test mode picks
+/// wherever the fake mouse is, at once.
+#[tauri::command]
+pub fn start_pick(app: tauri::AppHandle, state: State<'_, Arc<AppState>>) -> R<()> {
+    state.start_pick();
+    #[cfg(debug_assertions)]
+    if crate::e2e::active() {
+        let at = state.input.cursor_pos().map_err(|e| e.to_string())?;
+        state.finish_pick(Some(at));
+        return Ok(());
+    }
+    crate::magnifier::open(&app, state.inner().clone());
+    Ok(())
+}
+
+#[tauri::command]
+pub fn cancel_pick(state: State<'_, Arc<AppState>>) -> R<()> {
+    state.finish_pick(None);
+    Ok(())
 }
 
 #[tauri::command]

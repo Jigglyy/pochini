@@ -17,8 +17,10 @@ pub mod engine;
 pub mod hotkey;
 pub mod input;
 pub mod model;
+pub mod record;
 pub mod share;
 pub mod storage;
+mod magnifier;
 mod tray;
 
 use std::sync::{Arc, Mutex};
@@ -42,6 +44,19 @@ impl Notify for TauriNotify {
 
     fn run_finished(&self, record: &app::RunRecord) {
         let _ = self.0.emit("run-finished", record);
+    }
+
+    fn recording_done(&self, steps: &[model::Step]) {
+        let _ = self.0.emit("recording-done", steps);
+    }
+
+    fn run_step(&self, macro_id: &str, index: usize) {
+        let _ = self.0.emit("run-step", (macro_id, index));
+    }
+
+    fn picked(&self, at: Option<(i32, i32)>) {
+        let _ = self.0.emit("picked", at);
+        magnifier::close(&self.0);
     }
 }
 
@@ -183,6 +198,8 @@ pub fn run() {
                 recording: std::sync::atomic::AtomicBool::new(false),
                 recording_gen: std::sync::atomic::AtomicU64::new(0),
                 history: Mutex::new(std::collections::VecDeque::new()),
+                recorder: Mutex::new(None),
+                picking: std::sync::atomic::AtomicBool::new(false),
             });
 
             app::spawn_worker(state.clone(), rx);
@@ -296,6 +313,11 @@ pub fn run() {
             commands::answer_close,
             commands::autostart_enabled,
             commands::set_autostart,
+            commands::start_recording,
+            commands::stop_recording,
+            commands::start_pick,
+            commands::cancel_pick,
+            commands::window_origin,
         ])
         .build(tauri::generate_context!())
         .expect("error while starting Pochini");

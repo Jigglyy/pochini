@@ -24,8 +24,9 @@ Only the latest release gets security fixes. Pochini updates by downloading the 
 
 Examples of what we want to hear about:
 
-- Anything that makes the keyboard hook keep, log, send or expose what you type, beyond
-  matching it against your own hotkeys.
+- Anything that makes the keyboard or mouse hook keep, log, send or expose what you do,
+  beyond matching keys against your own hotkeys, or record anything outside a recording you
+  started.
 - An imported `.pochini.json` that runs, or turns its hotkey on, without passing the review
   dialog, or that does something the review did not show.
 - A way to run script in Pochini's window that it did not ship (it runs under a strict
@@ -50,6 +51,10 @@ Not security bugs:
   up (yours, the panic key and the on/off hotkey), and lets it go. No keystroke is stored,
   logged or sent. Settings > Hotkey check only ever lists keys you have bound, the last eight,
   in memory.
+- **Except while you record a macro.** Record steps (with a red banner while it lasts) turns
+  your clicks, keys and wheel turns into the macro's steps, in memory, until you stop it with
+  the button or the panic key. A mouse hook exists only during a recording or a pick; clicks
+  on Pochini's own window are never recorded.
 - **No network, no telemetry.** Pochini makes no network connections at all: no update check,
   no analytics, no crash reports.
 - **Your data stays in one folder**, `%APPDATA%\com.pochini.app`: `macros.json` (with a

@@ -4,6 +4,31 @@ All notable changes to Pochini. Versions follow [semantic versioning](https://se
 while the major version is 0, a minor bump may change behaviour or the macro file format.
 Each version is built with `npm run release` into `release/Pochini-<version>.exe`.
 
+## Unreleased
+
+### Added
+
+- **Record steps**: press it in the editor, then click, type and scroll in any app; your
+  actions become steps, with the pauses between them as waits (up to 10 s each). Two quick
+  clicks become a double click, a press here and release there a drag, Ctrl+C one key step.
+  Stop with the button or the panic key; clicks on Pochini's own window are left out. Undo
+  takes a recording back.
+- **Pick by clicking**: Pick now waits for you to click the point (the click does not reach
+  the app there; Esc cancels), with a magnifier beside the cursor showing the pixels, the
+  coordinates and the color under it.
+- **App window + offset**: a new target for clicks and moves, measured from the top-left of the
+  App only app's window, so it keeps working when the window moves. Pick in the window sets it.
+- **Dry run** in the editor: after the countdown, the mouse visits each click and move point in
+  turn without clicking or typing.
+- The step a run is on lights up in the editor, for any run of that macro.
+
+### Changed
+
+- The macros file is now version 3 (for the new target); older versions refuse it rather than
+  misread it.
+- The privacy notes (README, SECURITY.md, the welcome) say what record mode keeps: your
+  actions, as steps, in memory, while the red banner shows.
+
 ## 0.13.0 - 2026-10-25
 
 ### Added

@@ -269,6 +269,58 @@ impl InputBackend for WinInput {
         };
         pid != 0 && process_elevated(pid) == Some(true)
     }
+
+    fn window_origin(&self, process: &str) -> Option<(i32, i32)> {
+        window_origin(process)
+    }
+}
+
+/// See `InputBackend::window_origin`.
+pub fn window_origin(process: &str) -> Option<(i32, i32)> {
+    use windows::Win32::Foundation::{HWND, POINT, TRUE};
+    use windows::Win32::Graphics::Gdi::ClientToScreen;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        EnumWindows, GetForegroundWindow, GetWindow, GetWindowThreadProcessId, IsIconic, IsWindowVisible, GW_OWNER,
+    };
+    let want = process.to_lowercase();
+    let is_app = |hwnd: HWND| {
+        let mut pid = 0u32;
+        // SAFETY: plain window query on a handle the system gave us.
+        unsafe { GetWindowThreadProcessId(hwnd, Some(&mut pid)) };
+        pid != 0 && name_for_pid(pid).is_some_and(|n| n.to_lowercase() == want)
+    };
+    struct Acc<'a> {
+        is_app: &'a dyn Fn(HWND) -> bool,
+        found: Option<HWND>,
+    }
+    unsafe extern "system" fn each(hwnd: HWND, lp: LPARAM) -> BOOL {
+        // SAFETY: `window_origin` passes a pointer to its own Acc as the lparam
+        // and keeps it alive (and otherwise untouched) until EnumWindows returns.
+        let acc = &mut *(lp.0 as *mut Acc);
+        let top = IsWindowVisible(hwnd).as_bool()
+            && !IsIconic(hwnd).as_bool()
+            && !GetWindow(hwnd, GW_OWNER).map(|o| !o.0.is_null()).unwrap_or(false);
+        if top && (acc.is_app)(hwnd) {
+            acc.found = Some(hwnd);
+            return BOOL(0); // stop
+        }
+        TRUE
+    }
+    // SAFETY: a window query, then an enumeration whose callback only reads
+    // through the Acc pointer it is given.
+    let hwnd = unsafe {
+        let fg = GetForegroundWindow();
+        if !fg.0.is_null() && is_app(fg) {
+            Some(fg)
+        } else {
+            let mut acc = Acc { is_app: &is_app, found: None };
+            let _ = EnumWindows(Some(each), LPARAM(&mut acc as *mut Acc as isize));
+            acc.found
+        }
+    }?;
+    let mut p = POINT { x: 0, y: 0 };
+    // SAFETY: `hwnd` is a live window; `p` is an owned POINT.
+    unsafe { ClientToScreen(hwnd, &mut p) }.as_bool().then_some((p.x, p.y))
 }
 
 /// Does `pid` run as administrator? `None` if we may not look (a protected
@@ -440,6 +492,11 @@ pub fn app_at(x: i32, y: i32) -> Option<String> {
     if pid == 0 {
         return None;
     }
+    name_for_pid(pid)
+}
+
+/// `process_name`, cached per pid for a few seconds (on this thread).
+fn name_for_pid(pid: u32) -> Option<String> {
     NAME_CACHE.with(|c| {
         let mut c = c.borrow_mut();
         if let Some((name, at)) = c.get(&pid) {
@@ -514,4 +571,50 @@ pub fn list_apps() -> Vec<AppWindow> {
     }
     acc.out.sort_by_key(|a| a.process.to_lowercase());
     acc.out
+}
+
+/// The colors of a `w` x `h` block of the screen at (x, y), row by row, as
+/// [r, g, b]: one BitBlt instead of a GetPixel per pixel (the magnifier).
+pub fn capture(x: i32, y: i32, w: i32, h: i32) -> Option<Vec<[u8; 3]>> {
+    use windows::Win32::Graphics::Gdi::{
+        BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC, GetDIBits, ReleaseDC,
+        SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, SRCCOPY,
+    };
+    if w <= 0 || h <= 0 {
+        return None;
+    }
+    let mut buf = vec![0u8; (w * h * 4) as usize];
+    // SAFETY: every GDI object made here is released before returning; the
+    // bitmap is deselected before GetDIBits reads it, as that call requires,
+    // and `buf` holds exactly w * h 32-bit pixels.
+    let lines = unsafe {
+        let screen = GetDC(None);
+        let mem = CreateCompatibleDC(screen);
+        let bmp = CreateCompatibleBitmap(screen, w, h);
+        let old = SelectObject(mem, bmp);
+        let copied = BitBlt(mem, 0, 0, w, h, screen, x, y, SRCCOPY).is_ok();
+        SelectObject(mem, old);
+        let mut info = BITMAPINFO {
+            bmiHeader: BITMAPINFOHEADER {
+                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                biWidth: w,
+                biHeight: -h, // top-down rows
+                biPlanes: 1,
+                biBitCount: 32,
+                biCompression: BI_RGB.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let lines = if copied {
+            GetDIBits(mem, bmp, 0, h as u32, Some(buf.as_mut_ptr() as *mut core::ffi::c_void), &mut info, DIB_RGB_COLORS)
+        } else {
+            0
+        };
+        let _ = DeleteObject(bmp);
+        let _ = DeleteDC(mem);
+        ReleaseDC(None, screen);
+        lines
+    };
+    (lines > 0).then(|| buf.as_chunks::<4>().0.iter().map(|p| [p[2], p[1], p[0]]).collect())
 }

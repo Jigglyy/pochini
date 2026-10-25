@@ -33,7 +33,13 @@ pub enum EngineError {
     /// A "wait for a color" step timed out and was set to stop the run.
     #[error("Waited {ms} ms for ({x}, {y}) to turn {want}, but it stayed {saw}.")]
     ColorTimeout { x: i32, y: i32, want: String, saw: String, ms: u64 },
+    /// A step aims inside the app's window, and there is none.
+    #[error("{0}")]
+    NoWindow(String),
 }
+
+/// A dry run pauses this long on each point it shows.
+pub const DRY_PAUSE_MS: u64 = 600;
 
 /// How often a "wait for a color" step looks at the screen.
 pub const COLOR_POLL_MS: u64 = 25;
@@ -99,6 +105,13 @@ impl HeldState {
 }
 
 pub struct Engine {
+    /// A dry run: the mouse visits every click and move point, pausing on
+    /// each, and nothing is clicked, pressed or typed.
+    pub dry: bool,
+    /// Told the index of each step as it starts (the editor highlights it).
+    pub on_step: Option<Box<dyn Fn(usize) + Send>>,
+    /// The macro's "App only" app, for points inside its window.
+    window_app: Option<String>,
     input: Arc<dyn InputBackend>,
     rng: StdRng,
     /// Cursor position when the current run started. See `Anchor::Activation`.
@@ -111,6 +124,9 @@ pub struct Engine {
 impl Engine {
     pub fn new(input: Arc<dyn InputBackend>, seed: Option<u64>) -> Self {
         Self {
+            dry: false,
+            on_step: None,
+            window_app: None,
             input,
             rng: match seed {
                 Some(s) => StdRng::seed_from_u64(s),
@@ -146,6 +162,7 @@ impl Engine {
             None => self.input.cursor_pos().unwrap_or((0, 0)),
         };
         self.previous = self.activation;
+        self.window_app = m.guard.as_ref().map(|g| g.process.clone()).filter(|p| !p.is_empty());
         let mut held = HeldState::default();
         // A bug in a step must not leave a key held down across the whole OS:
         // catch the panic, run the release pass, report it as an error.
@@ -161,7 +178,12 @@ impl Engine {
         let ended_normally = match &result {
             Ok(()) => true,
             Err(EngineError::Cancelled) => cancel.is_soft_stop(),
-            Err(EngineError::Input(_) | EngineError::Internal | EngineError::ColorTimeout { .. }) => false,
+            Err(
+                EngineError::Input(_)
+                | EngineError::Internal
+                | EngineError::ColorTimeout { .. }
+                | EngineError::NoWindow(_),
+            ) => false,
         };
         if m.return_to_start && ended_normally {
             let (x, y) = self.activation;
@@ -172,6 +194,7 @@ impl Engine {
 
     fn run_inner(&mut self, m: &Macro, cancel: &CancelToken, held: &mut HeldState) -> Result<()> {
         let passes: Option<u32> = match m.repeat {
+            _ if self.dry => Some(1),
             Repeat::Once => Some(1),
             Repeat::Count { n } => Some(n),
             Repeat::Forever => None,
@@ -199,7 +222,14 @@ impl Engine {
                 if time_up() {
                     return Ok(());
                 }
-                self.run_step(&m.steps[i], cancel, held)?;
+                if let Some(f) = &self.on_step {
+                    f(i);
+                }
+                if self.dry {
+                    self.dry_step(&m.steps[i], cancel)?;
+                } else {
+                    self.run_step(&m.steps[i], cancel, held)?;
+                }
             }
             pass = pass.saturating_add(1);
             if passes.is_none() && cancel.is_cancelled() {
@@ -235,12 +265,33 @@ impl Engine {
         }
     }
 
-    fn resolve_point(&mut self, anchor: Anchor, (x, y): (i32, i32), (dx, dy): (i32, i32), jitter_px: u32) -> (i32, i32) {
+    /// A dry run's step: show where a click or move lands, do nothing else.
+    fn dry_step(&mut self, step: &Step, cancel: &CancelToken) -> Result<()> {
+        if let Step::Click { x, y, anchor, dx, dy, .. } | Step::Move { x, y, anchor, dx, dy, .. } = step {
+            let p = self.resolve_point(*anchor, (*x, *y), (*dx, *dy), 0)?;
+            self.input.move_to(p.0, p.1)?;
+            self.wait(DRY_PAUSE_MS, cancel)?;
+        }
+        Ok(())
+    }
+
+    fn resolve_point(&mut self, anchor: Anchor, (x, y): (i32, i32), (dx, dy): (i32, i32), jitter_px: u32) -> Result<(i32, i32)> {
         let shift = |(px, py): (i32, i32)| (px.saturating_add(dx), py.saturating_add(dy));
         let (x, y) = match anchor {
             Anchor::Fixed => (x, y),
             Anchor::Activation => shift(self.activation),
             Anchor::Previous => shift(self.previous),
+            Anchor::Window => {
+                let Some(app) = self.window_app.clone() else {
+                    return Err(EngineError::NoWindow(
+                        "A step aims inside the app's window, but the macro has no App only app.".into(),
+                    ));
+                };
+                match self.input.window_origin(&app) {
+                    Some(origin) => shift(origin),
+                    None => return Err(EngineError::NoWindow(format!("{app} has no window open."))),
+                }
+            }
         };
         // The aimed point, not the jittered or clamped one: a chain of
         // "previous + offset" steps must not drift by its own randomness.
@@ -250,7 +301,7 @@ impl Engine {
         } else {
             jitter_point(x, y, jitter_px, self.rng.gen(), self.rng.gen())
         };
-        self.input.virtual_rect().clamp(jx, jy)
+        Ok(self.input.virtual_rect().clamp(jx, jy))
     }
 
     /// Interpolated cursor travel. Some targets only register hover on real
@@ -293,7 +344,7 @@ impl Engine {
             }
 
             Step::Move { x, y, anchor, dx, dy, coord_jitter_px, move_duration_ms, .. } => {
-                let p = self.resolve_point(*anchor, (*x, *y), (*dx, *dy), *coord_jitter_px);
+                let p = self.resolve_point(*anchor, (*x, *y), (*dx, *dy), *coord_jitter_px)?;
                 self.glide(p, *move_duration_ms, cancel)?;
             }
 
@@ -313,7 +364,7 @@ impl Engine {
                 held_key,
                 ..
             } => {
-                let p = self.resolve_point(*anchor, (*x, *y), (*dx, *dy), *coord_jitter_px);
+                let p = self.resolve_point(*anchor, (*x, *y), (*dx, *dy), *coord_jitter_px)?;
                 self.glide(p, *move_duration_ms, cancel)?;
                 // Windows would drop the click without a word (UIPI): say so.
                 if self.input.blocked(Some(p)) {
@@ -1407,6 +1458,69 @@ mod tests {
         assert!(color_matches([100, 100, 100], [110, 90, 100], 10));
         assert!(!color_matches([100, 100, 100], [111, 100, 100], 10));
         assert!(color_matches([0, 0, 0], [0, 0, 0], 0));
+    }
+
+    fn move_to_window(dx: i32, dy: i32) -> Step {
+        Step::Move {
+            id: "mw".into(),
+            shuffle: false,
+            x: 0,
+            y: 0,
+            anchor: Anchor::Window,
+            dx,
+            dy,
+            coord_jitter_px: 0,
+            move_duration_ms: 0,
+            capture: None,
+        }
+    }
+
+    #[test]
+    fn a_point_in_the_apps_window_follows_the_window() {
+        let (f, mut e) = engine();
+        let mut m = mac(vec![move_to_window(10, 5)]);
+        m.guard = Some(crate::model::Guard { process: "game.exe".into(), label: String::new() });
+        e.run(&m, &CancelToken::new()).unwrap();
+        *f.window.lock().unwrap() = Some((400, 300)); // the window moved
+        e.run(&m, &CancelToken::new()).unwrap();
+        assert_eq!(f.events(), vec![Event::Move(110, 55), Event::Move(410, 305)]);
+    }
+
+    #[test]
+    fn a_point_in_the_apps_window_needs_the_app_and_its_window() {
+        let (f, mut e) = engine();
+        let m = mac(vec![move_to_window(1, 1)]);
+        match e.run(&m, &CancelToken::new()) {
+            Err(EngineError::NoWindow(why)) => assert!(why.contains("no App only app"), "{why}"),
+            other => panic!("{other:?}"),
+        }
+        let mut m = m;
+        m.guard = Some(crate::model::Guard { process: "game.exe".into(), label: String::new() });
+        *f.window.lock().unwrap() = None;
+        match e.run(&m, &CancelToken::new()) {
+            Err(EngineError::NoWindow(why)) => assert_eq!(why, "game.exe has no window open."),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_dry_run_visits_each_point_once_and_presses_nothing() {
+        let (f, mut e) = engine();
+        e.dry = true;
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let s2 = seen.clone();
+        e.on_step = Some(Box::new(move |i| s2.lock().unwrap().push(i)));
+        let mut m = mac(vec![
+            click_holding(0, vec![Modifier::Shift], Some(key(0x10))),
+            Step::Text { id: "t".into(), shuffle: false, value: "nope".into(), per_char_ms: Jitter::exact(0) },
+            Step::Wait { id: "w".into(), shuffle: false, ms: Jitter::exact(5_000) },
+        ]);
+        m.repeat = Repeat::Forever;
+        let t = std::time::Instant::now();
+        e.run(&m, &CancelToken::new()).unwrap();
+        assert!(t.elapsed() < std::time::Duration::from_millis(2_000), "waits are skipped, one pass only");
+        assert_eq!(f.events(), vec![Event::Move(100, 200)]);
+        assert_eq!(*seen.lock().unwrap(), vec![0, 1, 2], "every step is announced");
     }
 
     /// Regression: "Until stopped" with no steps looped with nothing to wait

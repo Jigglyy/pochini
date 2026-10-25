@@ -33,7 +33,7 @@ export function Welcome({ settings, onDone }: { settings: Settings; onDone: () =
     {
       Icon: ShieldCheck,
       title: "The keyboard hook keeps nothing",
-      body: "Pochini watches keys only to spot your hotkeys and lets every key go: nothing is logged or sent. It never goes online.",
+      body: "Pochini watches keys only to spot your hotkeys and lets every key go: nothing is logged or sent, and it never goes online. Only while you record a macro do your clicks and keys become its steps.",
     },
     {
       Icon: Keyboard,

@@ -128,6 +128,14 @@ pub trait InputBackend: Send + Sync {
     fn blocked(&self, _at: Option<(i32, i32)>) -> bool {
         false
     }
+
+    /// The screen position of the top-left of the client area of `process`'s
+    /// window (an exe name such as "notepad.exe", any case): the foreground
+    /// window if it is that app's, else its first visible top-level window.
+    /// `None` if the app has no window open.
+    fn window_origin(&self, _process: &str) -> Option<(i32, i32)> {
+        None
+    }
 }
 
 /// Unit tests, and the e2e test mode of debug builds (see `crate::e2e`).
