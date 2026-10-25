@@ -28,5 +28,6 @@ in `ci.yml`.
 
 - A release rebuilds only what changed (about 6 minutes warm).
 - A collaborator's release commit builds but does not publish.
-- Required reviewers on the `release` environment need a public repository on the current
-  plan; add them after the switch.
+- Since the repository went public (2026-10-25), the `release` environment also requires the
+  owner's approval and deploys from `main` only, so even an owner push publishes nothing until
+  approved, and the attestation step runs.

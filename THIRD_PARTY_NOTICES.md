@@ -315,66 +315,66 @@ unmodified; their source is available from crates.io at the versions shown.
 - @floating-ui/react-dom 2.1.9 (MIT): https://github.com/floating-ui/floating-ui
 - @floating-ui/utils 0.2.12 (MIT): https://github.com/floating-ui/floating-ui
 - @radix-ui/number 1.1.3 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/primitive 1.1.7 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-accessible-icon 1.1.16 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-accordion 1.2.21 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-alert-dialog 1.1.24 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-arrow 1.1.16 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-aspect-ratio 1.1.16 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-avatar 1.2.7 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-checkbox 1.3.12 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-collapsible 1.1.21 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-collection 1.1.16 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/primitive 1.2.0 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-accessible-icon 1.2.0 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-accordion 1.3.1 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-alert-dialog 1.2.1 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-arrow 1.1.17 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-aspect-ratio 1.2.0 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-avatar 1.3.1 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-checkbox 1.4.1 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-collapsible 1.2.1 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-collection 1.2.0 (MIT): https://github.com/radix-ui/primitives
 - @radix-ui/react-compose-refs 1.1.5 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-context 1.2.2 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-context-menu 2.3.8 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-dialog 1.2.0 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-direction 1.1.5 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-dismissable-layer 1.1.20 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-dropdown-menu 2.1.25 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-focus-guards 1.1.6 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-focus-scope 1.2.0 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-form 0.2.0 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-hover-card 1.1.24 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-context 1.3.0 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-context-menu 2.4.1 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-dialog 1.3.1 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-direction 1.2.0 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-dismissable-layer 1.2.1 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-dropdown-menu 2.2.1 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-focus-guards 1.2.0 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-focus-scope 1.3.1 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-form 0.3.0 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-hover-card 1.2.1 (MIT): https://github.com/radix-ui/primitives
 - @radix-ui/react-id 1.1.4 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-label 2.1.16 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-menu 2.1.25 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-menubar 1.1.25 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-navigation-menu 1.3.0 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-one-time-password-field 0.1.17 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-password-toggle-field 0.1.12 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-popover 1.2.0 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-popper 1.3.8 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-portal 1.1.18 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-label 2.1.17 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-menu 2.2.1 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-menubar 1.2.1 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-navigation-menu 1.4.1 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-one-time-password-field 0.2.1 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-password-toggle-field 0.2.1 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-popover 1.3.1 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-popper 1.4.0 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-portal 1.2.0 (MIT): https://github.com/radix-ui/primitives
 - @radix-ui/react-presence 1.1.11 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-primitive 2.1.11 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-progress 1.1.17 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-radio-group 1.4.8 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-roving-focus 1.1.20 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-scroll-area 1.3.0 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-select 2.3.8 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-separator 1.1.16 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-slider 1.5.0 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-slot 1.4.0 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-switch 1.3.8 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-tabs 1.1.22 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-toast 1.2.24 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-toggle 1.1.19 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-toggle-group 1.1.20 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-toolbar 1.1.20 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-tooltip 1.3.0 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-use-callback-ref 1.1.4 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-use-controllable-state 1.2.6 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-primitive 2.2.0 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-progress 1.2.1 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-radio-group 1.5.1 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-roving-focus 1.2.1 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-scroll-area 1.4.0 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-select 2.4.1 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-separator 1.2.0 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-slider 1.6.1 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-slot 1.5.0 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-switch 1.4.1 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-tabs 1.2.1 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-toast 1.3.1 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-toggle 1.2.1 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-toggle-group 1.2.1 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-toolbar 1.2.1 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-tooltip 1.4.1 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-use-callback-ref 1.1.5 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-use-controllable-state 1.3.0 (MIT): https://github.com/radix-ui/primitives
 - @radix-ui/react-use-effect-event 0.0.5 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-use-escape-keydown 1.1.5 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-use-escape-keydown 1.1.6 (MIT): https://github.com/radix-ui/primitives
 - @radix-ui/react-use-is-hydrated 0.1.3 (MIT): https://github.com/radix-ui/primitives
 - @radix-ui/react-use-layout-effect 1.1.4 (MIT): https://github.com/radix-ui/primitives
 - @radix-ui/react-use-previous 1.1.4 (MIT): https://github.com/radix-ui/primitives
 - @radix-ui/react-use-rect 1.1.4 (MIT): https://github.com/radix-ui/primitives
 - @radix-ui/react-use-size 1.1.5 (MIT): https://github.com/radix-ui/primitives
-- @radix-ui/react-visually-hidden 1.2.12 (MIT): https://github.com/radix-ui/primitives
+- @radix-ui/react-visually-hidden 1.2.13 (MIT): https://github.com/radix-ui/primitives
 - @radix-ui/rect 1.1.3 (MIT): https://github.com/radix-ui/primitives
-- @tauri-apps/api 2.12.1 (Apache-2.0 OR MIT): https://github.com/tauri-apps/tauri
+- @tauri-apps/api 2.12.4 (Apache-2.0 OR MIT): https://github.com/tauri-apps/tauri
 - @types/react 19.3.0 (MIT): https://github.com/DefinitelyTyped/DefinitelyTyped
 - @types/react-dom 19.3.0 (MIT): https://github.com/DefinitelyTyped/DefinitelyTyped
 - aria-hidden 1.2.6 (MIT): https://github.com/theKashey/aria-hidden
@@ -383,10 +383,10 @@ unmodified; their source is available from crates.io at the versions shown.
 - csstype 3.2.3 (MIT): https://github.com/frenic/csstype
 - detect-node-es 1.1.0 (MIT): https://github.com/thekashey/detect-node
 - get-nonce 1.0.1 (MIT): git@github.com:theKashey/get-nonce
-- lucide-react 1.52.0 (ISC): https://github.com/lucide-icons/lucide
-- radix-ui 1.7.0 (MIT): https://github.com/radix-ui/primitives
-- react 19.3.0 (MIT): https://github.com/react/react
-- react-dom 19.3.0 (MIT): https://github.com/react/react
+- lucide-react 1.61.0 (ISC): https://github.com/lucide-icons/lucide
+- radix-ui 1.8.1 (MIT): https://github.com/radix-ui/primitives
+- react 19.3.1 (MIT): https://github.com/react/react
+- react-dom 19.3.1 (MIT): https://github.com/react/react
 - react-remove-scroll 2.7.2 (MIT): https://github.com/theKashey/react-remove-scroll
 - react-remove-scroll-bar 2.3.8 (MIT): https://github.com/theKashey/react-remove-scroll-bar
 - react-style-singleton 2.2.3 (MIT): https://github.com/theKashey/react-style-singleton
@@ -450,7 +450,7 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ````
 
-### @radix-ui/number 1.1.3, @radix-ui/primitive 1.1.7, @radix-ui/react-accessible-icon 1.1.16, @radix-ui/react-accordion 1.2.21, @radix-ui/react-alert-dialog 1.1.24, @radix-ui/react-arrow 1.1.16, @radix-ui/react-aspect-ratio 1.1.16, @radix-ui/react-avatar 1.2.7, @radix-ui/react-checkbox 1.3.12, @radix-ui/react-collapsible 1.1.21, @radix-ui/react-collection 1.1.16, @radix-ui/react-compose-refs 1.1.5, @radix-ui/react-context 1.2.2, @radix-ui/react-context-menu 2.3.8, @radix-ui/react-dialog 1.2.0, @radix-ui/react-direction 1.1.5, @radix-ui/react-dismissable-layer 1.1.20, @radix-ui/react-dropdown-menu 2.1.25, @radix-ui/react-focus-guards 1.1.6, @radix-ui/react-focus-scope 1.2.0, @radix-ui/react-form 0.2.0, @radix-ui/react-hover-card 1.1.24, @radix-ui/react-id 1.1.4, @radix-ui/react-label 2.1.16, @radix-ui/react-menu 2.1.25, @radix-ui/react-menubar 1.1.25, @radix-ui/react-navigation-menu 1.3.0, @radix-ui/react-one-time-password-field 0.1.17, @radix-ui/react-password-toggle-field 0.1.12, @radix-ui/react-popover 1.2.0, @radix-ui/react-popper 1.3.8, @radix-ui/react-portal 1.1.18, @radix-ui/react-presence 1.1.11, @radix-ui/react-primitive 2.1.11, @radix-ui/react-progress 1.1.17, @radix-ui/react-radio-group 1.4.8, @radix-ui/react-roving-focus 1.1.20, @radix-ui/react-scroll-area 1.3.0, @radix-ui/react-select 2.3.8, @radix-ui/react-separator 1.1.16, @radix-ui/react-slider 1.5.0, @radix-ui/react-slot 1.4.0, @radix-ui/react-switch 1.3.8, @radix-ui/react-tabs 1.1.22, @radix-ui/react-toast 1.2.24, @radix-ui/react-toggle 1.1.19, @radix-ui/react-toggle-group 1.1.20, @radix-ui/react-toolbar 1.1.20, @radix-ui/react-tooltip 1.3.0, @radix-ui/react-use-callback-ref 1.1.4, @radix-ui/react-use-controllable-state 1.2.6, @radix-ui/react-use-effect-event 0.0.5, @radix-ui/react-use-escape-keydown 1.1.5, @radix-ui/react-use-is-hydrated 0.1.3, @radix-ui/react-use-layout-effect 1.1.4, @radix-ui/react-use-previous 1.1.4, @radix-ui/react-use-rect 1.1.4, @radix-ui/react-use-size 1.1.5, @radix-ui/react-visually-hidden 1.2.12, @radix-ui/rect 1.1.3, radix-ui 1.7.0
+### @radix-ui/number 1.1.3, @radix-ui/primitive 1.2.0, @radix-ui/react-accessible-icon 1.2.0, @radix-ui/react-accordion 1.3.1, @radix-ui/react-alert-dialog 1.2.1, @radix-ui/react-arrow 1.1.17, @radix-ui/react-aspect-ratio 1.2.0, @radix-ui/react-avatar 1.3.1, @radix-ui/react-checkbox 1.4.1, @radix-ui/react-collapsible 1.2.1, @radix-ui/react-collection 1.2.0, @radix-ui/react-compose-refs 1.1.5, @radix-ui/react-context 1.3.0, @radix-ui/react-context-menu 2.4.1, @radix-ui/react-dialog 1.3.1, @radix-ui/react-direction 1.2.0, @radix-ui/react-dismissable-layer 1.2.1, @radix-ui/react-dropdown-menu 2.2.1, @radix-ui/react-focus-guards 1.2.0, @radix-ui/react-focus-scope 1.3.1, @radix-ui/react-form 0.3.0, @radix-ui/react-hover-card 1.2.1, @radix-ui/react-id 1.1.4, @radix-ui/react-label 2.1.17, @radix-ui/react-menu 2.2.1, @radix-ui/react-menubar 1.2.1, @radix-ui/react-navigation-menu 1.4.1, @radix-ui/react-one-time-password-field 0.2.1, @radix-ui/react-password-toggle-field 0.2.1, @radix-ui/react-popover 1.3.1, @radix-ui/react-popper 1.4.0, @radix-ui/react-portal 1.2.0, @radix-ui/react-presence 1.1.11, @radix-ui/react-primitive 2.2.0, @radix-ui/react-progress 1.2.1, @radix-ui/react-radio-group 1.5.1, @radix-ui/react-roving-focus 1.2.1, @radix-ui/react-scroll-area 1.4.0, @radix-ui/react-select 2.4.1, @radix-ui/react-separator 1.2.0, @radix-ui/react-slider 1.6.1, @radix-ui/react-slot 1.5.0, @radix-ui/react-switch 1.4.1, @radix-ui/react-tabs 1.2.1, @radix-ui/react-toast 1.3.1, @radix-ui/react-toggle 1.2.1, @radix-ui/react-toggle-group 1.2.1, @radix-ui/react-toolbar 1.2.1, @radix-ui/react-tooltip 1.4.1, @radix-ui/react-use-callback-ref 1.1.5, @radix-ui/react-use-controllable-state 1.3.0, @radix-ui/react-use-effect-event 0.0.5, @radix-ui/react-use-escape-keydown 1.1.6, @radix-ui/react-use-is-hydrated 0.1.3, @radix-ui/react-use-layout-effect 1.1.4, @radix-ui/react-use-previous 1.1.4, @radix-ui/react-use-rect 1.1.4, @radix-ui/react-use-size 1.1.5, @radix-ui/react-visually-hidden 1.2.13, @radix-ui/rect 1.1.3, radix-ui 1.8.1
 
 ````
 MIT License
@@ -3927,7 +3927,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ````
 
-### lucide-react 1.52.0
+### lucide-react 1.61.0
 
 ````
 ISC License
@@ -4812,7 +4812,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ````
 
-### react 19.3.0, react-dom 19.3.0, scheduler 0.28.0
+### react 19.3.1, react-dom 19.3.1, scheduler 0.28.0
 
 ````
 MIT License
@@ -5336,7 +5336,7 @@ PackageDownloadLocation: git+ssh://github.com/tauri-apps/tao.git
 Creator: Person: Daniel Thompson-Yvetot
 ````
 
-### tauri 2.12.1, tauri-codegen 2.7.1, tauri-macros 2.7.1, tauri-plugin-autostart 2.7.0, tauri-plugin-dialog 2.8.2, tauri-plugin-fs 2.7.0, tauri-plugin-window-state 2.5.0, tauri-runtime 2.12.1, tauri-runtime-wry 2.12.1, tauri-utils 2.10.1, @tauri-apps/api 2.12.1
+### tauri 2.12.1, tauri-codegen 2.7.1, tauri-macros 2.7.1, tauri-plugin-autostart 2.7.0, tauri-plugin-dialog 2.8.2, tauri-plugin-fs 2.7.0, tauri-plugin-window-state 2.5.0, tauri-runtime 2.12.1, tauri-runtime-wry 2.12.1, tauri-utils 2.10.1, @tauri-apps/api 2.12.4
 
 ````
 MIT License
