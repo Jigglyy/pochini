@@ -32,6 +32,7 @@ previous version.
   "queue": false,                // true: presses while running are queued, not ignored
   "queue_from": "first_press",   // or "each_press": where queued runs start (see Queue)
   "return_to_start": false,      // true: move the cursor back to where the run started
+  "stop_after_ms": null,         // or e.g. 600000: end the run after 10 minutes (normal end)
   "steps": [ /* Step */ ],
   "guard": null,                 // optional Guard, see below
   "created_at": "2026-09-17T12:00:00Z",
@@ -216,6 +217,7 @@ plus a checkbox that reveals a second number field, matching the original descri
 ```jsonc
 {
   "panic_key": { "vk": 27, "scancode": 1, "extended": false, "label": "Esc" },
+  "welcomed": true,              // the first-run welcome has been closed
   "enabled": true,               // master switch: false = every hotkey ignored
   "rng_seed": null,              // set to make runs reproducible while debugging
   "toggle_hotkey": {             // flips `enabled` from anywhere; null = none

@@ -89,7 +89,21 @@ Rebuilt on ShadCN + Tailwind v4 in Kanbini's style.
 - [x] Playwright e2e suite against the real app in a headless test mode (`npm run e2e`)
 - [ ] Coordinate picking via a hook-armed key, with a magnifier
 - [ ] Tray icon (closing the window currently quits the app and its hotkeys)
-- [ ] First-run notice about the keyboard hook
+- [x] First-run welcome (panic key, real input, hook privacy, admin apps)
+- [x] Undo/redo in the editor, Undo after deleting a step or macro, in-window shortcuts
+- [x] Search box on the macro list, Copy as text / Paste, Export all
+- [x] Hotkey clashes shown while recording (hotkeys pause meanwhile), "Stop after" limit
+- [x] Error boundary, window size and position remembered, `--smoke` check of each release
+
+## M5 - Next
+
+- [ ] Tray icon, close to tray, opt-in start with Windows
+- [ ] Run history, with engine errors shown
+- [ ] "Wait until a pixel has a color" step
+- [ ] Record mode (clicks, keys and the waits between them)
+- [ ] Pick key armed by the hook, with a magnifier
+- [ ] Coordinates relative to the "App only" window
+- [ ] Dry-run overlay: where each click will land
 
 ## M4 - Ship
 

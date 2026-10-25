@@ -8,10 +8,43 @@ Each version is built with `npm run release` into `release/Pochini-<version>.exe
 
 ### Added
 
+- **Undo and redo in the editor**: Ctrl+Z / Ctrl+Y, or the arrows beside the name. Typing into
+  one field undoes in one go, and undoing back to what was saved shows "Saved" again. A deleted
+  step leaves an Undo line.
+- **Delete a macro without a dialog**: it goes at once, with Undo (or Ctrl+Z) to put it back
+  where it was, exactly as it was.
+- **Keyboard shortcuts** in the window: Ctrl+N new macro, Ctrl+F find, Ctrl+V paste, Ctrl+S
+  save, Ctrl+Enter test, Delete or Ctrl+D on a focused step, Alt+Left back. Settings lists
+  them all, and tooltips show them.
+- **Find a macro**: a search box (by name, hotkey or app) once the list has five or more.
+- **Copy as text** in a macro's menu puts it on the clipboard as one line, ready to paste into
+  a chat. **Paste** (or Ctrl+V on the list) adds a copied macro, checked like an import.
+- **Export all macros** to one file, in Settings > Backup; Import reads it back.
+- **Hotkey clashes while recording**: the editor says when a hotkey is already used by another
+  macro, the panic key or the on/off hotkey. While you record a key, hotkeys stand aside, so
+  recording one that is already bound no longer fires it.
+- **Stop after a while**: an optional time limit for a run, for macros that repeat until
+  stopped.
+- A first-run welcome with the four things worth knowing: real input, the panic key, what the
+  keyboard hook does (nothing kept), and apps running as administrator.
+- The run pill names the panic key.
+- Pochini remembers its window's size, position and maximized state.
+- Pick also records which monitor the point is on (for noticing a changed display layout
+  later); typing a number instead forgets it.
 - Settings > About lists the open source software inside Pochini and its licenses, and can open
-  the data folder.
+  or copy the data folder.
 - Pochini is now MIT licensed. Each release also comes with SHA256 checksums and the
   third-party license notices.
+
+### Changed
+
+- A dragged step or macro eases into your grip instead of snapping to the pointer, and its
+  shadow travels with it as it drops.
+- Small confirmations: the "Saved" check pops, a picked point's numbers flash, a clashing
+  hotkey shakes.
+- If a screen ever crashes, it says so and offers Try again, instead of leaving the window
+  blank while hotkeys keep running.
+- Each release exe checks itself (`--smoke`) before it is published.
 
 ## 0.11.1 - 2026-10-25
 

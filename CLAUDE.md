@@ -28,9 +28,9 @@ this app owns.
 ## Status
 
 Implemented and building. `src-tauri/` has the full Rust core (model, storage, input,
-hotkey, engine, IPC) with **165 passing unit tests**; `src/` is a ShadCN + Tailwind v4 UI
-styled after Kanbini (macro list, step editor, settings), covered by **61 Playwright e2e
-tests** against the real app. `npm run tauri dev` opens the app.
+hotkey, engine, IPC) with **172 passing unit tests**; `src/` is a ShadCN + Tailwind v4 UI
+styled after Kanbini (macro list, step editor, settings), with **35 Vitest unit tests** for its
+helpers and **75 Playwright e2e tests** against the real app. `npm run tauri dev` opens the app.
 
 The M0/M1 Win32 assumptions were measured before being ported; see
 [tools/m0-probe/README.md](tools/m0-probe/README.md). That harness found three errors in the
@@ -62,6 +62,7 @@ npm run tauri dev                                  # run the app
 npm run release -- patch                           # versioned .exe + GitHub Release, see Releases
 npm run icons                                      # regenerate all icons from assets/pochini-icon.svg
 npm run build                                      # type-check + build the frontend alone
+npm test                                           # Vitest unit tests for src/ (milliseconds)
 npm run e2e                                        # Playwright suite, headless (builds a debug app first)
 npm run e2e:headed                                 # same, with the windows on screen, one at a time
 npm run verify                                     # typecheck + guards + clippy -D warnings + cargo test
@@ -151,6 +152,11 @@ src/                      React UI
   lib/colors.ts           step colour palette (Kanbini accents), defaults, the colour store
   lib/prefs.ts            renderer-only prefs (localStorage "pochini.settings")
   lib/theme.ts            system/light/dark preference
+  lib/shortcuts.ts        in-window shortcuts: the list (Settings shows it), matching, useShortcut
+  lib/history.ts          editor undo/redo (pure; coalesces typing into one step)
+  lib/pickup.ts           drag smooth pickup (Kanbini's), used by FloatingOverlay
+  lib/review.ts           what an imported macro does that deserves a look
+  components/ErrorBoundary.tsx, Welcome.tsx, StorageNotice.tsx, ImportReview.tsx
   index.css               theme tokens: ShadCN names, Kanbini oklch values
   types.ts                mirrors model.rs by hand (ts-rs generation is still TODO)
 src-tauri/src/
@@ -165,6 +171,7 @@ src-tauri/src/
   input/keys.rs           VK <-> scan code, extended bit  (pure)
   input/win.rs            SendInput + DPI + monitors      (unsafe)
   input/fake.rs           recording backend for tests
+  input/clipboard.rs      plain-text clipboard (Copy as text / Paste)  (unsafe)
   engine/mod.rs           step execution, jitter, settle, activation point, release pass
   engine/timer.rs         high-resolution interruptible wait
   hotkey/bindings.rs      binding table + matching        (pure, tested)
@@ -211,7 +218,10 @@ These are the things that silently break this category of app. Full reasoning in
    candidate, the executable under the cursor (a few user32 calls; the process query is cached
    per pid in a thread-local, no locks).
    The on/off toggle is additionally registered with `RegisterHotKey` on the hook thread;
-   while that holds, the hook does not send the toggle itself (no double flip). A 30 s thread
+   while that holds, the hook does not send the toggle itself (no double flip). While a key
+   is being recorded in the window (`set_recording`), the table is `paused`: macros and the
+   toggle stand aside (and the registration is dropped) so the combo is recorded instead of
+   firing; the panic key still works, and a forgotten recording expires after 60 s. A 30 s thread
    timer reinstalls the hook (new before old is removed), because Windows removes a slow hook
    silently and permanently.
 
@@ -354,7 +364,13 @@ Mostly carried over from Kanbini, whose renderer this UI copies the look of:
 - **Screenshots for design work**: `POCHINI_SCREENS=<folder> npx playwright test screens`
   captures every screen in dark and light from seeded macros (skipped in normal runs).
 - **No `window.confirm` / `alert` / `prompt`.** Use `AlertDialog` (with
-  `variant="destructive"` on the action for destructive choices).
+  `variant="destructive"` on the action for destructive choices). Prefer Undo to asking:
+  deleting a macro or a step happens at once, with an Undo button (and Ctrl+Z) in its
+  confirmation line, as in Kanbini.
+- **In-window shortcuts** live in `lib/shortcuts.ts` (`SHORTCUTS`, shown in Settings) and use
+  `useShortcut`, which ignores keys while typing in a field or while a dialog is open. Never a
+  bare letter (macros bind them) and never Escape (the default panic key). Show the keys in
+  the control's tooltip with `withKeys`.
 - **Flex children holding user text** (macro names) need `min-w-0` plus `truncate`, or long
   names blow out the row.
 - **Icons are lucide**, `size-4` in buttons. Tooltips use the ShadCN `Tooltip` with the
@@ -362,8 +378,14 @@ Mostly carried over from Kanbini, whose renderer this UI copies the look of:
 
 ## Testing
 
-`cargo test` is the gate: 165 tests, no Windows APIs required for most of them. The UI has
-`npm run e2e` (61 Playwright tests), run locally before every release.
+`cargo test` is the gate: 172 tests, no Windows APIs required for most of them. The UI has
+`npm test` (35 Vitest tests of the pure helpers in `src/lib` and the error boundary, in
+jsdom) and `npm run e2e` (75 Playwright tests), all run locally before every release and by
+CI on pull requests.
+
+- Vitest is for logic that needs no app: summaries and estimates (`lib/steps.ts`, which
+  mirrors `Step::duration_range` and has the same test), sorting, colors, undo history,
+  shortcut matching, the import review. New pure helpers get a `*.test.ts` beside them.
 
 - `input/coords.rs` walks **every pixel** of six virtual-desktop layouts (including negative
   origins and odd sizes) through the round trip, and has an explicit regression test that
@@ -392,7 +414,16 @@ Mostly carried over from Kanbini, whose renderer this UI copies the look of:
   - Export / Import dialogs: test mode answers them with `POCHINI_E2E_DIALOG_FILE`; specs
     set it with `test.use({ seed: { dialog: "<file in the data folder>", files: {...} } })`.
   - Locate rows and steps by `data-macro-id` / `data-step-id`; a step header's accessible
-    name contains its buttons' names, so use `exact: true` for "Move up" and friends.
+    name contains its buttons' names, so use `exact: true` for "Move up" and friends (and
+    for "Back", which "About Backup" also contains).
+  - The launcher writes `settings.json` with `welcomed: true` so the first-run welcome stays
+    out of the way; `test.use({ seed: { welcome: true } })` shows it.
+  - Copy as text and Paste use `clipboard.txt` in the data folder in test mode, never the
+    real clipboard.
+  - Content under a switch opens with `Collapse` and is `inert` until it has; wait for it
+    (no `[inert]` ancestor) before typing into it.
+  - CI shows the windows (`POCHINI_E2E_HEADED=1` in `ci.yml`): on a runner, a hidden window's
+    timers stopped mid-test. Tests that depend on animations set `emulateMedia` themselves.
 - Anything that needs a real desktop session belongs in `tools/m0-probe` or the
   `trace_macro` example, not in CI: a CI runner has no interactive session and `SendInput`
   in Session 0 is meaningless.
