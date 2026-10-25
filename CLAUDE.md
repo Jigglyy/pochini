@@ -29,8 +29,8 @@ this app owns.
 
 Implemented and building. `src-tauri/` has the full Rust core (model, storage, input,
 hotkey, engine, IPC) with **208 passing unit tests**; `src/` is a ShadCN + Tailwind v4 UI
-styled after Kanbini (macro list, step editor, settings), with **61 Vitest tests** for its
-helpers and components, and **97 Playwright e2e tests** against the real app. `npm run tauri dev` opens the app.
+styled after Kanbini (macro list, step editor, settings), with **96 Vitest tests** for its
+helpers and components, and **105 Playwright e2e tests** against the real app. `npm run tauri dev` opens the app.
 
 The M0/M1 Win32 assumptions were measured before being ported; see
 [tools/m0-probe/README.md](tools/m0-probe/README.md). That harness found three errors in the
@@ -157,11 +157,15 @@ src/                      React UI
   screens/                MacroList, MacroEditor, Settings
   components/ui/          ShadCN components (CLI copy-in; ours to evolve)
   components/layout.tsx   Section, Field, ToggleRow, Kbd, KeyCombo, Notice primitives
-  components/             StepRow, JitterField, CoordPicker, KeyCapture, RunIndicator
+  components/             StepRow (+ StepFields), JitterField, CoordPicker, KeyCapture, RunIndicator
+  components/BulkEdit.tsx changing many selected steps at once ("Mixed" fields)
   components/sortable.tsx shared dnd-kit setup (Kanbini's drag feel) for steps and macros
   components/StepColors.tsx step-kind icons, colour chips, swatches, Settings > Step colors
   lib/ipc.ts              typed wrappers over the Tauri commands
   lib/steps.ts            step construction, plain-English summaries, duration estimates
+  lib/selection.ts        ticking steps: by kind, ranges, duplicate/delete the selection
+  lib/bulk.ts             bulk edit rules: shared values, per-type updates, shifting points
+  lib/describe.ts         one-line summaries of the folded Trigger / When it runs sections
   lib/order.ts            macro list sort modes and drag-group ordering
   lib/motion.ts           useFlip (smooth list reordering) and the easing curve
   components/Collapse.tsx animated open / close (step bodies, toggle options)
@@ -387,6 +391,18 @@ Mostly carried over from Kanbini, whose renderer this UI copies the look of:
   root, so quick repeated clicks were swallowed (an e2e test guards this). Windows'
   "Animation effects" off (prefers-reduced-motion) turns all of it off: a global rule in
   `index.css`, plus `useFlip` and `motion-reduce:` checks.
+- **The step list has three layouts** (`StepView` in `lib/prefs.ts`, remembered): Cards,
+  Compact (dense rows in one panel, a colour bar instead of an outline) and Side by side (the
+  dense list, with the chosen step's `StepFields` in a sticky panel). The editor owns which
+  steps are open (`open`), the side-by-side step (`current`) and the selection; `StepRow` only
+  draws them. Selecting steps (Select, Ctrl+A, Ctrl+click) turns a header click into a tick
+  (Shift for a range) and shows a sticky toolbar; `BulkEdit` changes the ticked steps in a
+  dialog, or in the side panel in Side by side. A bulk change is one ordinary edit, keyed
+  `bulk:<type>:<field>` so typing undoes as one step. Locate step headers in tests by
+  `[data-step-header]` (Side by side headers have no `aria-expanded`).
+- **Foldable sections**: `Section`'s `fold` prop folds the panel to a one-line `summary`
+  (`lib/describe.ts`); which are folded is remembered (`folded` in prefs). `Collapse` that is
+  open when it mounts is drawn open, not animated, unless `revealOnMount`.
 - **Quiet chrome**: secondary actions that also live in a menu (a step's move / duplicate /
   delete buttons) show on hover or keyboard focus only. Facts about a macro go on the line
   under its name, so the right side of every row stays aligned columns.
@@ -408,15 +424,15 @@ Mostly carried over from Kanbini, whose renderer this UI copies the look of:
 ## Testing
 
 `cargo test` is the gate: 208 tests, no Windows APIs required for most of them. The UI has
-`npm test` (61 Vitest tests: the pure helpers in `src/lib`, and components with their IPC
-mocked, in jsdom) and `npm run e2e` (97 Playwright tests), all run locally before every release and by
+`npm test` (96 Vitest tests: the pure helpers in `src/lib`, and components with their IPC
+mocked, in jsdom) and `npm run e2e` (105 Playwright tests), all run locally before every release and by
 CI on pull requests.
 
 - Vitest is for logic that needs no app: summaries and estimates (`lib/steps.ts`, which
   mirrors `Step::duration_range` and has the same test), sorting, colors, undo history,
   shortcut matching, the import review. New pure helpers get a `*.test.ts` beside them.
 - Components are tested with `src/test/render.tsx` (render, `settle`, `text`, `button`,
-  `click`; no Testing Library) and `vi.mock("@/lib/ipc", ...)` standing in for the backend:
+  `click`, `type`, `input`; no Testing Library) and `vi.mock("@/lib/ipc", ...)` standing in for the backend:
   the run pill against hand-fired run events, Pick's cancel-on-leave, the magnifier, hotkey
   recording, the import review, the storage notice. `src/test/setup.ts` cleans up and stubs
   what jsdom lacks (matchMedia, ResizeObserver).

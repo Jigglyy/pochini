@@ -4,6 +4,33 @@ All notable changes to Pochini. Versions follow [semantic versioning](https://se
 while the major version is 0, a minor bump may change behaviour or the macro file format.
 Each version is built with `npm run release` into `release/Pochini-<version>.exe`.
 
+## Unreleased
+
+### Added
+
+- **Change many steps at once.** Press Select above the steps (or Ctrl+A, or Ctrl+click a
+  step) and tick the ones you want; Select by kind ticks every click, wait or other kind in one
+  go, and Shift+click ticks a range. Edit then shows each setting the ticked steps share, or
+  "Mixed" where they differ: set jitter, travel, button, held keys, hold, settle, wait length,
+  randomness and more for all of them, while the settings you leave alone stay each step's
+  own. Shift points moves every fixed position by a few pixels, for when a window has moved.
+  Ticked steps can also be duplicated or deleted together (with Undo).
+- **Three layouts for the step list**, remembered for every macro: Cards (as before), Compact
+  list (dense rows, about half the height), and Side by side (the list, with the chosen step's
+  settings beside it, so a long macro never turns into a long scroll).
+- **Insert above / below** and **Move to top / bottom** in a step's right-click menu, so a
+  step lands in the middle of a long macro without dragging it there.
+- The arrow keys move between steps; Close every step folds all the open ones.
+- The **Trigger** and **When it runs** sections fold down to a one-line summary ("Space, runs
+  once per press, only in game.exe"), and stay folded until you open them again.
+
+### Changed
+
+- The Add buttons stay at the bottom of the window while you scroll a long list of steps.
+- Settings puts the everyday settings first: Hotkeys, Window, Appearance, Step colors and
+  Backup, then Run history and Hotkey check.
+- Sections already open when a screen loads are drawn open, instead of unfolding each time.
+
 ## 0.14.3 - 2026-10-25
 
 ### Fixed

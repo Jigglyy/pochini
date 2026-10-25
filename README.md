@@ -36,6 +36,9 @@ pressing a button.
 - **Record** your clicks, keys and wheel turns in any app as steps, pauses included, or build
   them by hand. **Pick** a point by clicking it, with a magnifier.
 - **Dry run** shows where every click lands by moving the mouse there, without clicking.
+- **Long macros stay manageable:** lay the steps out as cards, a compact list, or a list with
+  the chosen step's settings beside it. Tick several steps (every click, say) and change their
+  jitter, timing or button all at once, or shift their positions when a window has moved.
 - **Natural timing:** any wait or click position can vary at random within limits you set, and
   chosen steps can **shuffle** into a new order on every run.
 - **Hotkeys that work everywhere**, even inside fullscreen games: run once per press, repeat
