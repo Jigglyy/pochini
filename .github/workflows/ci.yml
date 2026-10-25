@@ -1,0 +1,119 @@
+name: CI
+
+# Checks every pull request: types, the CLAUDE.md guards, clippy, the Rust
+# unit tests, and the Playwright suite against the real app. Pushes to main
+# are not built here (the maintainer runs the same checks locally before each
+# release; see CLAUDE.md > Releases). Run it by hand from the Actions tab to
+# warm the build cache on main, which pull requests can then read.
+#
+# Windows runners, because the app is Windows-only: windows-rs, the cfg(windows)
+# code paths and WebView2. The tests need no desktop session: the Rust tests
+# use FakeInput, and the e2e test mode installs no keyboard hook, injects into
+# FakeInput and keeps its window hidden.
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Types, guards, clippy, cargo test
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+          components: clippy
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: src-tauri
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check (app and e2e)
+        run: npm run typecheck
+
+      - name: Guards (em dashes, no logging in the hook, test mode out of release)
+        run: npm run guards
+
+      # The frontend is embedded at compile time, so it must exist for clippy.
+      - name: Build the frontend
+        run: npx vite build
+
+      - name: Clippy
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+
+      - name: Rust unit tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+  e2e:
+    name: Playwright e2e
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: src-tauri
+          key: e2e
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Runner images ship Edge; install the WebView2 runtime only if missing.
+      - name: Make sure the WebView2 runtime is installed
+        shell: pwsh
+        run: |
+          $key = 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+          if (Test-Path $key) { "WebView2 $((Get-ItemProperty $key).pv)"; exit 0 }
+          Invoke-WebRequest 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile "$env:RUNNER_TEMP\wv2.exe"
+          Start-Process "$env:RUNNER_TEMP\wv2.exe" -ArgumentList '/silent','/install' -Wait
+
+      # `npm run e2e` type-checks the specs and builds the debug app first.
+      - name: Playwright
+        run: npm run e2e
+
+      - name: Keep traces and screenshots of failures
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-results
+          path: test-results/
+          retention-days: 7

@@ -7,22 +7,30 @@ name: Release
 #   git push origin main
 #
 # A Windows runner checks that the commit message, package.json and
-# src-tauri/Cargo.toml agree on the version, builds the app, and publishes a
-# GitHub Release "Pochini v0.7.0" (creating the v0.7.0 tag on that commit)
-# with Pochini-0.7.0.exe attached and that version's CHANGELOG.md section as
-# the notes. Same shape as Kanbini's release workflow.
+# src-tauri/Cargo.toml agree on the version and that THIRD_PARTY_NOTICES.md is
+# current, builds the app, and a second job publishes a GitHub Release
+# "Pochini v0.7.0" (creating the v0.7.0 tag on that commit) with
+# Pochini-0.7.0.exe, SHA256SUMS.txt and THIRD_PARTY_NOTICES.md attached and
+# that version's CHANGELOG.md section as the notes.
 #
 # Why main and not a tag push: GitHub scopes the build cache to the ref a run
 # starts from, and a tag run can only read caches from its own tag or main. Tag
 # runs therefore always compiled every dependency from scratch (~20 minutes).
 # Runs on main share one cache, so each release only rebuilds what changed.
 #
-# The tests are not run here: `cargo test` and `npm run e2e` run locally
-# before every release (CLAUDE.md > Releases), and a second, debug-profile
-# compile of everything here cost about 6 minutes per release.
+# Supply chain: every action is pinned to a commit (Dependabot keeps them
+# current), the build job can only read the repository, checkout leaves no
+# token behind, and only the publish job, which runs no build code, can write.
+# It runs in the "release" environment and only for pushes by the repository
+# owner, so a collaborator's push cannot publish. On a public repository the
+# exe also gets a signed build provenance attestation (`gh attestation verify`).
 #
-# Other pushes to main skip the job without starting a runner. A manual run
-# from the Actions tab is a dry run: it builds and keeps the .exe as a run
+# The tests are not run here: `cargo test` and `npm run e2e` run locally
+# before every release (CLAUDE.md > Releases); pull requests run them in
+# ci.yml.
+#
+# Other pushes to main skip both jobs without starting a runner. A manual run
+# from the Actions tab is a dry run: it builds and keeps the files as a run
 # artifact, with no Release.
 #
 # The .exe is unsigned: SmartScreen shows "unknown publisher" on first run.
@@ -37,30 +45,36 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
-permissions:
-  # Lets the built-in GITHUB_TOKEN create the Release, its tag, and upload the .exe.
-  contents: write
+permissions: {}
 
 jobs:
-  windows:
+  build:
     name: Build Pochini for Windows
     if: github.event_name == 'workflow_dispatch' || startsWith(github.event.head_commit.message, 'chore(release):')
     runs-on: windows-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
 
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
 
       - name: Cache Rust build
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: src-tauri
 
@@ -91,30 +105,69 @@ jobs:
           fi
           echo "version=$PKG" >> "$GITHUB_OUTPUT"
 
+      # The exe embeds it (Settings > About), so it must match this commit's
+      # dependencies. scripts/release.mjs regenerates it before every release.
+      - name: Check third-party notices
+        run: node scripts/notices.mjs --check
+
       - name: Build (type-check, frontend, release exe)
         run: npm run tauri build -- --no-bundle
 
-      - name: Name the exe
+      - name: Name the exe and hash it
         shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           mkdir -p release
-          cp src-tauri/target/release/pochini.exe "release/Pochini-${{ steps.version.outputs.version }}.exe"
+          cp src-tauri/target/release/pochini.exe "release/Pochini-$VERSION.exe"
+          cp THIRD_PARTY_NOTICES.md release/
+          (cd release && sha256sum "Pochini-$VERSION.exe" > SHA256SUMS.txt && cat SHA256SUMS.txt)
 
-      - name: Upload exe as a run artifact
-        uses: actions/upload-artifact@v7
+      - name: Upload as a run artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: Pochini-${{ steps.version.outputs.version }}
-          path: release/*.exe
+          path: release/
           if-no-files-found: error
+
+  publish:
+    name: Publish the GitHub Release
+    needs: build
+    if: github.event_name == 'push' && github.actor == github.repository_owner
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write # create the release and its tag
+      id-token: write # sign the provenance attestation
+      attestations: write
+    steps:
+      - name: Checkout (for CHANGELOG.md)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: CHANGELOG.md
+          sparse-checkout-cone-mode: false
+
+      - name: Download the build
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: Pochini-${{ needs.build.outputs.version }}
+          path: release
+
+      # Artifact attestations need a public repository on this plan.
+      - name: Attest build provenance
+        if: ${{ !github.event.repository.private }}
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: release/*.exe
 
       # Release notes are this version's section of CHANGELOG.md. The tag is
       # created on the release commit.
       - name: Publish GitHub Release
-        if: github.event_name == 'push'
-        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.version.outputs.version }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.build.outputs.version }}
         run: |
           node -e "
             const s = require('fs').readFileSync('CHANGELOG.md', 'utf8');
@@ -124,7 +177,7 @@ jobs:
             const end = body.search(/^## /m);
             require('fs').writeFileSync('notes.md', (end < 0 ? body : body.slice(0, end)).trim() + '\n');
           "
-          gh release create "v$VERSION" release/*.exe \
+          gh release create "v$VERSION" release/*.exe release/SHA256SUMS.txt release/THIRD_PARTY_NOTICES.md \
             --target "$GITHUB_SHA" \
             --title "Pochini v$VERSION" \
             --notes-file notes.md

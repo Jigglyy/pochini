@@ -1,0 +1,26 @@
+# Text is stored with LF whatever each contributor's core.autocrlf says, so
+# Windows checkouts do not churn line endings.
+* text=auto eol=lf
+
+# Windows scripts keep CRLF, or PowerShell and cmd mis-read them.
+*.ps1     text eol=crlf
+*.bat     text eol=crlf
+*.cmd     text eol=crlf
+
+# Binary: never touch line endings or diff as text. (The SVG icon stays text:
+# it is the source of every icon, edited by hand.)
+*.png     binary
+*.jpg     binary
+*.ico     binary
+*.icns    binary
+*.webp    binary
+*.woff2   binary
+*.ttf     binary
+*.exe     binary
+*.dll     binary
+*.zip     binary
+
+# Generated: text, but collapsed in pull request diffs.
+package-lock.json         -diff linguist-generated
+src-tauri/Cargo.lock      -diff linguist-generated
+THIRD_PARTY_NOTICES.md    linguist-generated
