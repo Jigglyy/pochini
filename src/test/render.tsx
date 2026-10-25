@@ -60,8 +60,24 @@ export const hasButton = (name: string | RegExp) => {
   }
 };
 
-export function click(el: Element) {
+export function click(el: Element, init: MouseEventInit = {}) {
   act(() => {
-    el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, ...init }));
   });
+}
+
+/** Type into an input as a person would: React only sees a value set
+ *  through the native setter, followed by an input event. */
+export function type(el: HTMLInputElement, value: string) {
+  act(() => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(el, value);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+/** The input labelled `name` (aria-label). */
+export function input(name: string): HTMLInputElement {
+  const el = document.querySelector<HTMLInputElement>(`input[aria-label="${name}"]`);
+  if (!el) throw new Error(`no input "${name}"`);
+  return el;
 }

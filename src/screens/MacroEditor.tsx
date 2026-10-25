@@ -4,10 +4,20 @@ import { arrayMove, SortableContext, verticalListSortingStrategy } from "@dnd-ki
 import {
   ArrowUpDown,
   Check,
+  ChevronDown,
+  ChevronsDownUp,
   CircleDot,
+  Columns2,
+  Copy,
+  ListChecks,
   Route,
+  Rows2,
+  Rows4,
+  SlidersHorizontal,
   Square,
+  SquareCheck,
   Redo2,
+  Trash2,
   Undo2,
   Crosshair,
   Keyboard,
@@ -20,11 +30,16 @@ import {
   Type,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AppPicker } from "@/components/AppPicker";
+import { BulkEdit } from "@/components/BulkEdit";
 import { KeyCapture } from "@/components/KeyCapture";
-import { SortableStepRow, StepFace } from "@/components/StepRow";
+import { SortableStepRow, StepFace, StepFields } from "@/components/StepRow";
+import { KindChip } from "@/components/StepColors";
 import { FloatingOverlay, useDragSensors } from "@/components/sortable";
 import { HelpTip } from "@/components/HelpTip";
 import { Field, Notice, Section, Segmented, ToggleRow } from "@/components/layout";
@@ -38,12 +53,25 @@ import {
   stopRecording,
   testSteps,
 } from "@/lib/ipc";
-import { tone, useStepColors } from "@/lib/colors";
+import { colorKind, KIND_LABELS, tone, useStepColors, type ColorKind } from "@/lib/colors";
+import { runSummary, triggerSummary } from "@/lib/describe";
 import { record, redo, start, undo, type History } from "@/lib/history";
 import { useFlip } from "@/lib/motion";
+import { readPrefs, writePrefs, type StepView } from "@/lib/prefs";
+import {
+  allState,
+  duplicateSelected,
+  kindCounts,
+  kindState,
+  prune,
+  removeSelected,
+  selectRange,
+  toggleKind,
+} from "@/lib/selection";
 import { useShortcut, withKeys } from "@/lib/shortcuts";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { aimPoints, blankStep, fmtRange, newId, stepRange, summarize, type NewStepKind } from "@/lib/steps";
+import { cn } from "@/lib/utils";
 import type { Macro, QueueFrom, Repeat, Step, TriggerMode } from "@/types";
 
 const QUEUE_FROM: readonly { value: QueueFrom; label: string }[] = [
@@ -62,6 +90,13 @@ const ADD: { kind: NewStepKind; label: string; Icon: typeof Play; hint: string }
   { kind: "scroll", label: "Scroll", Icon: ArrowUpDown, hint: "Scroll the wheel" },
 ];
 
+/** The step list's layouts (lib/prefs.ts StepView). */
+const VIEWS: { value: StepView; label: string; Icon: typeof Play }[] = [
+  { value: "cards", label: "Cards", Icon: Rows2 },
+  { value: "compact", label: "Compact list", Icon: Rows4 },
+  { value: "split", label: "Side by side", Icon: Columns2 },
+];
+
 /** Keys a user types constantly. Blocking one of these from other apps makes
  *  the keyboard feel broken, so it earns a warning at the moment of choice. */
 const COMMON = new Set([
@@ -69,6 +104,24 @@ const COMMON = new Set([
   ...Array.from({ length: 26 }, (_, i) => 0x41 + i),
   ...Array.from({ length: 10 }, (_, i) => 0x30 + i),
 ]);
+
+/** A one-line confirmation on the step list, with Undo. */
+function UndoLine({ text, onUndo }: { text: string; onUndo?: () => void }) {
+  return (
+    <div
+      role="status"
+      className="flex animate-in items-center gap-3 rounded-md border border-border bg-muted/50 px-3 py-2 text-sm fade-in-0 motion-reduce:animate-none"
+    >
+      <span className="min-w-0 flex-1 truncate">{text}</span>
+      {onUndo && (
+        <Button variant="outline" size="sm" onClick={onUndo}>
+          <Undo2 />
+          Undo
+        </Button>
+      )}
+    </div>
+  );
+}
 
 export function MacroEditor({
   id,
@@ -92,7 +145,7 @@ export function MacroEditor({
   /** Bumped by each save, so the "Saved" check pops then and not on load. */
   const [saves, setSaves] = useState(0);
   const dirty = m !== null && JSON.stringify(m) !== saved;
-  /** The step just deleted, for its "Undo" line. */
+  /** "Deleted ..." after deleting steps, for its Undo line. */
   const [deleted, setDeleted] = useState<string | null>(null);
   /** Record mode is on (the hooks report every click and key). */
   const [recording, setRecordingMode] = useState(false);
@@ -108,6 +161,23 @@ export function MacroEditor({
   // Steps glide when buttons or menus move, add or remove them.
   const flip = useFlip<HTMLDivElement>();
   const colors = useStepColors();
+
+  /** How the steps are laid out; remembered for every macro. */
+  const [view, setViewState] = useState<StepView>(() => readPrefs().stepView ?? "cards");
+  /** Steps whose settings are open under their header (cards, compact). */
+  const [open, setOpen] = useState<Set<string>>(() => new Set());
+  /** The step shown beside the list (split view). */
+  const [current, setCurrent] = useState<string | null>(null);
+  /** Choosing steps to change together, and which. The Set may name steps
+   *  that are gone (deleted); `selected` below leaves those out, and Undo
+   *  brings them back ticked. */
+  const [selecting, setSelecting] = useState(false);
+  const [picked, setPicked] = useState<Set<string>>(() => new Set());
+  /** The last step ticked, where a Shift+click range starts. */
+  const anchor = useRef<string | null>(null);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  /** Sections folded to their summary line ("trigger", "runs"). */
+  const [folded, setFolded] = useState<string[]>(() => readPrefs().folded ?? []);
 
   useEffect(() => {
     getMacro(id)
@@ -161,6 +231,8 @@ export function MacroEditor({
     if (name !== undefined) onName(name);
   }, [name, onName]);
 
+  const selected = useMemo(() => (m ? prune(m.steps, picked) : picked), [m, picked]);
+
   // Steps glide back into place on undo and redo too.
   const step = (to: (h: History<Macro>) => History<Macro>) => {
     flip.prepare();
@@ -171,6 +243,8 @@ export function MacroEditor({
   useShortcut(["Ctrl+Y", "Ctrl+Shift+Z"], () => step(redo));
   useShortcut("Ctrl+S", () => dirty && void save(), { inFields: true });
   useShortcut("Ctrl+Enter", () => runTest(), { inFields: true });
+  useShortcut("Ctrl+A", () => selectAll(), { enabled: !!m && m.steps.length > 0 });
+  useShortcut("Delete", () => deleteSelected(), { enabled: selecting && selected.size > 0 });
 
   const est = useMemo<[number, number]>(() => {
     if (!m) return [0, 0];
@@ -212,6 +286,11 @@ export function MacroEditor({
     edit({ steps });
   };
 
+  const moveStepTo = (i: number, edge: "top" | "bottom") => {
+    flip.prepare(m.steps[i].id);
+    edit({ steps: arrayMove(m.steps, i, edge === "top" ? 0 : m.steps.length - 1) });
+  };
+
   const draggingIndex = m.steps.findIndex((s) => s.id === draggingStep);
   const aims = aimPoints(m.steps);
   const shuffled = m.steps.filter((s) => s.shuffle).length;
@@ -224,11 +303,91 @@ export function MacroEditor({
     edit({ steps: arrayMove(m.steps, from, to) });
   };
 
-  const add = (kind: NewStepKind) => {
+  /** A new step at `at` (the end by default), opened (or shown, in split
+   *  view) so it can be filled in. */
+  const add = (kind: NewStepKind, at = m.steps.length) => {
     const s = blankStep(kind);
     flip.prepare();
     setJustAdded(s.id);
-    edit({ steps: [...m.steps, s] });
+    if (view === "split") setCurrent(s.id);
+    else setOpen((o) => new Set(o).add(s.id));
+    const steps = [...m.steps];
+    steps.splice(at, 0, s);
+    edit({ steps });
+  };
+
+  const setView = (v: StepView) => {
+    if (v === view) return;
+    flip.prepare();
+    setViewState(v);
+    setBulkOpen(false);
+    writePrefs({ stepView: v });
+    // Split view shows one step: the open one, or the first.
+    if (v === "split" && !m.steps.some((s) => s.id === current)) {
+      setCurrent(m.steps.find((s) => open.has(s.id))?.id ?? m.steps[0]?.id ?? null);
+    }
+  };
+
+  const fold = (key: string) => ({
+    open: !folded.includes(key),
+    onOpenChange: (o: boolean) => {
+      const next = o ? folded.filter((k) => k !== key) : [...folded, key];
+      setFolded(next);
+      writePrefs({ folded: next });
+    },
+  });
+
+  function startSelecting(ids: string[] = []) {
+    setSelecting(true);
+    setPicked(new Set(ids));
+    anchor.current = ids[ids.length - 1] ?? null;
+  }
+
+  function stopSelecting() {
+    setSelecting(false);
+    setPicked(new Set());
+    setBulkOpen(false);
+    anchor.current = null;
+  }
+
+  function selectAll() {
+    if (!m) return;
+    startSelecting(m.steps.map((s) => s.id));
+  }
+
+  /** Tick or untick one step; with `range`, every step from the last one
+   *  ticked (Shift+click). */
+  const tick = (id: string, on: boolean, range: boolean) => {
+    setPicked((p) => {
+      if (range && anchor.current) return selectRange(m.steps, prune(m.steps, p), anchor.current, id, on);
+      const next = new Set(p);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+    anchor.current = id;
+  };
+
+  const selectKind = (kind: ColorKind) => {
+    setPicked((p) => toggleKind(m.steps, selecting ? prune(m.steps, p) : new Set(), kind));
+    setSelecting(true);
+  };
+
+  function deleteSelected() {
+    if (!m || selected.size === 0) return;
+    const gone = m.steps.filter((s) => selected.has(s.id));
+    flip.prepare();
+    edit({ steps: removeSelected(m.steps, selected) });
+    setDeleted(gone.length === 1 ? `Deleted "${summarize(gone[0])}".` : `Deleted ${gone.length} steps.`);
+  }
+
+  const duplicateSelection = () => {
+    const { steps, copies } = duplicateSelected(m.steps, selected, newId);
+    flip.prepare(copies[0]);
+    edit({ steps });
+    // The copies are what you will want to move or change next.
+    setPicked(new Set(copies));
+    anchor.current = copies[copies.length - 1] ?? null;
   };
 
   async function save() {
@@ -274,6 +433,85 @@ export function MacroEditor({
 
   const t = m.trigger;
   const risky = t?.swallow && t.modifiers.length === 0 && COMMON.has(t.key.vk);
+  const dense = view !== "cards";
+  const shown = m.steps.find((s) => s.id === current) ?? null;
+  const shownIndex = shown ? m.steps.indexOf(shown) : -1;
+  const n = selected.size;
+
+  const rows = m.steps.map((s, i) => (
+    <SortableStepRow
+      key={s.id}
+      step={s}
+      index={i}
+      count={m.steps.length}
+      aim={aims[i]}
+      hasEarlierPoint={aims.slice(0, i).some((a) => a !== null)}
+      shuffled={shuffled}
+      running={runningStep === i}
+      guard={m.guard}
+      dense={dense}
+      inline={view !== "split"}
+      open={view === "split" ? current === s.id : open.has(s.id)}
+      onOpenChange={(o) => {
+        if (view === "split") setCurrent(s.id);
+        else
+          setOpen((prev) => {
+            const next = new Set(prev);
+            if (o) next.add(s.id);
+            else next.delete(s.id);
+            return next;
+          });
+      }}
+      revealOnMount={s.id === justAdded}
+      selecting={selecting}
+      selected={selected.has(s.id)}
+      onSelect={(on, range) => tick(s.id, on, range)}
+      onStartSelect={() => startSelecting([s.id])}
+      onSelectKind={() => selectKind(colorKind(s))}
+      onChange={(ns) => setStep(i, ns)}
+      onDelete={() => {
+        flip.prepare();
+        edit({ steps: m.steps.filter((_, j) => j !== i) });
+        setDeleted(`Deleted "${summarize(s)}".`);
+      }}
+      onDuplicate={() => {
+        const steps = [...m.steps];
+        steps.splice(i + 1, 0, { ...s, id: newId() } as Step);
+        flip.prepare();
+        edit({ steps });
+      }}
+      onMove={(d) => moveStep(i, d)}
+      onMoveTo={(edge) => moveStepTo(i, edge)}
+      onInsert={(kind, where) => add(kind, where === "above" ? i : i + 1)}
+    />
+  ));
+
+  const list = (
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragStart={(e) => setDraggingStep(String(e.active.id))}
+      onDragEnd={dropStep}
+      onDragCancel={() => setDraggingStep(null)}
+    >
+      <SortableContext items={m.steps.map((s) => s.id)} strategy={verticalListSortingStrategy}>
+        <div
+          ref={flip.ref}
+          data-step-view={view}
+          className={cn(
+            dense
+              ? "flex flex-col divide-y divide-border overflow-hidden rounded-lg border border-border bg-card/40"
+              : "flex flex-col gap-2",
+          )}
+        >
+          {rows}
+        </div>
+      </SortableContext>
+      <FloatingOverlay>
+        {draggingIndex >= 0 && <StepFace step={m.steps[draggingIndex]} index={draggingIndex} dense={dense} />}
+      </FloatingOverlay>
+    </DndContext>
+  );
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-8">
@@ -353,7 +591,7 @@ export function MacroEditor({
         </Notice>
       )}
 
-      <Section title="Trigger">
+      <Section title="Trigger" fold={{ ...fold("trigger"), summary: triggerSummary(m) }}>
         <Field
           label="Hotkey"
           help="Press Record, then the key or combination. The macro runs whenever you press it, in any app, even inside a game."
@@ -438,7 +676,7 @@ export function MacroEditor({
         </ToggleRow>
       </Section>
 
-      <Section title="When it runs">
+      <Section title="When it runs" fold={{ ...fold("runs"), summary: runSummary(m) }}>
         <Field
           label="Repeat"
           help="How many times the steps run each time the macro starts."
@@ -537,14 +775,68 @@ export function MacroEditor({
       <Section
         title="Steps"
         bare
+        meta={
+          m.steps.length > 0 && (
+            <>
+              {m.steps.length} step{m.steps.length === 1 ? "" : "s"}, takes {fmtRange(est)}
+              {m.repeat.kind === "count" ? `, ${m.repeat.n} times` : ""}
+              {shuffled > 1 ? `, ${shuffled} steps shuffled` : ""}
+            </>
+          )
+        }
         action={
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            {view !== "split" && open.size > 0 && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon-sm" aria-label="Close every step" onClick={() => setOpen(new Set())}>
+                    <ChevronsDownUp />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Close every step</TooltipContent>
+              </Tooltip>
+            )}
             {m.steps.length > 0 && (
-              <span className="text-xs text-muted-foreground">
-                Takes {fmtRange(est)}
-                {m.repeat.kind === "count" ? `, ${m.repeat.n} times` : ""}
-                {shuffled > 1 ? `, ${shuffled} steps shuffled` : ""}
-              </span>
+              <>
+                <div role="group" aria-label="Step layout" className="inline-flex rounded-md border border-input p-0.5">
+                  {VIEWS.map(({ value, label, Icon }) => (
+                    <Tooltip key={value}>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          aria-label={label}
+                          aria-pressed={view === value}
+                          onClick={() => setView(value)}
+                          className={cn(
+                            "inline-flex size-7 items-center justify-center rounded-[5px] transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                            view === value ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground",
+                          )}
+                        >
+                          <Icon className="size-4" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>{label}</TooltipContent>
+                    </Tooltip>
+                  ))}
+                </div>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      aria-pressed={selecting}
+                      className={cn(selecting && "bg-accent")}
+                      onClick={() => (selecting ? stopSelecting() : startSelecting())}
+                    >
+                      <SquareCheck />
+                      Select
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {withKeys("Tick steps to change, duplicate or delete them together", "Ctrl+A selects all")}
+                  </TooltipContent>
+                </Tooltip>
+              </>
             )}
             <Tooltip>
               <TooltipTrigger asChild>
@@ -577,82 +869,131 @@ export function MacroEditor({
             </span>
           </div>
         )}
-        {recorded && !recording && (
+        {selecting && m.steps.length > 0 && (
           <div
-            role="status"
-            className="flex animate-in items-center gap-3 rounded-md border border-border bg-muted/50 px-3 py-2 text-sm fade-in-0 motion-reduce:animate-none"
+            role="toolbar"
+            aria-label="Selected steps"
+            className="sticky top-0 z-20 flex animate-in flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-primary/40 bg-[color-mix(in_oklab,var(--primary)_10%,var(--background))] py-2 pr-2 pl-3 text-sm shadow-sm fade-in-0 motion-reduce:animate-none"
           >
-            <span className="min-w-0 flex-1">{recorded}</span>
-            {recorded.startsWith("Recorded") && (
-              <Button variant="outline" size="sm" onClick={() => (setRecorded(null), step(undo))}>
-                <Undo2 />
-                Undo
+            <Checkbox
+              aria-label="Select every step"
+              checked={allState(m.steps, selected)}
+              onCheckedChange={(c) => (c === true ? selectAll() : setPicked(new Set()))}
+            />
+            <span className="font-medium tabular-nums" aria-live="polite">
+              {n} of {m.steps.length} selected
+            </span>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <ListChecks />
+                  Select by kind
+                  <ChevronDown className="opacity-60" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-56">
+                {kindCounts(m.steps).map(({ kind, count }) => {
+                  const state = kindState(m.steps, selected, kind);
+                  return (
+                    <DropdownMenuCheckboxItem
+                      key={kind}
+                      checked={state === "some" ? "indeterminate" : state}
+                      // Stays open, to tick several kinds.
+                      onSelect={(e) => e.preventDefault()}
+                      onCheckedChange={() => selectKind(kind)}
+                    >
+                      <KindChip kind={kind} color={colors[kind]} small />
+                      <span className="flex-1">{KIND_LABELS[kind]}</span>
+                      <span className="text-xs text-muted-foreground tabular-nums">{count}</span>
+                    </DropdownMenuCheckboxItem>
+                  );
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              {view !== "split" && (
+                <Button size="sm" disabled={n === 0} onClick={() => setBulkOpen(true)}>
+                  <SlidersHorizontal />
+                  Edit {n === 1 ? "1 step" : `${n} steps`}
+                </Button>
+              )}
+              <Button variant="outline" size="sm" disabled={n === 0} onClick={duplicateSelection}>
+                <Copy />
+                Duplicate
               </Button>
-            )}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={n === 0}
+                    onClick={deleteSelected}
+                    className="hover:text-destructive"
+                  >
+                    <Trash2 />
+                    Delete
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{withKeys("Delete the selected steps", "Delete")}</TooltipContent>
+              </Tooltip>
+              <Button variant="ghost" size="sm" onClick={stopSelecting}>
+                Done
+              </Button>
+            </div>
           </div>
         )}
-        {deleted && (
-          <div
-            role="status"
-            className="flex animate-in items-center gap-3 rounded-md border border-border bg-muted/50 px-3 py-2 text-sm fade-in-0 motion-reduce:animate-none"
-          >
-            <span className="min-w-0 flex-1 truncate">Deleted "{deleted}".</span>
-            <Button variant="outline" size="sm" onClick={() => step(undo)}>
-              <Undo2 />
-              Undo
-            </Button>
-          </div>
+        {recorded && !recording && (
+          <UndoLine
+            text={recorded}
+            onUndo={recorded.startsWith("Recorded") ? () => (setRecorded(null), step(undo)) : undefined}
+          />
         )}
+        {deleted && <UndoLine text={deleted} onUndo={() => step(undo)} />}
         {m.steps.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-            No steps yet. Add the first one below.
+            No steps yet. Add one below, or press Record steps and do it once yourself.
+          </div>
+        ) : view === "split" ? (
+          <div className="grid grid-cols-[minmax(0,20rem)_minmax(0,1fr)] items-start gap-4">
+            {list}
+            <aside
+              aria-label={selecting ? "Selected steps' settings" : "Step settings"}
+              data-testid="step-detail"
+              className="sticky top-4 max-h-[calc(100vh-7rem)] overflow-y-auto rounded-lg border border-border bg-card p-4"
+            >
+              {selecting ? (
+                <BulkEdit steps={m.steps} selected={selected} onChange={(steps, key) => edit({ steps }, key)} />
+              ) : shown ? (
+                <div key={shown.id} className="flex animate-in flex-col gap-4 fade-in-0 motion-reduce:animate-none">
+                  <div className="flex min-w-0 items-center gap-2.5 border-b border-border pb-3">
+                    <KindChip kind={colorKind(shown)} color={colors[colorKind(shown)]} />
+                    <div className="flex min-w-0 flex-col">
+                      <span className="text-xs text-muted-foreground tabular-nums">
+                        Step {shownIndex + 1} of {m.steps.length}
+                      </span>
+                      <span className="truncate text-sm font-medium">{summarize(shown)}</span>
+                    </div>
+                  </div>
+                  <StepFields
+                    step={shown}
+                    onChange={(ns) => setStep(shownIndex, ns)}
+                    aim={aims[shownIndex]}
+                    hasEarlierPoint={aims.slice(0, shownIndex).some((a) => a !== null)}
+                    shuffled={shuffled}
+                    guard={m.guard}
+                  />
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">Choose a step on the left to see its settings.</p>
+              )}
+            </aside>
           </div>
         ) : (
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragStart={(e) => setDraggingStep(String(e.active.id))}
-            onDragEnd={dropStep}
-            onDragCancel={() => setDraggingStep(null)}
-          >
-            <SortableContext items={m.steps.map((s) => s.id)} strategy={verticalListSortingStrategy}>
-              <div ref={flip.ref} className="flex flex-col gap-2">
-                {m.steps.map((s, i) => (
-                  <SortableStepRow
-                    key={s.id}
-                    step={s}
-                    index={i}
-                    count={m.steps.length}
-                    aim={aims[i]}
-                    hasEarlierPoint={aims.slice(0, i).some((a) => a !== null)}
-                    shuffled={shuffled}
-                    running={runningStep === i}
-                    guard={m.guard}
-                    defaultOpen={s.id === justAdded}
-                    onChange={(ns) => setStep(i, ns)}
-                    onDelete={() => {
-                      flip.prepare();
-                      edit({ steps: m.steps.filter((_, j) => j !== i) });
-                      setDeleted(summarize(s));
-                    }}
-                    onDuplicate={() => {
-                      const steps = [...m.steps];
-                      steps.splice(i + 1, 0, { ...s, id: newId() } as Step);
-                      flip.prepare();
-                      edit({ steps });
-                    }}
-                    onMove={(d) => moveStep(i, d)}
-                  />
-                ))}
-              </div>
-            </SortableContext>
-            <FloatingOverlay>
-              {draggingIndex >= 0 && <StepFace step={m.steps[draggingIndex]} index={draggingIndex} />}
-            </FloatingOverlay>
-          </DndContext>
+          list
         )}
 
-        <div className="flex flex-wrap items-center gap-2 pt-1">
+        {/* Stays at the bottom of the window while a long list scrolls. */}
+        <div className="sticky bottom-0 z-10 -mx-1 flex flex-wrap items-center gap-2 bg-background/90 px-1 py-2 backdrop-blur-sm">
           <span className="mr-1 text-sm text-muted-foreground">Add</span>
           {ADD.map(({ kind, label, Icon, hint }) => (
             <Button key={kind} variant="outline" size="sm" onClick={() => add(kind)} title={hint}>
@@ -662,6 +1003,34 @@ export function MacroEditor({
           ))}
         </div>
       </Section>
+
+      <Dialog open={bulkOpen && view !== "split" && n > 0} onOpenChange={setBulkOpen}>
+        <DialogContent
+          className="flex max-h-[85vh] flex-col sm:max-w-2xl"
+          // Start in the first box, not on a "?" (its tooltip would cover the
+          // fields).
+          onOpenAutoFocus={(e) => {
+            e.preventDefault();
+            (e.currentTarget as HTMLElement).querySelector<HTMLElement>("input")?.focus();
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Edit {n === 1 ? "1 step" : `${n} steps`}</DialogTitle>
+            <DialogDescription>
+              A change here applies to every selected step at once. Mixed means they differ; leave it alone and
+              each keeps its own.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="-mr-2 min-h-0 flex-1 overflow-y-auto pr-2">
+            <BulkEdit steps={m.steps} selected={selected} onChange={(steps, key) => edit({ steps }, key)} />
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button>Done</Button>
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

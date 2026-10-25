@@ -11,8 +11,8 @@ const DURATION = 220;
  *  Opening moves the screen with it, so the whole card it belongs to (its
  *  parent element) ends up in view; content that opens below the fold never
  *  stays hidden (see `follow`). Not on first render, so a screen does
- *  not jump when it loads with something already open, unless
- *  `revealOnMount` (a step that was just added). */
+ *  not jump when it loads with something already open (that is simply
+ *  drawn open), unless `revealOnMount` (a step that was just added). */
 export function Collapse({
   open,
   revealOnMount = false,
@@ -23,8 +23,10 @@ export function Collapse({
   children: ReactNode;
 }) {
   const [mounted, setMounted] = useState(open);
-  const [shown, setShown] = useState(false);
-  const [settled, setSettled] = useState(false);
+  // Open from the start: drawn open, not animated (a screen does not unfold
+  // its sections as it loads), unless it is to be revealed.
+  const [shown, setShown] = useState(open && !revealOnMount);
+  const [settled, setSettled] = useState(open && !revealOnMount);
   const box = useRef<HTMLDivElement>(null);
   const innerEl = useRef<HTMLDivElement>(null);
   // The open state on the previous run (null before the first), so only a

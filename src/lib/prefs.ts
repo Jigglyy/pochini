@@ -6,11 +6,18 @@ import type { SortMode } from "./order";
 
 export type ThemePref = "system" | "light" | "dark";
 
+/** How the editor lays out steps: one card each, dense rows, or rows beside
+ *  the chosen step's settings. */
+export type StepView = "cards" | "compact" | "split";
+
 export type UiPrefs = {
   theme?: ThemePref;
   macroSort?: SortMode;
   /** Step kind -> colour name, only the kinds changed from the default (lib/colors.ts). */
   stepColors?: Record<string, string>;
+  stepView?: StepView;
+  /** Editor sections folded down to their one-line summary ("trigger", "runs"). */
+  folded?: string[];
 };
 
 const KEY = "pochini.settings";

@@ -1,4 +1,5 @@
 import { useId, type ReactNode } from "react";
+import { ChevronRight } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { Collapse } from "./Collapse";
@@ -7,11 +8,15 @@ import { HelpTip } from "./HelpTip";
 /** A titled group: a heading, then one faintly filled panel whose rows are
  *  divided by hairlines. Every direct child is a row (a Field, a ToggleRow,
  *  any block), so put rows in directly rather than wrapping them. `bare`
- *  drops the panel for content that brings its own cards (the step list). */
+ *  drops the panel for content that brings its own cards (the step list).
+ *  `fold` lets the heading fold the panel away, leaving `summary` in its
+ *  place: what the panel would say, in one line. */
 export function Section({
   title,
   help,
+  meta,
   action,
+  fold,
   children,
   className,
   bare = false,
@@ -19,27 +24,57 @@ export function Section({
   title: string;
   /** Explanation behind a "?" after the title. */
   help?: ReactNode;
+  /** A short fact beside the title, like a count. */
+  meta?: ReactNode;
   action?: ReactNode;
+  fold?: { open: boolean; onOpenChange: (open: boolean) => void; summary: ReactNode };
   children: ReactNode;
   className?: string;
   bare?: boolean;
 }) {
+  const panel = bare ? (
+    children
+  ) : (
+    <div className="flex flex-col divide-y divide-border rounded-lg border border-border bg-card/40 [&>*]:px-4 [&>*]:py-3.5">
+      {children}
+    </div>
+  );
   return (
     <section className={cn("flex flex-col gap-2.5", className)}>
-      <div className="flex min-h-8 items-end justify-between gap-3">
-        <h3 className="flex items-center gap-1 text-sm font-semibold text-foreground">
-          {title}
-          {help && <HelpTip about={title}>{help}</HelpTip>}
-        </h3>
+      <div className="flex min-h-8 flex-wrap items-end justify-between gap-x-3 gap-y-2">
+        <div className="flex min-w-0 flex-1 items-center gap-1">
+          <h3 className="flex shrink-0 items-center gap-1 text-sm font-semibold text-foreground">
+            {fold ? (
+              <button
+                type="button"
+                aria-expanded={fold.open}
+                onClick={() => fold.onOpenChange(!fold.open)}
+                className="-ml-1.5 inline-flex items-center gap-1 rounded-md py-0.5 pr-1.5 pl-1 outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <ChevronRight
+                  aria-hidden
+                  className={cn(
+                    "size-4 text-muted-foreground transition-transform duration-200 ease-smooth",
+                    fold.open && "rotate-90",
+                  )}
+                />
+                {title}
+              </button>
+            ) : (
+              title
+            )}
+            {help && <HelpTip about={title}>{help}</HelpTip>}
+          </h3>
+          {meta && <span className="ml-1.5 shrink-0 text-xs text-muted-foreground tabular-nums">{meta}</span>}
+          {fold && !fold.open && (
+            <span className="ml-1.5 min-w-0 animate-in truncate text-sm text-muted-foreground fade-in-0">
+              {fold.summary}
+            </span>
+          )}
+        </div>
         {action}
       </div>
-      {bare ? (
-        children
-      ) : (
-        <div className="flex flex-col divide-y divide-border rounded-lg border border-border bg-card/40 [&>*]:px-4 [&>*]:py-3.5">
-          {children}
-        </div>
-      )}
+      {fold ? <Collapse open={fold.open}>{panel}</Collapse> : panel}
     </section>
   );
 }

@@ -91,6 +91,30 @@ for (const theme of ["dark", "light"] as const) {
     await shot(page, `${theme}-4b-help`);
     await page.mouse.move(0, 0, { steps: 5 });
 
+    // The other step layouts, choosing steps, and changing them together.
+    await page.getByRole("button", { name: "Compact list" }).click();
+    await shot(page, `${theme}-6-compact`);
+    await page.getByRole("button", { name: "Side by side" }).click();
+    await shot(page, `${theme}-7-split`);
+    await page.getByRole("button", { name: "Select", exact: true }).click();
+    await page.locator("[data-step-header]").nth(0).click();
+    await page.locator("[data-step-header]").nth(2).click();
+    await shot(page, `${theme}-8-split-selected`);
+    await page.getByRole("button", { name: "Cards" }).click();
+    await page.getByRole("button", { name: "Select by kind" }).click();
+    await shot(page, `${theme}-9-select-by-kind`);
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: /^Edit \d steps?$/ }).click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await shot(page, `${theme}-10-bulk-edit`);
+    await page.getByRole("dialog").getByRole("button", { name: "Done" }).click();
+    await page.getByRole("toolbar").getByRole("button", { name: "Done" }).click();
+    await page.getByRole("button", { name: "Trigger" }).click();
+    await page.getByRole("button", { name: "When it runs" }).click();
+    await shot(page, `${theme}-11-folded`);
+    await page.getByRole("button", { name: "Trigger" }).click();
+    await page.getByRole("button", { name: "When it runs" }).click();
+
     await page.getByRole("button", { name: "Settings" }).click();
     await shot(page, `${theme}-5-settings`);
   });

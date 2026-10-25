@@ -99,16 +99,20 @@ export function SwatchGrid({
   );
 }
 
-/** The step-type icon in its coloured chip, as on the step cards. */
-export function KindChip({ kind, color }: { kind: ColorKind; color: StepColor }) {
+/** The step-type icon in its coloured chip, as on the step cards; `small`
+ *  in the dense rows. */
+export function KindChip({ kind, color, small = false }: { kind: ColorKind; color: StepColor; small?: boolean }) {
   const Icon = KIND_ICONS[kind];
   const t = tone(color);
   return (
     <span
-      className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground"
+      className={cn(
+        "flex shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground",
+        small ? "size-6" : "size-7",
+      )}
       style={t ? { backgroundColor: t.chip, color: t.icon } : undefined}
     >
-      <Icon className="size-4" />
+      <Icon className={small ? "size-3.5" : "size-4"} />
     </span>
   );
 }

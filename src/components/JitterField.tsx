@@ -24,6 +24,7 @@ export function JitterField({
         <Input
           type="number"
           min={0}
+          aria-label={label}
           className="w-28 pr-9 tabular-nums"
           value={value.base}
           onChange={(e) => onChange({ ...value, base: Math.max(0, +e.target.value || 0) })}
@@ -47,6 +48,7 @@ export function JitterField({
           <Input
             type="number"
             min={1}
+            aria-label={`${label} random extra`}
             className="w-32 pl-14 pr-9 tabular-nums"
             value={value.jitter}
             onChange={(e) => onChange({ ...value, jitter: Math.max(1, +e.target.value || 1) })}

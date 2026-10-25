@@ -17,8 +17,10 @@ export const SHORTCUTS: readonly Shortcut[] = [
   { keys: "Ctrl+Y", action: "Redo", where: "Editor" },
   { keys: "Ctrl+S", action: "Save", where: "Editor" },
   { keys: "Ctrl+Enter", action: "Test the steps", where: "Editor" },
-  { keys: "Delete", action: "Delete the focused step", where: "Editor" },
+  { keys: "Ctrl+A", action: "Select every step, to change them together", where: "Editor" },
+  { keys: "Delete", action: "Delete the focused step, or the selected steps", where: "Editor" },
   { keys: "Ctrl+D", action: "Duplicate the focused step", where: "Editor" },
+  { keys: "Up", action: "Go to the step above (Down: below)", where: "Editor" },
   { keys: "Alt+Up", action: "Move the focused step up (Alt+Down: down)", where: "Editor" },
   { keys: "Alt+Left", action: "Back", where: "Editor, Settings" },
 ];
