@@ -21,7 +21,9 @@ export default defineConfig({
   // independent. WebView2 is heavy; 3 at a time is plenty.
   workers: headed ? 1 : ci ? 2 : 3,
   fullyParallel: true,
-  timeout: 60_000,
+  // Starting the app counts toward each test's time, and a slow CI runner can
+  // take over a minute to start WebView2 (the launcher allows 90 s there).
+  timeout: ci ? 120_000 : 60_000,
   expect: { timeout: 10_000 },
   // No retries: a flaky test gets fixed, not re-run until it passes.
   retries: 0,
