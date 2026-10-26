@@ -38,6 +38,12 @@ The e2e suite starts the real app in a test mode with a fake mouse and keyboard,
 hook and hidden windows, so it is safe to run while you work. Never write tests that send real
 keystrokes; they land in whatever window has focus.
 
+The first run (and the first after you change your Windows password) shows one failed sign-in
+in your Security log: WebView2 checks once whether your password is blank, and the suite keeps
+its answer in `e2e/.cache` so no test repeats the check. Without that, a run made a failed
+sign-in per test and Windows locked the account. If the counter of failed sign-ins ever rises
+during a run, the run stops; see `e2e/_webview.ts`.
+
 ## Pull requests
 
 - **Tests are part of the change.** New behaviour comes with tests; a bug fix starts with a

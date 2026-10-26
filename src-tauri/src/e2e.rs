@@ -11,8 +11,10 @@
 //! - runs headless like Kanbini's tests: the window is never shown, never
 //!   focused and never in the taskbar (`POCHINI_E2E_HEADED=1` shows it, for
 //!   watching a test),
-//! - gives WebView2 its own profile and a DevTools port
-//!   (`POCHINI_E2E_CDP_PORT`) that Playwright connects to,
+//! - gives WebView2 its own profile (which `e2e/_launch.ts` seeds first, or
+//!   WebView2 makes a failed sign-in to the Windows account: see
+//!   `e2e/_webview.ts`) and a DevTools port (`POCHINI_E2E_CDP_PORT`) that
+//!   Playwright connects to,
 //! - answers Export / Import file dialogs with `POCHINI_E2E_DIALOG_FILE`
 //!   instead of opening them (Playwright cannot drive native dialogs),
 //! - never opens Explorer ("Open data folder").

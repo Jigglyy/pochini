@@ -32,3 +32,5 @@ src-tauri/gen/schemas
 # Playwright (npm run e2e)
 /test-results/
 /playwright-report/
+# WebView2's remembered password-check answer (e2e/_webview.ts)
+/e2e/.cache/

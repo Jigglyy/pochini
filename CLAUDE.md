@@ -477,6 +477,16 @@ CI on pull requests.
   debug builds only, a release exe ignores it) uses `FakeInput`, installs no keyboard hook
   and no toggle hotkey, skips the single-instance check, and runs headless. Specs check
   persistence by reading the data folder's `macros.json`. Lessons learned:
+  - **A fresh WebView2 profile signs in to the Windows account** (with an empty password, to
+    see whether it is blank): a failed sign-in, Security event 4625 from msedgewebview2.exe.
+    The suite started ~110 fresh profiles a run, and Windows locked the maintainer out of
+    their PC (10 failures in 10 minutes). `e2e/_webview.ts` fixes it: global setup takes
+    WebView2's own remembered answer once per password change (`e2e/.cache`, one failure),
+    every test's profile is seeded with it (`Local State` `password_manager.*`; it must be
+    copied, a value worked out from Windows is rejected), one seeded launch must leave the
+    account's bad-password counter (`Win32_NetworkLoginProfile.BadPasswordCount`) unchanged
+    before any test runs, and a rise during the run refuses every later launch. Never start
+    WebView2 on an unseeded profile in a loop; verify any new launcher with that counter.
   - Headless means **never shown** (`visible(false)`), as in Kanbini. An off-screen position
     is not enough: Windows put those windows on the main monitor. No window may appear while
     tests run; keep it that way.

@@ -17,6 +17,9 @@ if (headed) process.env.POCHINI_E2E_HEADED = "1";
 
 export default defineConfig({
   testDir: "./e2e",
+  // Seeds every WebView2 profile so none signs in to the Windows account, and
+  // stops the run if one does (it locked the account once: e2e/_webview.ts).
+  globalSetup: "./e2e/global-setup.ts",
   // Each test owns its app, data folder and WebView2 profile, so tests are
   // independent. WebView2 is heavy; 3 at a time is plenty.
   workers: headed ? 1 : ci ? 2 : 3,

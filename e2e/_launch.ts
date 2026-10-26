@@ -2,19 +2,19 @@ import { chromium, test as base, type Browser, type Locator, type Page } from "@
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { createServer, type AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import type { Macro } from "../src/types";
+import { checkAfterLaunch, EXE, freePort, refuseIfStopped, seedProfile } from "./_webview";
 
 // Launches one Pochini per test, like Kanbini's tests/_launch.ts: a fresh data
 // folder (optionally seeded with macros), the app in test mode (see
 // src-tauri/src/e2e.rs), and Playwright attached to its WebView2 through the
 // DevTools port. Cleanup kills the app and deletes the folder.
-
-const here = dirname(fileURLToPath(import.meta.url));
-const EXE = resolve(here, "../src-tauri/target/debug/pochini.exe");
+//
+// Every profile starts with WebView2's remembered answer to its "is the
+// Windows password blank?" check, or it signs in to the account with an empty
+// password, and a run of the suite locks the account: see _webview.ts.
 
 export type Seed = {
   macros?: Macro[];
@@ -37,22 +37,13 @@ export type App = {
 const live = new Set<ChildProcess>();
 process.on("exit", () => live.forEach((c) => c.kill()));
 
-function freePort(): Promise<number> {
-  return new Promise((ok, fail) => {
-    const s = createServer();
-    s.on("error", fail);
-    s.listen(0, "127.0.0.1", () => {
-      const { port } = s.address() as AddressInfo;
-      s.close(() => ok(port));
-    });
-  });
-}
-
 async function launch(seed: Seed): Promise<{ app: App; close: () => Promise<void> }> {
   if (!existsSync(EXE)) {
     throw new Error(`${EXE} is missing. Run the suite with "npm run e2e", which builds it first.`);
   }
+  refuseIfStopped();
   const dataDir = await mkdtemp(join(tmpdir(), "pochini-e2e-"));
+  await seedProfile(dataDir);
   if (seed.macros) {
     await writeFile(join(dataDir, "macros.json"), JSON.stringify({ schema_version: 1, macros: seed.macros }));
   }
@@ -83,7 +74,10 @@ async function launch(seed: Seed): Promise<{ app: App; close: () => Promise<void
   });
 
   let browser: Browser | undefined;
+  /** Whether this launch made WebView2 sign in (read once it has started). */
+  let signedIn: Promise<string | null> = Promise.resolve(null);
   const close = async () => {
+    const stopped = await signedIn;
     await browser?.close().catch(() => {});
     if (exited === null) {
       const gone = new Promise((r) => child.once("exit", r));
@@ -92,10 +86,13 @@ async function launch(seed: Seed): Promise<{ app: App; close: () => Promise<void
     }
     // WebView2 lets go of its profile a moment after the app exits.
     await rm(dataDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 }).catch(() => {});
+    if (stopped) throw new Error(stopped);
   };
 
   try {
     const page = await attach();
+    // WebView2 would have signed in within a second of starting; it has.
+    signedIn = checkAfterLaunch();
     return { app: { page, dataDir }, close };
   } catch (e) {
     await close();
