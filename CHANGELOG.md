@@ -6,6 +6,8 @@ Each version is built with `npm run release` into `release/Pochini-<version>.exe
 
 ## Unreleased
 
+## 0.16.0 - 2026-10-26
+
 ### Changed
 
 - **Settings looks and works like Kanbini's**: a sidebar of sections (Macros: Hotkeys, Run

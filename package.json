@@ -1,7 +1,7 @@
 {
   "name": "pochini",
   "private": true,
-  "version": "0.15.0",
+  "version": "0.16.0",
   "description": "Click and keyboard macros for Windows, driven by screen coordinates and global hotkeys",
   "license": "MIT",
   "author": "Jigglyy",
