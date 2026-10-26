@@ -262,6 +262,81 @@ test.describe("stop after", () => {
   });
 });
 
+test.describe("feel", () => {
+  test.use({ seed: { macros: [macro("Human", { steps: [clickAt(10, 10)] })] } });
+
+  test("bell curve, hesitation and curved paths are saved with their settings", async ({
+    app: { page, dataDir },
+  }) => {
+    await page.getByRole("button", { name: /^Human/ }).click();
+    // Content under a switch opens with Collapse and is inert until it has.
+    const ready = async (name: string, role: "combobox" | "spinbutton") => {
+      const control = page.getByRole(role, { name, exact: true });
+      await expect(control).toBeVisible();
+      await expect(control.locator("xpath=ancestor::*[@inert]")).toHaveCount(0);
+      return control;
+    };
+    const pick = async (name: string, option: string) => {
+      await (await ready(name, "combobox")).click();
+      await page.getByRole("option", { name: option, exact: true }).click();
+      await expect(page.locator("body")).not.toHaveCSS("pointer-events", "none");
+    };
+
+    await page.getByRole("switch", { name: /^Bell-curve randomness/ }).click();
+    await pick("Tightness", "Tight");
+    await pick("Peak", "Early");
+
+    await page.getByRole("switch", { name: /^Hesitate now and then/ }).click();
+    await expect(page.getByText("10% of clicks wait 150 to 500 ms longer.")).toBeVisible();
+    await (await ready("Hesitation chance", "spinbutton")).fill("25");
+
+    await page.getByRole("switch", { name: /^Curved mouse paths/ }).click();
+    await (await ready("Curve bend", "spinbutton")).fill("15");
+    await (await ready("Overshoot chance", "spinbutton")).fill("20");
+
+    await save(page);
+    const f = JSON.parse(await readFile(join(dataDir, "macros.json"), "utf8"));
+    expect(f.macros[0].feel).toEqual({
+      bell: { tightness: "tight", peak: "early" },
+      hesitate: { chance_pct: 25, ms: { base: 150, jitter: 350 } },
+      curve: { bend_pct: 15, overshoot_pct: 20 },
+    });
+  });
+
+  test("turned off it saves as off; the hint, the estimate, the summary and undo follow", async ({
+    app: { page, dataDir },
+  }) => {
+    await page.getByRole("button", { name: /^Human/ }).click();
+    const estimate = page.getByText(/^1 step, takes /);
+    const before = await estimate.textContent();
+
+    await page.getByRole("switch", { name: /^Hesitate now and then/ }).click();
+    await expect(page.getByText("10% of clicks wait 150 to 500 ms longer.")).toBeVisible();
+    // The worst case allows the longest hesitation.
+    await expect(estimate).not.toHaveText(before!);
+    const chance = page.getByRole("spinbutton", { name: "Hesitation chance", exact: true });
+    await expect(chance.locator("xpath=ancestor::*[@inert]")).toHaveCount(0);
+    await chance.fill("25");
+    await expect(page.getByText("25% of clicks wait 150 to 500 ms longer.")).toBeVisible();
+    // Typing undoes as one step.
+    await page.getByRole("button", { name: "Undo", exact: true }).click();
+    await expect(page.getByText("10% of clicks wait 150 to 500 ms longer.")).toBeVisible();
+
+    await page.getByRole("switch", { name: /^Curved mouse paths/ }).click();
+    await page.getByRole("switch", { name: /^Curved mouse paths/ }).click();
+    await page.getByRole("button", { name: "When it runs" }).click();
+    await expect(page.getByText("Runs once, hesitates", { exact: true })).toBeVisible();
+
+    await save(page);
+    const f = JSON.parse(await readFile(join(dataDir, "macros.json"), "utf8"));
+    expect(f.macros[0].feel).toEqual({
+      bell: null,
+      hesitate: { chance_pct: 10, ms: { base: 150, jitter: 350 } },
+      curve: null,
+    });
+  });
+});
+
 test.describe("picking a point", () => {
   test.use({ seed: { macros: [macro("Pick one", { steps: [{ ...clickAt(5, 5), id: "c1" }] })] } });
 

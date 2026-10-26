@@ -27,6 +27,11 @@ test.use({
         guard: { process: "msedge.exe", label: "" },
         queue: true,
         return_to_start: true,
+        feel: {
+          bell: { tightness: "medium", peak: "early" },
+          hesitate: { chance_pct: 10, ms: { base: 150, jitter: 350 } },
+          curve: { bend_pct: 10, overshoot_pct: 0 },
+        },
         steps: [
           { ...rel("activation", 0, 0), coord_jitter_px: 3 },
           wait(180),
@@ -96,6 +101,10 @@ for (const theme of ["dark", "light"] as const) {
     await shot(page, `${theme}-6-compact`);
     await page.getByRole("button", { name: "Side by side" }).click();
     await shot(page, `${theme}-7-split`);
+    await page.getByRole("button", { name: "Squares" }).click();
+    await page.locator("[data-step-header]").nth(2).click();
+    await shot(page, `${theme}-7b-squares`);
+    await page.getByRole("button", { name: "Side by side" }).click();
     await page.getByRole("button", { name: "Select", exact: true }).click();
     await page.locator("[data-step-header]").nth(0).click();
     await page.locator("[data-step-header]").nth(2).click();

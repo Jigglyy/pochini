@@ -8,7 +8,7 @@ export type ThemePref = "system" | "light" | "dark";
 
 /** How the editor lays out steps: one card each, dense rows, or rows beside
  *  the chosen step's settings. */
-export type StepView = "cards" | "compact" | "split";
+export type StepView = "cards" | "compact" | "split" | "squares";
 
 export type UiPrefs = {
   theme?: ThemePref;

@@ -16,7 +16,9 @@ hotkey on or off; each macro also has its own switch, can **queue** repeated pre
 be restricted to **one app** (the hotkey only fires while the mouse is over that app), and
 can **move the mouse back** to where it started when the run ends. A click step can **hold
 keys** while it clicks (Shift for a shift-click), and steps marked **Shuffle** trade places
-at random on every pass while the others stay put.
+at random on every pass while the others stay put. A macro can also feel less mechanical, each
+part with its own settings: **bell-curve** randomness (tightness and where it peaks), an
+occasional **hesitation** before a click, and **curved** mouse paths.
 
 Macros can be **exported** to a `.pochini.json` file and **imported** from one, so people
 can share them; imported macros arrive with their hotkey off.
@@ -28,9 +30,9 @@ this app owns.
 ## Status
 
 Implemented and building. `src-tauri/` has the full Rust core (model, storage, input,
-hotkey, engine, IPC) with **248 passing unit tests**; `src/` is a ShadCN + Tailwind v4 UI
-styled after Kanbini (macro list, step editor, settings), with **104 Vitest tests** for its
-helpers and components, and **113 Playwright e2e tests** against the real app. `npm run tauri dev` opens the app.
+hotkey, engine, IPC) with **284 passing unit tests**; `src/` is a ShadCN + Tailwind v4 UI
+styled after Kanbini (macro list, step editor, settings), with **113 Vitest tests** for its
+helpers and components, and **124 Playwright e2e tests** against the real app. `npm run tauri dev` opens the app.
 
 The M0/M1 Win32 assumptions were measured before being ported; see
 [tools/m0-probe/README.md](tools/m0-probe/README.md). That harness found three errors in the
@@ -166,6 +168,7 @@ src/                      React UI
   components/layout.tsx   Section, Field, ToggleRow, Kbd, KeyCombo, Notice primitives
   components/             StepRow (+ StepFields), JitterField, CoordPicker, KeyCapture, RunIndicator
   components/BulkEdit.tsx changing many selected steps at once ("Mixed" fields)
+  components/FeelRows.tsx the editor's bell curve / hesitate / curved paths rows (Feel)
   components/sortable.tsx shared dnd-kit setup (Kanbini's drag feel) for steps and macros
   components/StepColors.tsx step-kind icons, colour chips, swatches, Settings > Step colors
   lib/ipc.ts              typed wrappers over the Tauri commands
@@ -204,6 +207,8 @@ src-tauri/src/
   magnifier.rs            the click-to-pick magnifier window (page: components/Magnifier.tsx)
   engine/mod.rs           step execution, jitter, settle, activation point, release pass
   engine/timer.rs         high-resolution interruptible wait
+  engine/random.rs        Feel's bell: Beta draws in a range, the click-spread sigma (pure)
+  engine/curve.rs         minimum-jerk timing, curved glide paths (pure, tested)
   hotkey/bindings.rs      binding table + matching        (pure, tested)
   hotkey/logic.rs         per-key decision state machine  (pure, tested)
   hotkey/hook.rs          WH_KEYBOARD_LL thread           (unsafe, thin)
@@ -416,9 +421,10 @@ Mostly carried over from Kanbini, whose renderer this UI copies the look of:
   root, so quick repeated clicks were swallowed (an e2e test guards this). Windows'
   "Animation effects" off (prefers-reduced-motion) turns all of it off: a global rule in
   `index.css`, plus `useFlip` and `motion-reduce:` checks.
-- **The step list has three layouts** (`StepView` in `lib/prefs.ts`, remembered): Cards,
-  Compact (dense rows in one panel, a colour bar instead of an outline) and Side by side (the
-  dense list, with the chosen step's `StepFields` in a sticky panel). The editor owns which
+- **The step list has four layouts** (`StepView` in `lib/prefs.ts`, remembered): Cards,
+  Compact (dense rows in one panel, a colour bar instead of an outline), Side by side (the
+  dense list, with the chosen step's `StepFields` in a sticky panel) and Squares (a grid of
+  square tiles, `StepRow`'s `square`, with the same panel; `besideView` covers both). The editor owns which
   steps are open (`open`), the side-by-side step (`current`) and the selection; `StepRow` only
   draws them. Selecting steps (Select, Ctrl+A, Ctrl+click) turns a header click into a tick
   (Shift for a range) and shows a sticky toolbar; `BulkEdit` changes the ticked steps in a
@@ -448,9 +454,9 @@ Mostly carried over from Kanbini, whose renderer this UI copies the look of:
 
 ## Testing
 
-`cargo test` is the gate: 248 tests, no Windows APIs required for most of them. The UI has
-`npm test` (104 Vitest tests: the pure helpers in `src/lib`, and components with their IPC
-mocked, in jsdom) and `npm run e2e` (113 Playwright tests), all run locally before every release and by
+`cargo test` is the gate: 284 tests, no Windows APIs required for most of them. The UI has
+`npm test` (113 Vitest tests: the pure helpers in `src/lib`, and components with their IPC
+mocked, in jsdom) and `npm run e2e` (124 Playwright tests), all run locally before every release and by
 CI on pull requests.
 
 - Vitest is for logic that needs no app: summaries and estimates (`lib/steps.ts`, which

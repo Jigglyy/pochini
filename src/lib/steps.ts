@@ -1,4 +1,4 @@
-import type { Anchor, Jitter, Modifier, Step } from "../types";
+import type { Anchor, Jitter, Macro, Modifier, Step } from "../types";
 
 export const newId = () =>
   `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
@@ -178,6 +178,58 @@ export function summarize(s: Step): string {
     case "wait_color":
       return `Wait until (${s.x}, ${s.y}) is ${s.color} (up to ${fmtRange([s.timeout_ms, s.timeout_ms])})`;
   }
+}
+
+/** A few words for a step's square in the Squares layout: its point, key,
+ *  time or text, without the verb its icon already shows. */
+export function shortLabel(s: Step): string {
+  const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
+  const point = (p: Extract<Step, { type: "click" | "move" }>) => {
+    if (p.anchor === "fixed") return `${p.x}, ${p.y}`;
+    if (p.anchor === "window") return `Window ${p.dx}, ${p.dy}`;
+    const place = p.anchor === "previous" ? "Previous" : "Start";
+    return p.dx === 0 && p.dy === 0 ? place : `${place} ${signed(p.dx)}, ${signed(p.dy)}`;
+  };
+  switch (s.type) {
+    case "click":
+      return `${s.action === "double" ? "2× " : ""}${point(s)}`;
+    case "move":
+      return point(s);
+    case "key": {
+      const combo = [...s.modifiers.map(modLabel), s.key.label].join("+");
+      return s.action === "down" ? `Hold ${combo}` : s.action === "up" ? `Release ${combo}` : combo;
+    }
+    case "text":
+      return s.value ? `"${s.value.length > 10 ? s.value.slice(0, 10) + "..." : s.value}"` : "Text";
+    case "wait":
+      return ms(s.ms);
+    case "scroll": {
+      const way = summarize(s).replace(/^Scroll /, "").replace(/ \(recorded\)$/, "");
+      return way[0].toUpperCase() + way.slice(1);
+    }
+    case "wait_color":
+      return s.color;
+  }
+}
+
+/** A press a hesitation may delay: a click, double click or press-and-hold,
+ *  never a release or a recorded click. Mirrors Step::hesitates. */
+export function stepHesitates(s: Step): boolean {
+  return s.type === "click" && s.action !== "up" && !s.path;
+}
+
+/** Best/worst-case duration of one pass in ms, a hesitation's longest pause
+ *  allowed once per press. Mirrors Macro::duration_range. */
+export function macroRange(m: Pick<Macro, "steps" | "feel">): [number, number] {
+  const h = m.feel.hesitate;
+  const extra = h && h.chance_pct > 0 ? h.ms.base + h.ms.jitter : 0;
+  return m.steps.reduce<[number, number]>(
+    ([lo, hi], s) => {
+      const [a, b] = stepRange(s);
+      return [lo + a, hi + b + (stepHesitates(s) ? extra : 0)];
+    },
+    [0, 0],
+  );
 }
 
 /** Best/worst-case duration of one step in ms. Mirrors Step::duration_range. */

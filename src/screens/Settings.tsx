@@ -3,6 +3,7 @@ import {
   Check,
   ClipboardCopy,
   Columns2,
+  LayoutGrid,
   Download,
   FileText,
   FolderOpen,
@@ -165,6 +166,7 @@ const STEP_VIEWS = [
   { value: "cards", label: "Cards", hint: "One card per step.", Icon: Rows2 },
   { value: "compact", label: "Compact list", hint: "Dense rows, about half the height.", Icon: Rows4 },
   { value: "split", label: "Side by side", hint: "The list, with the chosen step's settings beside it.", Icon: Columns2 },
+  { value: "squares", label: "Squares", hint: "A grid of squares, with the chosen step's settings beside it.", Icon: LayoutGrid },
 ] as const satisfies readonly { value: StepView; label: string; hint: string; Icon: typeof Sun }[];
 
 /** What the mouse does, for Settings > Shortcuts. */

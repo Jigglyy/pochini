@@ -51,7 +51,7 @@ import { cancelPick, pixelAt, windowOrigin } from "@/lib/ipc";
 import { decodePath } from "@/lib/path";
 import { pickPoint } from "@/lib/pick";
 import { cn } from "@/lib/utils";
-import { fmtAim, hasPath, summarize, type Aim, type NewStepKind } from "@/lib/steps";
+import { fmtAim, hasPath, shortLabel, summarize, type Aim, type NewStepKind } from "@/lib/steps";
 import type { Anchor, Guard, Modifier, Step } from "@/types";
 import { CoordPicker } from "./CoordPicker";
 import { JitterField } from "./JitterField";
@@ -212,6 +212,9 @@ type StepRowProps = StepContext & {
   /** The settings open under the header. Off in split view, where the
    *  header picks the step shown beside the list. */
   inline?: boolean;
+  /** A square tile in the Squares layout's grid (with `inline` off): its
+   *  number, icon and a short label, the summary in a tooltip. */
+  square?: boolean;
   /** A run is on this step right now. */
   running?: boolean;
   /** Choosing steps to change together: a checkbox replaces the grip, and a
@@ -233,10 +236,32 @@ export function SortableStepRow(props: StepRowProps) {
 
 /** The lifted copy of a step while it is being dragged. Same layout as the
  *  StepRow header, card or dense row. */
-export function StepFace({ step, index, dense = false }: { step: Step; index: number; dense?: boolean }) {
+export function StepFace({
+  step,
+  index,
+  dense = false,
+  square = false,
+}: {
+  step: Step;
+  index: number;
+  dense?: boolean;
+  square?: boolean;
+}) {
   const kind = colorKind(step);
   const color = useStepColors()[kind];
   const t = tone(color);
+  if (square) {
+    return (
+      <div
+        className="relative flex size-full cursor-grabbing flex-col items-center justify-center gap-1.5 rounded-lg border border-l-[3px] border-primary/40 bg-card p-1.5 text-card-foreground"
+        style={outlineStyle(t)}
+      >
+        <span className="absolute top-1 left-1.5 text-xs tabular-nums text-muted-foreground">{index + 1}</span>
+        <KindChip kind={kind} color={color} />
+        <span className="line-clamp-2 w-full text-center text-xs leading-tight wrap-break-word">{shortLabel(step)}</span>
+      </div>
+    );
+  }
   return (
     <div
       className={cn(
@@ -379,6 +404,14 @@ function focusHeader(from: HTMLElement, delta: number) {
   all[all.indexOf(from) + delta]?.focus();
 }
 
+/** How many squares a row of the Squares grid holds, from the grid's own
+ *  columns: positions on screen are wrong while the squares glide. */
+function gridColumns(from: HTMLElement): number {
+  const grid = from.closest<HTMLElement>("[data-step-view]");
+  const cols = grid ? getComputedStyle(grid).gridTemplateColumns.split(" ").filter(Boolean).length : 1;
+  return Math.max(1, cols);
+}
+
 export function StepRow({
   step,
   index,
@@ -394,6 +427,7 @@ export function StepRow({
   revealOnMount = false,
   dense = false,
   inline = true,
+  square = false,
   running = false,
   selecting = false,
   selected = false,
@@ -436,7 +470,12 @@ export function StepRow({
     const plain = !e.ctrlKey && !e.altKey && !e.shiftKey;
     if (plain && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
       e.preventDefault();
-      focusHeader(e.currentTarget, e.key === "ArrowUp" ? -1 : 1);
+      // A row of the grid up or down; a list's next header.
+      focusHeader(e.currentTarget, (e.key === "ArrowUp" ? -1 : 1) * (square ? gridColumns(e.currentTarget) : 1));
+    }
+    if (square && plain && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+      e.preventDefault();
+      focusHeader(e.currentTarget, e.key === "ArrowLeft" ? -1 : 1);
     }
     // While choosing, Delete removes every selected step (the editor's).
     if (!selecting && e.key === "Delete" && plain) {
@@ -450,6 +489,92 @@ export function StepRow({
   };
 
   const tint = selected ? "color-mix(in oklab, var(--primary) 14%, var(--card))" : undefined;
+
+  const menu = (
+    <StepMenu
+      kind={kind}
+      first={index === 0}
+      last={index === count - 1}
+      shuffle={step.shuffle}
+      selecting={selecting}
+      onMove={onMove}
+      onMoveTo={onMoveTo}
+      onInsert={onInsert}
+      onDuplicate={onDuplicate}
+      onShuffle={(shuffle) => set({ shuffle })}
+      onDelete={onDelete}
+      onStartSelect={onStartSelect}
+      onSelectKind={onSelectKind}
+    />
+  );
+
+  if (square) {
+    return (
+      <div
+        ref={itemRef}
+        data-step-id={step.id}
+        data-flip={step.id}
+        data-selected={selected || undefined}
+        data-running={running || undefined}
+        style={style}
+        className="group/step min-w-0"
+      >
+        <ContextMenu>
+          <Tooltip>
+            <ContextMenuTrigger asChild>
+              <TooltipTrigger asChild>
+                <div
+                  {...handle}
+                  data-step-header
+                  role="button"
+                  tabIndex={0}
+                  aria-current={open && !selecting ? "true" : undefined}
+                  aria-pressed={selecting ? selected : undefined}
+                  onClick={press}
+                  onFocus={(e) => {
+                    // Arrowing through the grid shows each step.
+                    if (!selecting && e.target === e.currentTarget && !open) onOpenChange(true);
+                  }}
+                  onKeyDown={keys}
+                  style={{ ...outlineStyle(t), backgroundColor: tint }}
+                  className={cn(
+                    "relative flex aspect-square cursor-grab flex-col items-center justify-center gap-1.5 rounded-lg border border-l-[3px] border-border bg-card p-1.5 text-card-foreground outline-none",
+                    "transition-[border-color,box-shadow,background-color] duration-200 ease-smooth focus-visible:ring-2 focus-visible:ring-ring",
+                    !selected && (open && !selecting ? "bg-accent ring-2 ring-primary/50" : "hover:bg-accent/40"),
+                    running && "ring-2 ring-primary ring-offset-2 ring-offset-background",
+                  )}
+                >
+                  <span className="absolute top-1 left-1.5 text-xs tabular-nums text-muted-foreground">{index + 1}</span>
+                  {selecting ? (
+                    <Checkbox
+                      checked={selected}
+                      tabIndex={-1}
+                      aria-label={`Select step ${index + 1}`}
+                      onClick={(e) => e.preventDefault()}
+                      className="pointer-events-none absolute top-1.5 right-1.5"
+                    />
+                  ) : (
+                    step.shuffle && (
+                      <span className="absolute top-1 right-1">
+                        <ShuffleMark />
+                      </span>
+                    )
+                  )}
+                  <KindChip kind={kind} color={color} />
+                  <span aria-hidden className="line-clamp-2 w-full text-center text-xs leading-tight wrap-break-word">
+                    {shortLabel(step)}
+                  </span>
+                  <span className="sr-only">{summarize(step)}</span>
+                </div>
+              </TooltipTrigger>
+            </ContextMenuTrigger>
+            <TooltipContent>{summarize(step)}</TooltipContent>
+          </Tooltip>
+          {menu}
+        </ContextMenu>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -546,21 +671,7 @@ export function StepRow({
             )}
           </div>
         </ContextMenuTrigger>
-        <StepMenu
-          kind={kind}
-          first={index === 0}
-          last={index === count - 1}
-          shuffle={step.shuffle}
-          selecting={selecting}
-          onMove={onMove}
-          onMoveTo={onMoveTo}
-          onInsert={onInsert}
-          onDuplicate={onDuplicate}
-          onShuffle={(shuffle) => set({ shuffle })}
-          onDelete={onDelete}
-          onStartSelect={onStartSelect}
-          onSelectKind={onSelectKind}
-        />
+        {menu}
       </ContextMenu>
 
       {inline && (

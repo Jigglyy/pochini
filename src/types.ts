@@ -143,6 +143,19 @@ export type QueueFrom = "each_press" | "first_press";
 /** "App only": the hotkey fires only while the mouse is over this app. */
 export type Guard = { process: string; label: string };
 
+/** How strongly random amounts gather around the bell's peak. */
+export type Tightness = "loose" | "medium" | "tight";
+/** Where in its range the bell peaks. */
+export type Peak = "early" | "middle" | "late";
+/** Random amounts gather around a peak instead of spreading evenly. */
+export type Bell = { tightness: Tightness; peak: Peak };
+/** Before pressing, a click waits `ms` longer, `chance_pct` times in a hundred. */
+export type Hesitate = { chance_pct: number; ms: Jitter };
+/** Glides bend up to `bend_pct` of their length; `overshoot_pct` of them overshoot. */
+export type Curve = { bend_pct: number; overshoot_pct: number };
+/** A macro's optional touches; null is off. Mirrors model.rs Feel. */
+export type Feel = { bell: Bell | null; hesitate: Hesitate | null; curve: Curve | null };
+
 export type Macro = {
   id: string;
   name: string;
@@ -163,6 +176,8 @@ export type Macro = {
   return_to_start: boolean;
   /** End the run after this long (a safety limit), or null for no limit. */
   stop_after_ms: number | null;
+  /** Bell-curve randomness, hesitation, curved paths (model.rs Feel). */
+  feel: Feel;
   steps: Step[];
   guard: Guard | null;
   created_at: string;

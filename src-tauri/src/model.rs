@@ -40,6 +40,69 @@ impl Default for Jitter {
     }
 }
 
+/// How a macro's input feels: three optional touches that make it less
+/// mechanical. All off by default; none changes what a step aims at or how
+/// long it can take at most, except hesitation, which adds its own pause.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Feel {
+    /// Random amounts gather around a peak instead of spreading evenly.
+    #[serde(default)]
+    pub bell: Option<Bell>,
+    /// Now and then a click waits a little longer before pressing.
+    #[serde(default)]
+    pub hesitate: Option<Hesitate>,
+    /// Glides bend into an arc instead of a straight line.
+    #[serde(default)]
+    pub curve: Option<Curve>,
+}
+
+/// The shape random amounts take inside their range (a Beta curve, so they
+/// never leave it): how strongly they gather, and where.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Bell {
+    #[serde(default)]
+    pub tightness: Tightness,
+    #[serde(default)]
+    pub peak: Peak,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Tightness {
+    Loose,
+    #[default]
+    Medium,
+    Tight,
+}
+
+/// Where in the range the bell peaks. Early is mostly short with the odd
+/// long one, the way people's timing is skewed.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Peak {
+    Early,
+    #[default]
+    Middle,
+    Late,
+}
+
+/// Before pressing, a click waits `ms` longer, `chance_pct` times in a
+/// hundred. See `Step::hesitates` for which clicks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Hesitate {
+    pub chance_pct: u8,
+    pub ms: Jitter,
+}
+
+/// A glide's arc: its control points sit up to `bend_pct` of the distance
+/// off the straight line, and `overshoot_pct` of glides go a few pixels past
+/// the target and come back.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Curve {
+    pub bend_pct: u8,
+    pub overshoot_pct: u8,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MouseButton {
@@ -483,6 +546,13 @@ impl Step {
             | Step::WaitColor { id, .. } => *id = new,
         }
     }
+
+    /// A press a macro's `Feel::hesitate` may delay: a click, double click or
+    /// press-and-hold. Never a release, and never a recorded click, which
+    /// keeps the timing the user gave it.
+    pub fn hesitates(&self) -> bool {
+        matches!(self, Step::Click { action: ClickAction::Click | ClickAction::Double | ClickAction::Down, path, .. } if path.is_empty())
+    }
 }
 
 fn default_hold() -> Jitter {
@@ -654,6 +724,9 @@ pub struct Macro {
     /// back" still happens. `None`: no limit.
     #[serde(default)]
     pub stop_after_ms: Option<u64>,
+    /// Bell-curve randomness, hesitation, curved paths. See `Feel`.
+    #[serde(default)]
+    pub feel: Feel,
     #[serde(default)]
     pub steps: Vec<Step>,
     #[serde(default)]
@@ -708,6 +781,7 @@ impl Macro {
             queue_from: QueueFrom::FirstPress,
             return_to_start: false,
             stop_after_ms: None,
+            feel: Feel::default(),
             steps: Vec::new(),
             guard: None,
             created_at: now.clone(),
@@ -724,13 +798,18 @@ impl Macro {
         }
     }
 
-    /// Total estimated duration of one pass, in ms.
+    /// Total estimated duration of one pass, in ms. A hesitation may delay
+    /// any press, so the worst case allows for its longest pause on each.
     pub fn duration_range(&self) -> (u64, u64) {
+        let hesitation = match self.feel.hesitate {
+            Some(h) if h.chance_pct > 0 => h.ms.range().1 as u64,
+            _ => 0,
+        };
         self.steps
             .iter()
             .fold((0, 0), |(lo, hi), s| {
                 let (a, b) = s.duration_range();
-                (lo + a, hi + b)
+                (lo + a, hi + b + if s.hesitates() { hesitation } else { 0 })
             })
     }
 }
@@ -1212,6 +1291,75 @@ mod tests {
         };
         // The emoji is two UTF-16 units, typed (and waited for) one by one.
         assert_eq!(text.duration_range(), (30, 36));
+    }
+
+    #[test]
+    fn feel_is_off_in_files_written_before_it() {
+        let mut v = serde_json::to_value(Macro::new("x")).unwrap();
+        v.as_object_mut().unwrap().remove("feel");
+        let m: Macro = serde_json::from_value(v).unwrap();
+        assert_eq!(m.feel, Feel::default());
+        assert!(m.feel.bell.is_none() && m.feel.hesitate.is_none() && m.feel.curve.is_none());
+    }
+
+    #[test]
+    fn feel_round_trips() {
+        let mut m = Macro::new("x");
+        m.feel = Feel {
+            bell: Some(Bell { tightness: Tightness::Tight, peak: Peak::Early }),
+            hesitate: Some(Hesitate { chance_pct: 10, ms: Jitter { base: 150, jitter: 350 } }),
+            curve: Some(Curve { bend_pct: 10, overshoot_pct: 20 }),
+        };
+        let json = serde_json::to_string(&m).unwrap();
+        assert!(json.contains(r#""bell":{"tightness":"tight","peak":"early"}"#), "{json}");
+        let back: Macro = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.feel, m.feel);
+        // A bell written with only one of its settings keeps the default for the other.
+        let half: Bell = serde_json::from_str(r#"{"peak":"late"}"#).unwrap();
+        assert_eq!(half, Bell { tightness: Tightness::Medium, peak: Peak::Late });
+    }
+
+    fn press(action: ClickAction, path: Vec<PathPoint>) -> Step {
+        Step::Click {
+            id: "c".into(),
+            shuffle: false,
+            x: 0,
+            y: 0,
+            button: MouseButton::Left,
+            action,
+            anchor: Anchor::Fixed,
+            dx: 0,
+            dy: 0,
+            coord_jitter_px: 0,
+            hold_ms: Jitter { base: 10, jitter: 5 },
+            settle_ms: Jitter { base: 3, jitter: 1 },
+            dwell_ms: None,
+            move_duration_ms: 0,
+            path,
+            modifiers: vec![],
+            held_key: None,
+            capture: None,
+        }
+    }
+
+    #[test]
+    fn hesitation_adds_its_longest_pause_once_per_press() {
+        let recorded = vec![PathPoint { x: 0, y: 0, t: 0 }, PathPoint { x: 5, y: 5, t: 10 }];
+        let mut m = Macro::new("x");
+        m.steps = vec![
+            press(ClickAction::Click, vec![]),
+            press(ClickAction::Down, vec![]),
+            press(ClickAction::Up, vec![]),
+            press(ClickAction::Click, recorded),
+        ];
+        assert!(m.steps[0].hesitates() && m.steps[1].hesitates());
+        assert!(!m.steps[2].hesitates(), "a release never hesitates");
+        assert!(!m.steps[3].hesitates(), "a recorded click keeps its own timing");
+        let (lo, hi) = m.duration_range();
+        m.feel.hesitate = Some(Hesitate { chance_pct: 10, ms: Jitter { base: 150, jitter: 350 } });
+        assert_eq!(m.duration_range(), (lo, hi + 2 * 500));
+        m.feel.hesitate = Some(Hesitate { chance_pct: 0, ms: Jitter { base: 150, jitter: 350 } });
+        assert_eq!(m.duration_range(), (lo, hi), "no chance, no extra");
     }
 
     #[test]

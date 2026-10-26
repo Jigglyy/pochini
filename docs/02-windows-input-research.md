@@ -273,7 +273,19 @@ actual = base_ms + uniform(0, jitter_ms)
 ```
 
 Uniform is the right default - it is what the user can reason about ("50 ms, up to 30 ms
-extra"). A Gaussian option is a possible later refinement, not a v1 requirement.
+extra"). A macro can opt into a bell instead (`feel.bell`, see
+[03-macro-format.md](03-macro-format.md#feel)). People's timing is not a symmetric bell:
+reaction times fit an ex-Gaussian (a bell with a tail of slow ones) and key hold times a
+log-normal or log-logistic curve, so the bell is a Beta curve whose peak can sit early (mostly
+short, the odd long one). A plain normal was rejected because it is unbounded: it breaks the
+range the user set, the estimates, and can go negative. Click positions do scatter as a 2D
+normal (Fitts's-law work assumes it; ISO 9241-9's effective width is 4.133 σ, 96% of hits),
+which is why the bell's click spread is a Rayleigh radius.
+
+Glides follow the minimum-jerk profile (Flash and Hogan, 1985): point-to-point hand movements
+have a single bell-shaped speed curve, at rest at both ends. Curved glides are Bezier arcs
+travelled that way; physics-style paths (WindMouse) were rejected because they neither land
+exactly nor take a set time, which the run's timeline needs.
 
 The same applies optionally to click coordinates (`jitter_px`, sampled in a disc around the
 target) and to the gap between a mouse-down and its mouse-up, which is what makes a click look
@@ -330,6 +342,11 @@ feature for users who own such hardware - it is not on the roadmap.
 - [Low-level keyboard hook in C# - Microsoft archive](https://learn.microsoft.com/en-us/archive/blogs/toub/low-level-keyboard-hook-in-c)
 - [Tauri v2 Global Shortcut plugin](https://v2.tauri.app/plugin/global-shortcut/)
 - [tauri-plugin-user-input (enigo-backed input simulation)](https://lib.rs/crates/tauri-plugin-user-input)
+- [Ex-Gaussian reaction-time distributions (TQMP)](https://www.tqmp.org/RegularArticles/vol04-1/p035/p035.pdf)
+- [Timing distributions in keystroke dynamics (log-normal, log-logistic)](https://data.mendeley.com/datasets/sjk7kz35nh/1)
+- [MacKenzie: Fitts' law and the effective width](https://www.yorku.ca/mack/UCLAN2018/FittsLaw.pdf)
+- [Minimum-jerk trajectories (Flash and Hogan 1985), ATR report](https://results.atr.jp/35th/techreport/TR-A-0125/TR-A-0125.pdf)
+- [WindMouse, the physics-style alternative](https://windmouse.readthedocs.io/en/latest/algorithm.html)
 
 The coordinate, timer, extended-key and stamp numbers above are not quoted from any of these -
 they were measured on the dev machine with `tools/m0-probe`. See

@@ -8,6 +8,22 @@ Each version is built with `npm run release` into `release/Pochini-<version>.exe
 
 ### Added
 
+- **A macro can feel less mechanical.** Three new switches under "When it runs", each with its
+  own settings:
+  - **Bell-curve randomness:** random amounts (waits, holds, settles, click spread) gather
+    around a peak instead of spreading evenly, and never leave the range you set. Choose how
+    tightly (Loose, Medium, Tight) and where (Early: mostly short, with the odd long one;
+    Middle; Late). Click spread clusters near the point.
+  - **Hesitate now and then:** a share of clicks you choose waits a little longer on the
+    target before pressing (150 to 500 ms to start with, any range you like). Releases, and
+    clicks that replay a recorded path, never hesitate; the estimated run time allows for it.
+  - **Curved mouse paths:** glides bend into a gentle arc, as much as you choose, and can
+    overshoot the target by a few pixels and come back. Recorded paths still replay as
+    recorded.
+- **Squares:** a fourth step layout, a grid of squares (each with its number, icon and a short
+  label such as "640, 380" or "500 ms") with the chosen step's settings beside it. Squares
+  drag to reorder, have the step menu on right-click, and the arrow keys move around the grid.
+  It can be the default in Settings > Appearance too.
 - **Record steps replays what you did exactly.** Every press and release happens when it did
   and for as long as it did, and the mouse goes the way it went:
   - every report your mouse makes is kept, all 2000 a second on a 2000 Hz mouse, and replayed
@@ -35,8 +51,18 @@ Each version is built with `npm run release` into `release/Pochini-<version>.exe
   Changing a step's Travel speeds its path up or slows it down, and "Straight line instead"
   goes back to a straight glide.
 
+### Changed
+
+- **Glides move like a hand:** a step with a Travel time now sets off and arrives at rest and
+  is fastest halfway (minimum-jerk timing), instead of an ease-in-out with a sharp peak. The
+  same time, the same start and end.
+
 ### Fixed
 
+- **Side by side no longer jumps.** Scrolled down, choosing a step with fewer settings than the
+  one shown made the page shorter between pressing and releasing the mouse: the list jumped
+  under the pointer, and a Ctrl+click or Shift+click there missed. The steps now keep their
+  place.
 - **Macros keep their pace.** Every pause woke up a fraction of a millisecond late and
   sending input takes a moment too, and it added up: a recorded macro ran about 2 ms late per
   click (74 ms after 40 clicks). Wait steps now make up the time lost before them, so every

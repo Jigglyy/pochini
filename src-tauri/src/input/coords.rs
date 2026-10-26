@@ -77,6 +77,26 @@ pub fn jitter_point(x: i32, y: i32, radius_px: u32, u1: f64, u2: f64) -> (i32, i
     )
 }
 
+/// Offset a point the way people's clicks scatter: most land near the
+/// point, fewer further out, none past `radius_px`. The distance is a
+/// Rayleigh draw (a 2D bell) with `radius / spread` as its sigma, cut off
+/// at the radius by drawing from that part of its curve only, so nothing
+/// piles up on the rim. `u1`/`u2` as in `jitter_point`.
+pub fn jitter_point_bell(x: i32, y: i32, radius_px: u32, spread: f64, u1: f64, u2: f64) -> (i32, i32) {
+    if radius_px == 0 {
+        return (x, y);
+    }
+    let radius = radius_px as f64;
+    let sigma = radius / spread;
+    let inside = 1.0 - (-(radius * radius) / (2.0 * sigma * sigma)).exp();
+    let r = (sigma * (-2.0 * (1.0 - u1 * inside).ln()).sqrt()).min(radius);
+    let theta = u2 * std::f64::consts::TAU;
+    (
+        x + (r * theta.cos()).round() as i32,
+        y + (r * theta.sin()).round() as i32,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -187,5 +207,45 @@ mod tests {
             }
         }
         assert_eq!(jitter_point(5, 6, 0, 0.9, 0.9), (5, 6));
+    }
+
+    #[test]
+    fn bell_jitter_stays_within_its_radius() {
+        for spread in [2.0, 2.5, 3.5] {
+            for i in 0..100u32 {
+                let u1 = i as f64 / 100.0;
+                for j in 0..100u32 {
+                    let u2 = j as f64 / 100.0;
+                    let (x, y) = jitter_point_bell(500, 500, 10, spread, u1, u2);
+                    let d = (((x - 500).pow(2) + (y - 500).pow(2)) as f64).sqrt();
+                    assert!(d <= 10.5, "distance {d} exceeded radius for spread={spread} u1={u1} u2={u2}");
+                }
+            }
+        }
+        assert_eq!(jitter_point_bell(5, 6, 0, 2.5, 0.9, 0.9), (5, 6));
+        assert_eq!(jitter_point_bell(5, 6, 10, 2.5, 0.0, 0.3), (5, 6));
+    }
+
+    #[test]
+    fn bell_jitter_clusters_near_the_point() {
+        // The share of an even sweep of u1 that lands within half the radius:
+        // a truncated Rayleigh's CDF at R/2 (0.455, 0.567, 0.786), against an
+        // even disc's 0.25.
+        let near = |f: &dyn Fn(f64) -> (i32, i32)| {
+            let n = 10_000;
+            (0..n)
+                .filter(|i| {
+                    let (x, y) = f(*i as f64 / n as f64);
+                    (((x - 500).pow(2) + (y - 500).pow(2)) as f64).sqrt() <= 50.0
+                })
+                .count() as f64
+                / n as f64
+        };
+        for (spread, lo, hi) in [(2.0, 0.43, 0.48), (2.5, 0.54, 0.60), (3.5, 0.76, 0.81)] {
+            let s = near(&|u1| jitter_point_bell(500, 500, 100, spread, u1, 0.3));
+            assert!(s > lo && s < hi, "spread {spread}: {s}");
+        }
+        let even = near(&|u1| jitter_point(500, 500, 100, u1, 0.3));
+        assert!(even > 0.23 && even < 0.27, "{even}");
     }
 }

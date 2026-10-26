@@ -25,13 +25,16 @@ export function triggerSummary(m: Pick<Macro, "trigger" | "enabled" | "guard">):
     .join(", ");
 }
 
-export function runSummary(m: Pick<Macro, "repeat" | "queue" | "stop_after_ms" | "return_to_start">): string {
+export function runSummary(m: Pick<Macro, "repeat" | "queue" | "stop_after_ms" | "return_to_start" | "feel">): string {
   const r = m.repeat;
   return [
     r.kind === "once" ? "Runs once" : r.kind === "count" ? `Runs ${r.n} times` : "Runs until stopped",
     m.queue && "queues presses",
     m.stop_after_ms !== null && `stops after ${Math.max(1, Math.round(m.stop_after_ms / 60_000))} min`,
     m.return_to_start && "moves the mouse back",
+    m.feel.bell && "bell-curve randomness",
+    m.feel.hesitate && "hesitates",
+    m.feel.curve && "curved paths",
   ]
     .filter(Boolean)
     .join(", ");

@@ -1,6 +1,18 @@
 import { describe, expect, it } from "vitest";
 import type { Step } from "@/types";
-import { aimPhrase, aimPoints, blankStep, fmtAim, fmtRange, stepRange, summarize } from "./steps";
+import type { Feel, Macro } from "@/types";
+import {
+  aimPhrase,
+  aimPoints,
+  blankStep,
+  fmtAim,
+  fmtRange,
+  macroRange,
+  shortLabel,
+  stepHesitates,
+  stepRange,
+  summarize,
+} from "./steps";
 
 const click = (patch: Partial<Extract<Step, { type: "click" }>> = {}): Step => ({
   ...(blankStep("click") as Extract<Step, { type: "click" }>),
@@ -81,6 +93,67 @@ describe("recorded scrolls", () => {
 
   it("take as long as their turns did", () => {
     expect(stepRange(recorded)).toEqual([45, 45]);
+  });
+});
+
+describe("shortLabel", () => {
+  const key = (action: "press" | "down" | "up"): Step => ({
+    type: "key",
+    id: "k",
+    shuffle: false,
+    key: { vk: 0x41, scancode: 0x1e, extended: false, label: "A" },
+    action,
+    modifiers: ["ctrl"],
+    hold_ms: { base: 25, jitter: 0 },
+  });
+
+  it("gives a click or move its point, or what it aims from", () => {
+    expect(shortLabel(click({ x: 640, y: 380 }))).toBe("640, 380");
+    expect(shortLabel(click({ x: 640, y: 380, action: "double" }))).toBe("2× 640, 380");
+    expect(shortLabel(click({ anchor: "activation" }))).toBe("Start");
+    expect(shortLabel(click({ anchor: "activation", dx: 20, dy: -5 }))).toBe("Start +20, -5");
+    expect(shortLabel(click({ anchor: "previous" }))).toBe("Previous");
+    expect(shortLabel(click({ anchor: "window", dx: 20, dy: 30 }))).toBe("Window 20, 30");
+    expect(shortLabel({ ...(blankStep("move") as Extract<Step, { type: "move" }>), x: -5, y: 7 })).toBe("-5, 7");
+  });
+
+  it("gives a key its combo, held or released", () => {
+    expect(shortLabel(key("press"))).toBe("Ctrl+A");
+    expect(shortLabel(key("down"))).toBe("Hold Ctrl+A");
+    expect(shortLabel(key("up"))).toBe("Release Ctrl+A");
+  });
+
+  it("keeps text, waits, scrolls and colors short", () => {
+    const text = (value: string): Step => ({ type: "text", id: "t", shuffle: false, value, per_char_ms: { base: 20, jitter: 0 } });
+    expect(shortLabel(text("hello world"))).toBe('"hello worl..."');
+    expect(shortLabel(text("hi"))).toBe('"hi"');
+    expect(shortLabel(text(""))).toBe("Text");
+    expect(shortLabel({ type: "wait", id: "w", shuffle: false, ms: { base: 500, jitter: 0 } })).toBe("500 ms");
+    expect(shortLabel({ type: "wait", id: "w", shuffle: false, ms: { base: 500, jitter: 200 } })).toBe("500-700 ms");
+    expect(shortLabel({ type: "scroll", id: "s", shuffle: false, amount: -3, axis: "vertical", at: null })).toBe("Down 3");
+    const ticks = [{ t: 0, delta: -120 }];
+    expect(shortLabel({ type: "scroll", id: "s", shuffle: false, amount: -1, axis: "vertical", at: null, ticks })).toBe("Down 1");
+    expect(shortLabel({ ...(blankStep("wait_color") as Extract<Step, { type: "wait_color" }>), color: "#FF0000" })).toBe(
+      "#FF0000",
+    );
+  });
+});
+
+describe("macroRange", () => {
+  it("adds a hesitation's longest pause once per press", () => {
+    // Mirrors Macro::duration_range (model.rs), which has the same test.
+    const steps: Step[] = [
+      click({ action: "click" }),
+      click({ action: "down" }),
+      click({ action: "up" }),
+      click({ action: "click", path: "1:AAAAKKU" }),
+    ];
+    expect(steps.map(stepHesitates)).toEqual([true, true, false, false]);
+    const off: Feel = { bell: null, hesitate: null, curve: null };
+    const [lo, hi] = macroRange({ steps, feel: off } satisfies Pick<Macro, "steps" | "feel">);
+    const ms = { base: 150, jitter: 350 };
+    expect(macroRange({ steps, feel: { ...off, hesitate: { chance_pct: 10, ms } } })).toEqual([lo, hi + 2 * 500]);
+    expect(macroRange({ steps, feel: { ...off, hesitate: { chance_pct: 0, ms } } })).toEqual([lo, hi]);
   });
 });
 

@@ -4,6 +4,8 @@
 //! lets the tests at the bottom of this file assert on real behaviour without
 //! touching the user's cursor.
 
+pub mod curve;
+pub mod random;
 pub mod timer;
 
 use std::sync::Arc;
@@ -12,11 +14,11 @@ use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 
-use crate::input::coords::jitter_point;
+use crate::input::coords::{jitter_point, jitter_point_bell};
 use crate::input::{InputBackend, InputError};
 use crate::model::{
-    parse_hex, to_hex, Anchor, ClickAction, Jitter, KeyAction, KeyRef, KeyRepeat, Macro, Modifier, MouseButton, PathPoint,
-    Repeat, Step, TimeoutAction,
+    parse_hex, to_hex, Anchor, ClickAction, Feel, Jitter, KeyAction, KeyRef, KeyRepeat, Macro, Modifier, MouseButton,
+    PathPoint, Repeat, Step, TimeoutAction,
 };
 
 pub use timer::CancelToken;
@@ -157,6 +159,8 @@ pub struct Engine {
     repeaters: Vec<Repeater>,
     /// A step has moved the cursor this run (see `travel`).
     traveled: bool,
+    /// The running macro's bell, hesitation and curve.
+    feel: Feel,
     input: Arc<dyn InputBackend>,
     rng: StdRng,
     /// Cursor position when the current run started. See `Anchor::Activation`.
@@ -176,6 +180,7 @@ impl Engine {
             plan: None,
             repeaters: Vec::new(),
             traveled: false,
+            feel: Feel::default(),
             input,
             rng: match seed {
                 Some(s) => StdRng::seed_from_u64(s),
@@ -189,6 +194,8 @@ impl Engine {
     fn sample(&mut self, j: Jitter) -> u64 {
         if j.jitter == 0 {
             j.base as u64
+        } else if let Some(bell) = self.feel.bell {
+            j.base as u64 + (random::unit(Some(bell), &mut self.rng) * j.jitter as f64).round() as u64
         } else {
             j.base as u64 + self.rng.gen_range(0..=j.jitter as u64)
         }
@@ -212,6 +219,7 @@ impl Engine {
         };
         self.previous = self.activation;
         self.window_app = m.guard.as_ref().map(|g| g.process.clone()).filter(|p| !p.is_empty());
+        self.feel = m.feel;
         self.plan = None;
         self.traveled = false;
         let mut held = HeldState::default();
@@ -391,6 +399,8 @@ impl Engine {
         self.previous = (x, y);
         let (jx, jy) = if jitter_px == 0 {
             (x, y)
+        } else if let Some(bell) = self.feel.bell {
+            jitter_point_bell(x, y, jitter_px, random::spread(bell.tightness), self.rng.gen(), self.rng.gen())
         } else {
             jitter_point(x, y, jitter_px, self.rng.gen(), self.rng.gen())
         };
@@ -412,13 +422,8 @@ impl Engine {
             if cancel.is_cancelled() {
                 return Err(EngineError::Cancelled);
             }
-            let t = i as f64 / steps as f64;
-            // ease-in-out
-            let e = if t < 0.5 {
-                2.0 * t * t
-            } else {
-                1.0 - (-2.0 * t + 2.0).powi(2) / 2.0
-            };
+            // Sets off and arrives at rest, fastest halfway, as a hand does.
+            let e = curve::min_jerk(i as f64 / steps as f64);
             let x = from.0 as f64 + (to.0 - from.0) as f64 * e;
             let y = from.1 as f64 + (to.1 - from.1) as f64 * e;
             self.input.move_to(x.round() as i32, y.round() as i32)?;
@@ -438,6 +443,14 @@ impl Engine {
         let from_recorded_start = !self.traveled && anchor == Anchor::Fixed;
         self.traveled = true;
         if path.len() < 2 || duration_ms == 0 {
+            // A glide with `Feel::curve` arcs: its way is made here and
+            // replayed like a recorded one. A jump stays a jump.
+            if let (Some(c), true) = (self.feel.curve, duration_ms > 0) {
+                let from = self.input.cursor_pos().unwrap_or(to);
+                let bounds = self.input.virtual_rect();
+                let way = curve::curve_path(from, to, duration_ms, c, self.feel.bell, bounds, &mut self.rng);
+                return self.follow_path(to, &way, duration_ms, false, cancel);
+            }
             return self.glide(to, duration_ms, cancel);
         }
         self.follow_path(to, path, duration_ms, from_recorded_start, cancel)
@@ -542,6 +555,14 @@ impl Engine {
                 // Windows would drop the click without a word (UIPI): say so.
                 if self.input.blocked(Some(p)) {
                     return Err(InputError::AccessDenied.into());
+                }
+                // Now and then a moment's hesitation on the target before
+                // pressing (`Feel::hesitate`), before any key goes down.
+                if let Some(h) = self.feel.hesitate.filter(|h| h.chance_pct > 0) {
+                    if step.hesitates() && self.rng.gen_bool(f64::from(h.chance_pct.min(100)) / 100.0) {
+                        let ms = self.sample(h.ms);
+                        self.pause(ms, cancel)?;
+                    }
                 }
                 // Held keys go down after the travel, so nothing reacts to
                 // Shift+move, and stay down through both settles.
@@ -818,6 +839,174 @@ mod tests {
         let f = Arc::new(FakeInput::new());
         let e = Engine::new(f.clone(), Some(42));
         (f, e)
+    }
+
+    fn move_to(x: i32, y: i32, travel: u32) -> Step {
+        Step::Move {
+            id: "m".into(),
+            shuffle: false,
+            x,
+            y,
+            anchor: Anchor::Fixed,
+            dx: 0,
+            dy: 0,
+            coord_jitter_px: 0,
+            move_duration_ms: travel,
+            path: Vec::new(),
+            capture: None,
+        }
+    }
+
+    fn moves(f: &FakeInput) -> Vec<(i32, i32)> {
+        f.events()
+            .into_iter()
+            .filter_map(|e| match e {
+                Event::Move(x, y) => Some((x, y)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_glide_starts_and_ends_slowly() {
+        let f = Arc::new(FakeInput::with_cursor(0, 0));
+        let mut e = Engine::new(f.clone(), Some(42));
+        e.run(&mac(vec![move_to(1000, 0, 400)]), &CancelToken::new()).unwrap();
+        let xs: Vec<i32> = moves(&f).into_iter().map(|(x, _)| x).collect();
+        assert_eq!(xs.len(), 51, "50 eased moves and the exact landing");
+        // A tenth of the way in time: minimum jerk has gone 8.6 px of 1000,
+        // the quadratic ease it replaced 20.
+        assert!(xs[4] < 12, "{}", xs[4]);
+        assert!(xs[44] > 988, "{}", xs[44]);
+        let steps: Vec<i32> = std::iter::once(xs[0]).chain(xs.windows(2).map(|w| w[1] - w[0])).collect();
+        let biggest = steps.iter().enumerate().max_by_key(|(_, d)| **d).map(|(i, _)| i).unwrap();
+        assert!((17..34).contains(&biggest), "fastest at move {biggest}");
+    }
+
+    fn curving(steps: Vec<Step>) -> (Arc<FakeInput>, Engine, Macro) {
+        let f = Arc::new(FakeInput::with_cursor(0, 500));
+        let e = Engine::new(f.clone(), Some(42));
+        let mut m = mac(steps);
+        m.feel.curve = Some(crate::model::Curve { bend_pct: 10, overshoot_pct: 0 });
+        (f, e, m)
+    }
+
+    #[test]
+    fn a_curved_move_arcs_and_lands_on_target() {
+        let (f, mut e, m) = curving(vec![move_to(800, 500, 200)]);
+        e.run(&m, &CancelToken::new()).unwrap();
+        let ms = moves(&f);
+        assert_eq!(ms.last(), Some(&(800, 500)));
+        assert!(ms.iter().any(|(_, y)| (y - 500).abs() >= 10), "straight: {ms:?}");
+        let tl: Vec<_> = f.timeline().into_iter().filter(|(_, ev)| matches!(ev, Event::Move(..))).collect();
+        let span = tl[tl.len() - 1].0.duration_since(tl[0].0).as_secs_f64() * 1000.0;
+        assert!((190.0..215.0).contains(&span), "took {span:.1} ms");
+    }
+
+    #[test]
+    fn a_curved_click_presses_on_its_target() {
+        let mut c = timed_click("c", 800, 1, 0, None);
+        if let Step::Click { y, move_duration_ms, .. } = &mut c {
+            *y = 500;
+            *move_duration_ms = 200;
+        }
+        let (f, mut e, m) = curving(vec![c]);
+        e.run(&m, &CancelToken::new()).unwrap();
+        let ev = f.events();
+        let down = ev.iter().position(|x| matches!(x, Event::Button(_, true))).unwrap();
+        assert_eq!(ev[down - 1], Event::Move(800, 500));
+        assert!(moves(&f).iter().any(|(_, y)| (y - 500).abs() >= 10));
+    }
+
+    #[test]
+    fn recorded_paths_ignore_the_curve() {
+        let run = |curve| {
+            let mut c = timed_click("r", 300, 1, 0, None);
+            if let Step::Click { path, move_duration_ms, .. } = &mut c {
+                *path = vec![PathPoint { x: 0, y: 500, t: 0 }, PathPoint { x: 150, y: 520, t: 20 }, PathPoint { x: 300, y: 100, t: 40 }];
+                *move_duration_ms = 40;
+            }
+            let (f, mut e, mut m) = curving(vec![c]);
+            m.feel.curve = curve;
+            e.run(&m, &CancelToken::new()).unwrap();
+            f.events()
+        };
+        assert_eq!(run(Some(crate::model::Curve { bend_pct: 30, overshoot_pct: 100 })), run(None));
+    }
+
+    #[test]
+    fn an_overshooting_glide_passes_the_target_and_lands_on_it() {
+        let (f, mut e, mut m) = curving(vec![move_to(800, 500, 200)]);
+        m.feel.curve = Some(crate::model::Curve { bend_pct: 10, overshoot_pct: 100 });
+        e.run(&m, &CancelToken::new()).unwrap();
+        let ms = moves(&f);
+        assert!(ms.iter().any(|(x, _)| *x > 800), "never went past: {ms:?}");
+        assert_eq!(ms.last(), Some(&(800, 500)));
+    }
+
+    #[test]
+    fn a_bell_gathers_click_spread_near_the_point() {
+        let spread = |bell| {
+            let (f, mut e) = engine();
+            let steps = (0..200)
+                .map(|_| {
+                    let mut c = timed_click("c", 500, 0, 0, None);
+                    if let Step::Click { y, coord_jitter_px, .. } = &mut c {
+                        *y = 500;
+                        *coord_jitter_px = 20;
+                    }
+                    c
+                })
+                .collect();
+            let mut m = mac(steps);
+            m.feel.bell = bell;
+            e.run(&m, &CancelToken::new()).unwrap();
+            moves(&f).iter().map(|(x, y)| f64::from(x - 500).hypot(f64::from(y - 500))).collect::<Vec<f64>>()
+        };
+        let near = |v: &[f64]| v.iter().filter(|d| **d <= 10.0).count() as f64 / v.len() as f64;
+        let tight = spread(Some(crate::model::Bell { tightness: crate::model::Tightness::Tight, peak: crate::model::Peak::Middle }));
+        let even = spread(None);
+        assert!(tight.iter().all(|d| *d <= 20.5), "{tight:?}");
+        // Within half the radius: about 0.78 of a tight bell, 0.25 of an even disc.
+        assert!(near(&tight) > 0.6, "{}", near(&tight));
+        assert!(near(&even) < 0.4, "{}", near(&even));
+    }
+
+    #[test]
+    fn a_jump_stays_a_jump() {
+        let (f, mut e, m) = curving(vec![move_to(800, 500, 0)]);
+        e.run(&m, &CancelToken::new()).unwrap();
+        assert_eq!(moves(&f), vec![(800, 500)]);
+    }
+
+    #[test]
+    fn cancelling_mid_curve_stops_at_once() {
+        let (_, mut e, m) = curving(vec![move_to(800, 500, 5_000)]);
+        let cancel = CancelToken::new();
+        let c2 = cancel.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(50));
+            c2.cancel();
+        });
+        let started = std::time::Instant::now();
+        assert!(matches!(e.run(&m, &cancel), Err(EngineError::Cancelled)));
+        assert!(started.elapsed() < Duration::from_millis(500), "{:?}", started.elapsed());
+    }
+
+    #[test]
+    fn bell_waits_cluster_in_the_middle_of_their_range() {
+        let middle = |e: &mut Engine| {
+            let v: Vec<u64> = (0..10_000).map(|_| e.sample(Jitter { base: 100, jitter: 60 })).collect();
+            assert!(v.iter().all(|ms| (100..=160).contains(ms)));
+            v.iter().filter(|ms| (120..=140).contains(*ms)).count() as f64 / v.len() as f64
+        };
+        let (_, mut e) = engine();
+        e.feel.bell = Some(crate::model::Bell::default());
+        let bell = middle(&mut e);
+        assert!(bell > 0.6, "{bell}");
+        let (_, mut even) = engine();
+        let flat = middle(&mut even);
+        assert!(flat < 0.4, "{flat}");
     }
 
     /// Passes everything to a FakeInput, but panics on a mouse button press:
@@ -1195,6 +1384,122 @@ mod tests {
             held_key: None,
             capture: None,
         }
+    }
+
+    fn hesitant(chance_pct: u8, ms: u32) -> crate::model::Hesitate {
+        crate::model::Hesitate { chance_pct, ms: Jitter::exact(ms) }
+    }
+
+    fn with_action(mut s: Step, a: ClickAction) -> Step {
+        if let Step::Click { action, .. } = &mut s {
+            *action = a;
+        }
+        s
+    }
+
+    /// The gap in ms before each button press, from the event before it.
+    fn gaps_before_presses(f: &FakeInput) -> Vec<f64> {
+        f.timeline()
+            .windows(2)
+            .filter_map(|w| match w[1].1 {
+                Event::Button(_, true) => Some(w[1].0.duration_since(w[0].0).as_secs_f64() * 1000.0),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn some_clicks_hesitate_before_pressing() {
+        let (f, mut e) = engine();
+        let mut m = mac((0..40).map(|i| timed_click("c", 100 + i, 1, 0, None)).collect());
+        m.feel.hesitate = Some(hesitant(50, 30));
+        e.run(&m, &CancelToken::new()).unwrap();
+        let gaps = gaps_before_presses(&f);
+        assert_eq!(gaps.len(), 40);
+        let long = gaps.iter().filter(|g| **g >= 28.0).count();
+        assert!((8..=32).contains(&long), "{long} of 40 hesitated");
+        assert!(gaps.iter().all(|g| *g >= 28.0 || *g < 15.0), "{gaps:?}");
+    }
+
+    #[test]
+    fn a_double_click_hesitates_before_its_first_press_only() {
+        let (f, mut e) = engine();
+        let mut m = mac(vec![with_action(timed_click("c", 100, 1, 0, None), ClickAction::Double)]);
+        m.feel.hesitate = Some(hesitant(100, 30));
+        e.run(&m, &CancelToken::new()).unwrap();
+        let gaps = gaps_before_presses(&f);
+        assert_eq!(gaps.len(), 2);
+        assert!(gaps[0] >= 28.0 && gaps[1] < 15.0, "{gaps:?}");
+    }
+
+    #[test]
+    fn a_release_and_a_recorded_click_never_hesitate() {
+        let (f, mut e) = engine();
+        let mut recorded = timed_click("r", 200, 1, 0, None);
+        if let Step::Click { path, move_duration_ms, .. } = &mut recorded {
+            *path = vec![PathPoint { x: 100, y: 100, t: 0 }, PathPoint { x: 200, y: 100, t: 10 }];
+            *move_duration_ms = 10;
+        }
+        let mut m = mac(vec![with_action(timed_click("u", 100, 1, 0, None), ClickAction::Up), recorded]);
+        m.feel.hesitate = Some(hesitant(100, 30));
+        e.run(&m, &CancelToken::new()).unwrap();
+        for w in f.timeline().windows(2) {
+            if let Event::Button(..) = w[1].1 {
+                let ms = w[1].0.duration_since(w[0].0).as_secs_f64() * 1000.0;
+                assert!(ms < 15.0, "{:?} waited {ms:.1} ms", w[1].1);
+            }
+        }
+    }
+
+    #[test]
+    fn cancelling_during_a_hesitation_stops_at_once() {
+        let (f, mut e) = engine();
+        let mut m = mac(vec![timed_click("c", 100, 1, 0, None)]);
+        m.feel.hesitate = Some(hesitant(100, 5_000));
+        let cancel = CancelToken::new();
+        let c2 = cancel.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(50));
+            c2.cancel();
+        });
+        let started = std::time::Instant::now();
+        assert!(matches!(e.run(&m, &cancel), Err(EngineError::Cancelled)));
+        assert!(started.elapsed() < Duration::from_millis(500), "{:?}", started.elapsed());
+        assert!(!f.events().iter().any(|ev| matches!(ev, Event::Button(..))));
+        assert!(f.still_held().is_empty(), "{:?}", f.still_held());
+    }
+
+    #[test]
+    fn stop_after_ends_a_hesitation_normally() {
+        let (_, mut e) = engine();
+        let mut m = mac(vec![timed_click("c", 100, 1, 0, None)]);
+        m.feel.hesitate = Some(hesitant(100, 5_000));
+        m.stop_after_ms = Some(50);
+        let started = std::time::Instant::now();
+        assert!(e.run(&m, &CancelToken::new()).is_ok());
+        assert!(started.elapsed() < Duration::from_millis(500), "{:?}", started.elapsed());
+    }
+
+    #[test]
+    fn no_chance_draws_nothing() {
+        // Jittered clicks: any extra draw from the RNG would move them.
+        let run = |hesitate| {
+            let (f, mut e) = engine();
+            let steps = (0..5)
+                .map(|i| {
+                    let mut c = timed_click("c", 100 + i * 50, 1, 0, None);
+                    if let Step::Click { coord_jitter_px, .. } = &mut c {
+                        *coord_jitter_px = 20;
+                    }
+                    c
+                })
+                .collect();
+            let mut m = mac(steps);
+            m.feel.hesitate = hesitate;
+            e.run(&m, &CancelToken::new()).unwrap();
+            f.events()
+        };
+        assert_eq!(run(Some(hesitant(0, 30))), run(None));
     }
 
     /// A recorded click rests on its target as long as the user did before

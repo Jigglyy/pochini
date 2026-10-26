@@ -19,6 +19,7 @@ export function macro(name: string, o: Partial<Macro> = {}): Macro {
     queue_from: "first_press",
     return_to_start: false,
     stop_after_ms: null,
+    feel: { bell: null, hesitate: null, curve: null },
     steps: [],
     guard: null,
     created_at: "2026-01-01T00:00:00Z",

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { closestCenter, DndContext, type DragEndEvent } from "@dnd-kit/core";
-import { arrayMove, SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { arrayMove, rectSortingStrategy, SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import {
   ArrowUpDown,
   Check,
@@ -8,6 +8,7 @@ import {
   ChevronsDownUp,
   CircleDot,
   Columns2,
+  LayoutGrid,
   Copy,
   ListChecks,
   Route,
@@ -38,6 +39,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { AppPicker } from "@/components/AppPicker";
 import { BulkEdit } from "@/components/BulkEdit";
 import { KeyCapture } from "@/components/KeyCapture";
+import { FeelRows } from "@/components/FeelRows";
 import { SortableStepRow, StepFace, StepFields } from "@/components/StepRow";
 import { KindChip } from "@/components/StepColors";
 import { FloatingOverlay, useDragSensors } from "@/components/sortable";
@@ -70,7 +72,7 @@ import {
 } from "@/lib/selection";
 import { useShortcut, withKeys } from "@/lib/shortcuts";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { aimPoints, blankStep, fmtRange, newId, stepRange, summarize, type NewStepKind } from "@/lib/steps";
+import { aimPoints, blankStep, fmtRange, macroRange, newId, summarize, type NewStepKind } from "@/lib/steps";
 import { cn } from "@/lib/utils";
 import type { Macro, QueueFrom, Repeat, Step, TriggerMode } from "@/types";
 
@@ -95,7 +97,11 @@ const VIEWS: { value: StepView; label: string; Icon: typeof Play }[] = [
   { value: "cards", label: "Cards", Icon: Rows2 },
   { value: "compact", label: "Compact list", Icon: Rows4 },
   { value: "split", label: "Side by side", Icon: Columns2 },
+  { value: "squares", label: "Squares", Icon: LayoutGrid },
 ];
+
+/** Layouts that show the chosen step's settings in a panel beside the steps. */
+const besideView = (v: StepView) => v === "split" || v === "squares";
 
 /** Keys a user types constantly. Blocking one of these from other apps makes
  *  the keyboard feel broken, so it earns a warning at the moment of choice. */
@@ -164,6 +170,8 @@ export function MacroEditor({
 
   /** How the steps are laid out; remembered for every macro. */
   const [view, setViewState] = useState<StepView>(() => readPrefs().stepView ?? "cards");
+  /** Split and squares show the chosen step's settings beside the steps. */
+  const beside = besideView(view);
   /** Steps whose settings are open under their header (cards, compact). */
   const [open, setOpen] = useState<Set<string>>(() => new Set());
   /** The step shown beside the list (split view). */
@@ -246,16 +254,32 @@ export function MacroEditor({
   useShortcut("Ctrl+A", () => selectAll(), { enabled: !!m && m.steps.length > 0 });
   useShortcut("Delete", () => deleteSelected(), { enabled: selecting && selected.size > 0 });
 
-  const est = useMemo<[number, number]>(() => {
-    if (!m) return [0, 0];
-    return m.steps.reduce<[number, number]>(
-      ([lo, hi], s) => {
-        const [a, b] = stepRange(s);
-        return [lo + a, hi + b];
-      },
-      [0, 0],
-    );
-  }, [m]);
+  const est = useMemo<[number, number]>(() => (m ? macroRange(m) : [0, 0]), [m]);
+
+  // The settings panel beside the steps (split, squares) is as tall as the
+  // step it shows. The steps area keeps the tallest it has been, so choosing
+  // a step with fewer settings never shrinks the page: scrolled to the
+  // bottom, the page shrank between the press and the release, the steps
+  // jumped under the pointer, and a Ctrl+click or Shift+click missed.
+  const panelRef = useRef<HTMLElement>(null);
+  const [panelHeight, setPanelHeight] = useState(0);
+  const hasSteps = (m?.steps.length ?? 0) > 0;
+  useLayoutEffect(() => {
+    const el = panelRef.current;
+    if (!beside || !hasSteps || !el) {
+      setPanelHeight(0);
+      return;
+    }
+    // Anew for each layout and macro.
+    let tallest = el.offsetHeight;
+    setPanelHeight(tallest);
+    const ro = new ResizeObserver(() => {
+      tallest = Math.max(tallest, el.offsetHeight);
+      setPanelHeight(tallest);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [beside, hasSteps, view, id]);
 
   if (err && !m) {
     return <p className="page-column text-sm text-destructive">{err}</p>;
@@ -309,7 +333,7 @@ export function MacroEditor({
     const s = blankStep(kind);
     flip.prepare();
     setJustAdded(s.id);
-    if (view === "split") setCurrent(s.id);
+    if (beside) setCurrent(s.id);
     else setOpen((o) => new Set(o).add(s.id));
     const steps = [...m.steps];
     steps.splice(at, 0, s);
@@ -323,7 +347,7 @@ export function MacroEditor({
     setBulkOpen(false);
     writePrefs({ stepView: v });
     // Split view shows one step: the open one, or the first.
-    if (v === "split" && !m.steps.some((s) => s.id === current)) {
+    if (besideView(v) && !m.steps.some((s) => s.id === current)) {
       setCurrent(m.steps.find((s) => open.has(s.id))?.id ?? m.steps[0]?.id ?? null);
     }
   };
@@ -450,10 +474,11 @@ export function MacroEditor({
       running={runningStep === i}
       guard={m.guard}
       dense={dense}
-      inline={view !== "split"}
-      open={view === "split" ? current === s.id : open.has(s.id)}
+      inline={!beside}
+      square={view === "squares"}
+      open={beside ? current === s.id : open.has(s.id)}
       onOpenChange={(o) => {
-        if (view === "split") setCurrent(s.id);
+        if (beside) setCurrent(s.id);
         else
           setOpen((prev) => {
             const next = new Set(prev);
@@ -494,21 +519,28 @@ export function MacroEditor({
       onDragEnd={dropStep}
       onDragCancel={() => setDraggingStep(null)}
     >
-      <SortableContext items={m.steps.map((s) => s.id)} strategy={verticalListSortingStrategy}>
+      <SortableContext
+        items={m.steps.map((s) => s.id)}
+        strategy={view === "squares" ? rectSortingStrategy : verticalListSortingStrategy}
+      >
         <div
           ref={flip.ref}
           data-step-view={view}
           className={cn(
-            dense
-              ? "flex flex-col divide-y divide-border overflow-hidden rounded-lg border border-border bg-card/40"
-              : "flex flex-col gap-2",
+            view === "squares"
+              ? "grid grid-cols-[repeat(auto-fill,minmax(4.5rem,1fr))] gap-2"
+              : dense
+                ? "flex flex-col divide-y divide-border overflow-hidden rounded-lg border border-border bg-card/40"
+                : "flex flex-col gap-2",
           )}
         >
           {rows}
         </div>
       </SortableContext>
       <FloatingOverlay>
-        {draggingIndex >= 0 && <StepFace step={m.steps[draggingIndex]} index={draggingIndex} dense={dense} />}
+        {draggingIndex >= 0 && (
+          <StepFace step={m.steps[draggingIndex]} index={draggingIndex} dense={dense} square={view === "squares"} />
+        )}
       </FloatingOverlay>
     </DndContext>
   );
@@ -772,6 +804,7 @@ export function MacroEditor({
             checked={m.return_to_start}
             onChange={(return_to_start) => edit({ return_to_start })}
           />
+          <FeelRows feel={m.feel} onChange={(feel, key) => edit({ feel }, key && `feel:${key}`)} />
         </Section>
       </div>
 
@@ -789,7 +822,7 @@ export function MacroEditor({
         }
         action={
           <div className="flex flex-wrap items-center gap-2">
-            {view !== "split" && open.size > 0 && (
+            {!beside && open.size > 0 && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button variant="ghost" size="icon-sm" aria-label="Close every step" onClick={() => setOpen(new Set())}>
@@ -914,7 +947,7 @@ export function MacroEditor({
               </DropdownMenuContent>
             </DropdownMenu>
             <div className="ml-auto flex flex-wrap items-center gap-2">
-              {view !== "split" && (
+              {!beside && (
                 <Button size="sm" disabled={n === 0} onClick={() => setBulkOpen(true)}>
                   <SlidersHorizontal />
                   Edit {n === 1 ? "1 step" : `${n} steps`}
@@ -956,10 +989,14 @@ export function MacroEditor({
           <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
             No steps yet. Add one below, or press Record steps and do it once yourself.
           </div>
-        ) : view === "split" ? (
-          <div className="grid grid-cols-[minmax(0,20rem)_minmax(0,1fr)] items-start gap-4 xl:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
+        ) : beside ? (
+          <div
+            className="grid grid-cols-[minmax(0,20rem)_minmax(0,1fr)] items-start gap-4 xl:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]"
+            style={{ minHeight: panelHeight || undefined }}
+          >
             {list}
             <aside
+              ref={panelRef}
               aria-label={selecting ? "Selected steps' settings" : "Step settings"}
               data-testid="step-detail"
               className="sticky top-4 max-h-[calc(100vh-7rem)] overflow-y-auto rounded-lg border border-border bg-card p-4"
@@ -1006,7 +1043,7 @@ export function MacroEditor({
         </div>
       </Section>
 
-      <Dialog open={bulkOpen && view !== "split" && n > 0} onOpenChange={setBulkOpen}>
+      <Dialog open={bulkOpen && !beside && n > 0} onOpenChange={setBulkOpen}>
         <DialogContent
           className="flex max-h-[85vh] flex-col sm:max-w-2xl"
           // Start in the first box, not on a "?" (its tooltip would cover the

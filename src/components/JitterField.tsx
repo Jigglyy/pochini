@@ -49,7 +49,7 @@ export function JitterField({
             type="number"
             min={1}
             aria-label={`${label} random extra`}
-            className="w-32 pl-14 pr-9 tabular-nums"
+            className="w-36 pl-14 pr-9 tabular-nums"
             value={value.jitter}
             onChange={(e) => onChange({ ...value, jitter: Math.max(1, +e.target.value || 1) })}
           />

@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Page } from "@playwright/test";
-import { expect, test } from "./_launch";
+import { dragOnto, expect, test } from "./_launch";
 import { clickAt, macro, wait } from "./data";
 
 // Working with many steps: the three layouts, ticking steps and changing
@@ -67,6 +67,42 @@ test.describe("layouts", () => {
     await expect(page.locator('[data-step-view="split"]')).toBeVisible();
   });
 
+  test("squares show the steps as tiles with the settings beside", async ({ app: { page } }) => {
+    await page.getByRole("button", { name: /^Long/ }).click();
+    await page.getByRole("button", { name: "Squares" }).click();
+    const grid = page.locator('[data-step-view="squares"]');
+    await expect(grid).toBeVisible();
+    await expect(grid.locator("[data-step-header]")).toHaveCount(5);
+    await expect(header(page, "c2")).toContainText("20, 20");
+    await expect(header(page, "c2")).toContainText("Click at (20, 20)");
+
+    const detail = page.getByTestId("step-detail");
+    await header(page, "c2").click();
+    await expect(detail).toContainText("Step 3 of 5");
+    await detail.getByRole("spinbutton", { name: "X", exact: true }).fill("25");
+    await expect(header(page, "c2")).toContainText("25, 20");
+
+    // The arrow keys walk the grid, showing each step.
+    await header(page, "c2").focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(detail).toContainText("Step 4 of 5");
+    await page.keyboard.press("ArrowLeft");
+    await expect(detail).toContainText("Step 3 of 5");
+
+    await page.reload();
+    await page.getByRole("button", { name: /^Long/ }).click();
+    await expect(page.locator('[data-step-view="squares"]')).toBeVisible();
+  });
+
+  test("squares reorder by dragging", async ({ app: { page, dataDir } }) => {
+    await page.getByRole("button", { name: /^Long/ }).click();
+    await page.getByRole("button", { name: "Squares" }).click();
+    await dragOnto(page, header(page, "c3"), header(page, "c1"));
+    await expect.poll(async () => (await stepOrder(page))[0]).toBe("c3");
+    await save(page);
+    expect((await savedSteps(dataDir)).map((s) => s.id)).toEqual(["c3", "c1", "w1", "c2", "w2"]);
+  });
+
   test("Close every step folds all the open ones", async ({ app: { page } }) => {
     await page.getByRole("button", { name: /^Long/ }).click();
     await header(page, "c1").click();
@@ -74,6 +110,103 @@ test.describe("layouts", () => {
     await expect(page.locator('[data-step-header][aria-expanded="true"]')).toHaveCount(2);
     await page.getByRole("button", { name: "Close every step" }).click();
     await expect(page.locator('[data-step-header][aria-expanded="true"]')).toHaveCount(0);
+  });
+});
+
+test.describe("squares", () => {
+  test.use({
+    seed: {
+      macros: [
+        macro("Grid", {
+          steps: Array.from({ length: 12 }, (_, i) =>
+            i % 2 ? { ...wait(100 + i), id: `s${i + 1}` } : { ...clickAt(10 * i, 20), id: `s${i + 1}` },
+          ),
+        }),
+      ],
+    },
+  });
+
+  const open = async (page: Page) => {
+    await page.getByRole("button", { name: /^Grid/ }).click();
+    await page.getByRole("button", { name: "Squares" }).click();
+    await expect(page.locator('[data-step-view="squares"]')).toBeVisible();
+    // The squares glide from the list into the grid; a click mid-glide can
+    // land on the square next to it.
+    await page.waitForFunction(() => [...document.querySelectorAll("[data-flip]")].every((el) => el.getAnimations().length === 0));
+  };
+  const tiles = (page: Page) => page.locator('[data-step-view="squares"] [data-step-header]');
+
+  test("up and down move a row of the grid", async ({ app: { page } }) => {
+    await open(page);
+    const cols = await page
+      .locator('[data-step-view="squares"]')
+      .evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(" ").filter(Boolean).length);
+    expect(cols).toBeGreaterThan(1);
+    expect(cols).toBeLessThan(12);
+    const detail = page.getByTestId("step-detail");
+    await tiles(page).nth(0).focus();
+    await expect(detail).toContainText("Step 1 of 12");
+    await page.keyboard.press("ArrowDown");
+    await expect(detail).toContainText(`Step ${cols + 1} of 12`);
+    await page.keyboard.press("ArrowUp");
+    await expect(detail).toContainText("Step 1 of 12");
+  });
+
+  test("Ctrl+click starts choosing, and the panel changes the chosen ones together", async ({ app: { page } }) => {
+    await open(page);
+    await header(page, "s2").click({ modifiers: ["Control"] });
+    const bar = page.getByRole("toolbar", { name: "Selected steps" });
+    await expect(bar).toContainText("1 of 12 selected");
+    await header(page, "s4").click();
+    await expect(bar).toContainText("2 of 12 selected");
+    await expect(step(page, "s4")).toHaveAttribute("data-selected", "true");
+    const detail = page.getByTestId("step-detail");
+    await detail.getByRole("spinbutton", { name: "Wait", exact: true }).fill("150");
+    await expect(header(page, "s2")).toContainText("150 ms");
+    await expect(header(page, "s4")).toContainText("150 ms");
+    await expect(header(page, "s6")).toContainText("105 ms");
+  });
+
+  test("a square's right-click menu duplicates, and Delete removes the focused one", async ({ app: { page } }) => {
+    await open(page);
+    await header(page, "s1").click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Duplicate" }).click();
+    await expect(tiles(page)).toHaveCount(13);
+    await header(page, "s3").focus();
+    await page.keyboard.press("Delete");
+    await expect(tiles(page)).toHaveCount(12);
+    await expect(step(page, "s3")).toHaveCount(0);
+    await page.getByRole("button", { name: "Undo", exact: true }).first().click();
+    await expect(step(page, "s3")).toHaveCount(1);
+  });
+
+  // Regression: choosing a step with fewer settings shrank the page under the
+  // pointer, between the press and the release: the squares jumped and a
+  // Ctrl+click or Shift+click landed nowhere.
+  for (const layout of ["Squares", "Side by side"]) {
+    test(`in ${layout}, choosing a step with fewer settings does not move the steps`, async ({ app: { page } }) => {
+      await page.getByRole("button", { name: /^Grid/ }).click();
+      await page.getByRole("button", { name: layout }).click();
+      await page.waitForFunction(() => [...document.querySelectorAll("[data-flip]")].every((el) => el.getAnimations().length === 0));
+      const detail = page.getByTestId("step-detail");
+      // A click step's settings are the tallest; then scroll to the bottom.
+      await expect(detail).toContainText("Step 1 of 12");
+      await page.locator("main").evaluate((m) => m.scrollTo(0, m.scrollHeight));
+      // So the click itself needs no scroll.
+      await header(page, "s2").scrollIntoViewIfNeeded();
+      const before = await header(page, "s12").boundingBox();
+      await header(page, "s2").click();
+      await expect(detail).toContainText("Step 2 of 12");
+      const after = await header(page, "s12").boundingBox();
+      expect(Math.abs(after!.y - before!.y)).toBeLessThan(1);
+    });
+  }
+
+  test("a step added under the grid is shown beside it", async ({ app: { page } }) => {
+    await open(page);
+    await page.getByRole("group", { name: "Add a step" }).getByRole("button", { name: "Wait", exact: true }).click();
+    await expect(tiles(page)).toHaveCount(13);
+    await expect(page.getByTestId("step-detail")).toContainText("Step 13 of 13");
   });
 });
 

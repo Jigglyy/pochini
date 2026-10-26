@@ -15,6 +15,7 @@ const base: Macro = {
   queue_from: "first_press",
   return_to_start: false,
   stop_after_ms: null,
+  feel: { bell: null, hesitate: null, curve: null },
   steps: [],
   guard: null,
   created_at: "",
@@ -58,5 +59,17 @@ describe("runSummary", () => {
     expect(runSummary({ ...base, queue: true, stop_after_ms: 10 * 60_000, return_to_start: true })).toBe(
       "Runs once, queues presses, stops after 10 min, moves the mouse back",
     );
+  });
+
+  it("names the feel options that are on", () => {
+    const feel = {
+      bell: { tightness: "tight", peak: "early" },
+      hesitate: { chance_pct: 10, ms: { base: 150, jitter: 350 } },
+      curve: { bend_pct: 10, overshoot_pct: 0 },
+    } as const;
+    expect(runSummary({ ...base, return_to_start: true, feel })).toBe(
+      "Runs once, moves the mouse back, bell-curve randomness, hesitates, curved paths",
+    );
+    expect(runSummary({ ...base, feel: { ...base.feel, curve: feel.curve } })).toBe("Runs once, curved paths");
   });
 });

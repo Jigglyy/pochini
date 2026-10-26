@@ -34,6 +34,7 @@ previous version.
   "queue_from": "first_press",   // or "each_press": where queued runs start (see Queue)
   "return_to_start": false,      // true: move the cursor back to where the run started
   "stop_after_ms": null,         // or e.g. 600000: end the run after 10 minutes (normal end)
+  "feel": { "bell": null, "hesitate": null, "curve": null },  // see Feel; all off
   "steps": [ /* Step */ ],
   "guard": null,                 // optional Guard, see below
   "created_at": "2026-09-17T12:00:00Z",
@@ -144,7 +145,10 @@ they existed.
 
 `move_duration_ms > 0` interpolates the cursor over that many milliseconds instead of jumping.
 Some targets only register hover state on real movement, and some reject a click that arrives
-in the same frame the cursor appeared. Curve: ease-in-out, with a small per-point jitter.
+in the same frame the cursor appeared. The glide is a straight line timed by minimum jerk
+(`engine::curve::min_jerk`, `10t³ − 15t⁴ + 6t⁵` of the way at `t` of the time): it sets off
+and arrives at rest and is fastest halfway, as a hand is. With the macro's `feel.curve` it
+arcs instead (see Feel).
 
 `path` (optional, absent when empty) is the way the cursor went to this point when the step
 was recorded: points in virtual-desktop pixels, `t` ms after the cursor set off. Record mode
@@ -276,8 +280,50 @@ adds." `jitter: 0` means exact; `jitter: n` means `base + uniform(0, n)`.
 ## Jitter
 
 A `Jitter` is `{ "base": <u32 ms>, "jitter": <u32 ms> }` and appears anywhere a duration does.
-Sampling is `base + rng.gen_range(0..=jitter)`, uniform. The UI renders it as a number field
-plus a checkbox that reveals a second number field, matching the original description.
+Sampling is `base + rng.gen_range(0..=jitter)`, uniform, unless the macro has a bell (see
+Feel). The UI renders it as a number field plus a checkbox that reveals a second number field,
+matching the original description.
+
+## Feel
+
+Three optional touches that make a macro less mechanical, per macro, all off (`null`) by
+default. Additive with serde defaults: no schema bump, and an older Pochini reading the file
+plays it evenly, without hesitation, in straight lines.
+
+```jsonc
+"feel": {
+  "bell": { "tightness": "medium", "peak": "middle" },   // loose | medium | tight; early | middle | late
+  "hesitate": { "chance_pct": 10, "ms": { "base": 150, "jitter": 350 } },
+  "curve": { "bend_pct": 10, "overshoot_pct": 0 }
+}
+```
+
+- **`bell`**: every random amount the macro draws (waits, holds, settles, dwells, typing
+  gaps, the hesitation, the curve's bend) comes from a Beta curve on its range instead of an
+  even spread (`engine::random`). It never leaves the range, so estimates and the editor's
+  "A random 50 to 75 ms" stay true. The peak is the curve's mode (early 0.2, middle 0.5, late
+  0.8 of the range) and the tightness its concentration κ (4, 8, 20), giving
+  `a = 1 + mode(κ − 2)`, `b = 1 + (1 − mode)(κ − 2)`. Medium and middle is Beta(4, 4), a bell
+  whose standard deviation is a sixth of the range; an early peak is right-skewed (mostly
+  short, the odd long one), the way people's timing is. Click spread (`coord_jitter_px`)
+  becomes a 2D bell instead: a Rayleigh radius with σ = radius / 2, 2.5 or 3.5 by tightness,
+  cut off at the radius (`jitter_point_bell`); the peak does not apply to positions.
+- **`hesitate`**: before the press of a click, double click or press-and-hold, `chance_pct`
+  times in a hundred, the step waits `ms` longer, on the target, before any held key goes
+  down. Never a release, never between a double click's presses, never a click with a
+  recorded `path` (it keeps the user's own timing) (`Step::hesitates`). The estimate's worst
+  case allows the longest hesitation once per such click.
+- **`curve`**: a glide (`move_duration_ms > 0`, no recorded `path`) follows a cubic Bezier
+  arc instead of a straight line (`engine::curve::curve_path`): both control points on one
+  random side, a third and two thirds of the way, each pushed off the line by half to all of
+  `bend_pct` (at most 50) of the distance; under 8 px it stays straight. It is travelled with
+  minimum-jerk timing over its length, a point about every 8 ms, replayed like a recorded
+  path, clamped to the desktop. With `overshoot_pct`, that share of glides of 40 px or more
+  ends 3% of the distance past the target (3 to 15 px) at 80% of the time and comes back in
+  a straight correction. A jump (`move_duration_ms: 0`) stays a jump.
+
+With every touch off the run's random numbers are drawn exactly as before, so a seeded run
+(`rng_seed`) is unchanged.
 
 ## Settings
 

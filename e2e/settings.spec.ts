@@ -31,6 +31,18 @@ test.describe("with a macro", () => {
     await expect(page.locator('[data-step-view="compact"]')).toBeVisible();
   });
 
+  test("Appearance can lay steps out as squares", async ({ app: { page } }) => {
+    await openSettings(page, "Appearance");
+    await page.getByText("Squares", { exact: true }).click();
+    await page.getByRole("button", { name: "Macros", exact: true }).click();
+    await page.getByRole("button", { name: /^Wide/ }).click();
+    await expect(page.locator('[data-step-view="squares"]')).toBeVisible();
+    // As in Side by side, the panel waits for a step to be chosen.
+    await expect(page.getByTestId("step-detail")).toContainText("Choose a step");
+    await page.locator('[data-step-id="c1"] [data-step-header]').click();
+    await expect(page.getByTestId("step-detail")).toContainText("Step 1 of 1");
+  });
+
   test("a big window gets a wider page, with the two option sections side by side", async ({ app: { page } }) => {
     await page.setViewportSize({ width: 1600, height: 900 });
     await page.getByRole("button", { name: /^Wide/ }).click();

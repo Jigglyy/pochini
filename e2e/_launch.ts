@@ -172,6 +172,23 @@ export async function drag(page: Page, from: Locator, to: Locator, dy = 0): Prom
   await page.waitForTimeout(100);
 }
 
+/** `drag`, onto the middle of `to` in both directions: for the Squares
+ *  layout's grid, where the target may sit beside the source. */
+export async function dragOnto(page: Page, from: Locator, to: Locator): Promise<void> {
+  await from.evaluate((el) => el.scrollIntoView({ block: "center" }));
+  const a = await from.boundingBox();
+  const b = await to.boundingBox();
+  if (!a || !b) throw new Error("drag source or target has no box");
+  const start = { x: a.x + a.width / 3, y: a.y + a.height / 2 };
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(start.x + 8, start.y + 8, { steps: 4 });
+  await page.mouse.move(b.x + b.width / 3, b.y + b.height / 2, { steps: 20 });
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  await page.mouse.up();
+  await page.waitForTimeout(100);
+}
+
 /** Open Settings, and one of its sections from the sidebar (Settings opens on
  *  the section used last, Hotkeys the first time). */
 export async function openSettings(page: Page, section?: string): Promise<void> {

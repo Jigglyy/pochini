@@ -37,11 +37,14 @@ pressing a button.
   your mouse moved between clicks, or build them by hand. **Pick** a point by clicking it, with
   a magnifier.
 - **Dry run** shows where every click lands by moving the mouse there, without clicking.
-- **Long macros stay manageable:** lay the steps out as cards, a compact list, or a list with
-  the chosen step's settings beside it. Tick several steps (every click, say) and change their
+- **Long macros stay manageable:** lay the steps out as cards, a compact list, a list with
+  the chosen step's settings beside it, or a grid of squares. Tick several steps (every click, say) and change their
   jitter, timing or button all at once, or shift their positions when a window has moved.
 - **Natural timing:** any wait or click position can vary at random within limits you set, and
-  chosen steps can **shuffle** into a new order on every run.
+  chosen steps can **shuffle** into a new order on every run. A macro can also gather its
+  random values on a **bell curve** (as tight as you like, peaking early, in the middle or
+  late), **hesitate** before some clicks, and move the mouse along **curved paths** that speed
+  up and slow down like a hand.
 - **Hotkeys that work everywhere**, even inside fullscreen games: run once per press, repeat
   while held, or press to start and again to stop. Presses can **queue** up behind a running
   macro, and a macro can be limited to **one app**.

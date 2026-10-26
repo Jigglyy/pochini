@@ -15,6 +15,7 @@ const risky = {
   queue_from: "first_press",
   return_to_start: false,
   stop_after_ms: null,
+  feel: { bell: null, hesitate: null, curve: null },
   guard: { process: "game.exe", label: "" },
   created_at: "",
   updated_at: "",
