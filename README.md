@@ -108,7 +108,7 @@ change before saving it.
 ## Privacy and antivirus
 
 To notice your hotkey whatever window has focus, Pochini installs a global keyboard hook
-(`WH_KEYBOARD_LL`) and sends input with `SendInput`. Keyloggers and cheats use the same Windows
+(`WH_KEYBOARD_LL`) and sends input with `SendInput`. Keyloggers use the same Windows
 features, so SmartScreen and some antivirus products are suspicious of any program that does.
 
 - The hook compares each key with the hotkeys you set up, then lets it go. **No keystroke is
@@ -121,12 +121,6 @@ features, so SmartScreen and some antivirus products are suspicious of any progr
 - Exported macros leave out your window titles and monitor layout.
 
 The source is all here to check, and [SECURITY.md](SECURITY.md) says how to report a problem.
-
-## Scope
-
-Pochini is an automation tool built on documented Windows APIs. It makes no attempt to disguise
-that its input is synthetic, and it will not gain anti-cheat evasion, an input driver, or
-injected-flag laundering. Applications that reject synthetic input are unsupported.
 
 ## Building from source
 

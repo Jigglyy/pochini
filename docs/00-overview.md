@@ -54,5 +54,4 @@ unreliable against animated UIs.
 - Cross-platform. Windows-first; the input layer is abstracted behind a trait so macOS/Linux
   *could* follow, but nothing is built for them.
 - Image recognition / OCR driven automation. Possibly later as a step type; not v1.
-- Anti-cheat evasion. See [02-windows-input-research.md](02-windows-input-research.md#what-this-project-will-not-do).
 - Cloud sync, accounts, telemetry. Macros are local JSON files the user owns.

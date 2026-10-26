@@ -22,7 +22,7 @@ Macros can be **exported** to a `.pochini.json` file and **imported** from one, 
 can share them; imported macros arrive with their hotkey off.
 
 Because input is synthesized at the OS level, macros work against **any** target (native
-apps, browsers, Electron apps, emulators, games without kernel anti-cheat), not just windows
+apps, browsers, Electron apps, emulators), not just windows
 this app owns.
 
 ## Status
@@ -302,14 +302,6 @@ These are the things that silently break this category of app. Full reasoning in
     `record::Rec` events in memory, turned into steps when it ends, never written elsewhere. A debug `eprintln!` in the hook once wrote the
     user's real typing to a log file. To debug hotkeys, use Settings > Hotkey check (it reports
     only keys the user has bound, via `BindingTable::is_watched`) or `KeyLogic` unit tests.
-
-## Scope boundary
-
-This is an automation tool. It uses documented Win32 APIs and makes no attempt to hide that
-its input is synthetic. Do not add anti-cheat evasion, `LLMHF_INJECTED` flag laundering,
-kernel input drivers, or process/driver hiding. If a target application rejects synthetic
-input, the answer is "that target is unsupported," documented in
-[docs/02-windows-input-research.md](docs/02-windows-input-research.md#5-what-this-project-will-not-do).
 
 ## How to work here
 

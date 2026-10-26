@@ -14,14 +14,6 @@ human and AI contributors alike.
   the shape before you spend time on it.
 - **Security problems:** never in a public issue. See [SECURITY.md](SECURITY.md).
 
-## What Pochini will not do
-
-Pochini is an honest automation tool. It uses documented Windows APIs and makes no attempt to
-hide that its input is synthetic. Pull requests that add anti-cheat evasion, input "laundering"
-(clearing `LLMHF_INJECTED` and the like), kernel or HID input drivers, or process hiding will be
-closed. If an app rejects synthetic input, that app is unsupported. Many online games forbid
-macros; that is between a player and their game.
-
 ## Setting up
 
 You need Windows 10 or 11, [Node](https://nodejs.org) 22 or newer, the Rust toolchain
