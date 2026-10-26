@@ -6,6 +6,8 @@ Each version is built with `npm run release` into `release/Pochini-<version>.exe
 
 ## Unreleased
 
+## 0.17.0 - 2026-10-26
+
 ### Added
 
 - **A macro can feel less mechanical.** Three new switches under "When it runs", each with its
