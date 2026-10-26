@@ -33,8 +33,9 @@ pressing a button.
   from it or from the previous click, or a point in an app's window that follows the window;
   move; press or hold keys; type text; scroll; wait; or wait until a point on screen turns a
   color.
-- **Record** your clicks, keys and wheel turns in any app as steps, pauses included, or build
-  them by hand. **Pick** a point by clicking it, with a magnifier.
+- **Record** your clicks, keys and wheel turns in any app as steps, with the pauses and the way
+  your mouse moved between clicks, or build them by hand. **Pick** a point by clicking it, with
+  a magnifier.
 - **Dry run** shows where every click lands by moving the mouse there, without clicking.
 - **Long macros stay manageable:** lay the steps out as cards, a compact list, or a list with
   the chosen step's settings beside it. Tick several steps (every click, say) and change their

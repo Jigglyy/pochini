@@ -127,6 +127,13 @@ export function fmtAim(a: Aim): string {
   return a.x === 0 && a.y === 0 ? "where the mouse started" : `mouse start + (${a.x}, ${a.y})`;
 }
 
+/** A recorded mouse path is followed instead of a straight glide. */
+export const hasPath = (s: Step) => (s.type === "click" || s.type === "move") && (s.path?.length ?? 0) > 2;
+
+/** A scroll recorded turn by turn (`ticks`), replayed as it happened. */
+export const isRecordedScroll = (s: Step) => s.type === "scroll" && (s.ticks?.length ?? 0) > 0;
+const recorded = (s: Step) => (hasPath(s) ? " (recorded path)" : "");
+
 /** A plain-English one-liner for the collapsed row. Never a field dump. */
 export function summarize(s: Step): string {
   switch (s.type) {
@@ -143,15 +150,20 @@ export function summarize(s: Step): string {
       const where = s.anchor === "fixed" ? `at (${s.x}, ${s.y})` : aimPhrase(s.anchor, s.dx, s.dy);
       const jit = s.coord_jitter_px ? ` ±${s.coord_jitter_px}px` : "";
       const keys = [...s.modifiers.map(modLabel), ...(s.held_key ? [s.held_key.label] : [])];
-      return `${verb}${btn} ${where}${jit}${keys.length ? ` holding ${keys.join("+")}` : ""}`;
+      return `${verb}${btn} ${where}${jit}${keys.length ? ` holding ${keys.join("+")}` : ""}${recorded(s)}`;
     }
     case "move": {
       const where =
         s.anchor === "fixed" ? `(${s.x}, ${s.y})` : aimPhrase(s.anchor, s.dx, s.dy).replace(/^at /, "");
-      return `Move to ${where}${s.move_duration_ms ? ` over ${s.move_duration_ms} ms` : ""}`;
+      return `Move to ${where}${s.move_duration_ms ? ` over ${s.move_duration_ms} ms` : ""}${recorded(s)}`;
     }
     case "scroll": {
       const way = s.axis === "horizontal" ? (s.amount > 0 ? "right" : "left") : s.amount > 0 ? "up" : "down";
+      if (s.ticks?.length) {
+        // Notches as they really turned, fractions included.
+        const notches = Math.abs(s.ticks.reduce((n, k) => n + k.delta, 0)) / 120;
+        return `Scroll ${way} ${Number.isInteger(notches) ? notches : notches.toFixed(1)} (recorded)`;
+      }
       return `Scroll ${way} ${Math.abs(s.amount)}`;
     }
     case "key": {
@@ -177,9 +189,10 @@ export function stepRange(s: Step): [number, number] {
     case "click": {
       const [a, b] = j(s.hold_ms);
       const [sa, sb] = j(s.settle_ms);
+      const [da, db] = j(s.dwell_ms ?? s.settle_ms);
       // A double click holds, waits a hold's length, and holds again.
       const n = s.action === "double" ? 3 : s.action === "click" ? 1 : 0;
-      return [a * n + 2 * sa + s.move_duration_ms, b * n + 2 * sb + s.move_duration_ms];
+      return [a * n + sa + da + s.move_duration_ms, b * n + sb + db + s.move_duration_ms];
     }
     case "key":
       return j(s.hold_ms);
@@ -191,8 +204,10 @@ export function stepRange(s: Step): [number, number] {
     }
     case "move":
       return [s.move_duration_ms, s.move_duration_ms];
-    case "scroll":
-      return [0, 0];
+    case "scroll": {
+      const t = s.ticks?.length ? s.ticks[s.ticks.length - 1].t : 0;
+      return [t, t];
+    }
     case "wait_color":
       return [0, s.timeout_ms];
   }

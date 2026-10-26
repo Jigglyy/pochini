@@ -103,6 +103,12 @@ pub fn held_modifiers(buf: &mut [Modifier; 4], injected: u8, down: impl Fn(i32) 
     &buf[..n]
 }
 
+/// What the keyboard hook sends when the panic key goes down while record
+/// mode or click-to-pick is on: the capture ends, and, as everywhere else,
+/// whatever runs stops. (It used to end the capture only, so a run during a
+/// recording, a Test or a dry run, could not be stopped with the panic key.)
+pub const CAPTURE_PANIC: [TriggerEvent; 2] = [TriggerEvent::CaptureEnd, TriggerEvent::Panic];
+
 /// What click-to-pick does with a mouse button event.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PickClick {

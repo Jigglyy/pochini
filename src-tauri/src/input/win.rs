@@ -192,11 +192,15 @@ impl InputBackend for WinInput {
     }
 
     fn scroll(&self, axis: ScrollAxis, notches: i32, at: Option<(i32, i32)>) -> Result<()> {
+        self.wheel(axis, notches.saturating_mul(WHEEL_DELTA), at)
+    }
+
+    fn wheel(&self, axis: ScrollAxis, units: i32, at: Option<(i32, i32)>) -> Result<()> {
         let flags = match axis {
             ScrollAxis::Vertical => MOUSEEVENTF_WHEEL,
             ScrollAxis::Horizontal => MOUSEEVENTF_HWHEEL,
         };
-        let wheel = Self::mouse(flags, 0, 0, notches.saturating_mul(WHEEL_DELTA));
+        let wheel = Self::mouse(flags, 0, 0, units);
         // Batch the move and the wheel event into one call so nothing can
         // interleave between positioning and scrolling.
         match at {

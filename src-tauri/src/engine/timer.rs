@@ -93,6 +93,34 @@ pub fn wait(ms: u64, cancel: &CancelToken) -> bool {
     !cancel.is_cancelled()
 }
 
+/// Wait until `due`, to a fraction of a millisecond: the timer for all but
+/// the last millisecond or two (it wakes in whole ones, up to one late),
+/// then a short spin. A moment already past returns at once. `false` if
+/// cancelled first.
+pub fn wait_until(due: std::time::Instant, cancel: &CancelToken) -> bool {
+    let spin = std::time::Duration::from_millis(2);
+    loop {
+        let now = std::time::Instant::now();
+        if now >= due {
+            return !cancel.is_cancelled();
+        }
+        let left = due - now;
+        if left > spin {
+            if !wait((left - spin / 2).as_millis() as u64, cancel) {
+                return false;
+            }
+            continue;
+        }
+        while std::time::Instant::now() < due {
+            if cancel.is_cancelled() {
+                return false;
+            }
+            std::hint::spin_loop();
+        }
+        return true;
+    }
+}
+
 /// The kernel event a cancel signals, so a wait ends at once. `None` if it
 /// could not be created; waits then poll instead.
 #[cfg(windows)]

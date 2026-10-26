@@ -214,6 +214,7 @@ mod tests {
             dy: 0,
             coord_jitter_px: 0,
             move_duration_ms: 0,
+            path: Vec::new(),
             capture: Some(crate::model::CaptureMeta { monitor: "DISPLAY2".into(), monitor_rect: [0, 0, 1, 1], dpi: 96 }),
         });
         let text = export(&[m]);
@@ -264,6 +265,7 @@ mod tests {
             dy: 5,
             coord_jitter_px: 0,
             move_duration_ms: 0,
+            path: Vec::new(),
             capture: None,
         });
         let text = export(&[m]);

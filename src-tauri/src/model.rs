@@ -134,6 +134,149 @@ pub enum Anchor {
     Window,
 }
 
+/// One point of a recorded mouse path: where the cursor was (virtual-desktop
+/// pixels), `t` ms after it set off. Replayed, the path is bent so it starts
+/// where the cursor really is and ends on the step's point (both may differ
+/// from the recording), and its timing is stretched to the step's travel.
+/// Stored packed (`packed_path`): a mouse reporting 2000 times a second makes
+/// a lot of points.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PathPoint {
+    pub x: i32,
+    pub y: i32,
+    pub t: u32,
+}
+
+/// How a recorded key repeated while it was held: Windows repeats only a key
+/// the user holds, never one a program holds, so the engine does it (first
+/// after `delay_ms`, then every `every_ms`) to replay the hold as it was.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KeyRepeat {
+    pub delay_ms: u32,
+    pub every_ms: u32,
+}
+
+/// One turn of the wheel in a recorded scroll: `delta` wheel units (120 is a
+/// notch; a smooth wheel or a touchpad sends less), `t` ms after the first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WheelTick {
+    pub t: u32,
+    pub delta: i32,
+}
+
+/// A path as one compact string: each point's change from the one before
+/// (x, y, then t), as zigzag LEB128 varints, in URL-safe base64 without
+/// padding, after a "1:" version. About four characters a point, against
+/// thirty as JSON objects. Reads the plain JSON array too.
+pub mod packed_path {
+    use super::PathPoint;
+    use serde::{de, Deserialize, Deserializer, Serializer};
+
+    const B64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
+    fn push_varint(out: &mut Vec<u8>, mut v: u64) {
+        loop {
+            let b = (v & 0x7f) as u8;
+            v >>= 7;
+            if v == 0 {
+                out.push(b);
+                return;
+            }
+            out.push(b | 0x80);
+        }
+    }
+
+    fn zigzag(v: i64) -> u64 {
+        ((v << 1) ^ (v >> 63)) as u64
+    }
+
+    fn unzigzag(v: u64) -> i64 {
+        ((v >> 1) as i64) ^ -((v & 1) as i64)
+    }
+
+    pub fn encode(path: &[PathPoint]) -> String {
+        let mut bytes = Vec::with_capacity(path.len() * 3);
+        let (mut px, mut py, mut pt) = (0i64, 0i64, 0i64);
+        for p in path {
+            push_varint(&mut bytes, zigzag(i64::from(p.x) - px));
+            push_varint(&mut bytes, zigzag(i64::from(p.y) - py));
+            push_varint(&mut bytes, zigzag(i64::from(p.t) - pt));
+            (px, py, pt) = (i64::from(p.x), i64::from(p.y), i64::from(p.t));
+        }
+        let mut out = String::with_capacity(2 + bytes.len() * 4 / 3 + 3);
+        out.push_str("1:");
+        for chunk in bytes.chunks(3) {
+            let n = chunk.iter().enumerate().fold(0u32, |n, (i, b)| n | (u32::from(*b) << (16 - 8 * i)));
+            for i in 0..=chunk.len() {
+                out.push(B64[((n >> (18 - 6 * i)) & 63) as usize] as char);
+            }
+        }
+        out
+    }
+
+    pub fn decode(s: &str) -> Result<Vec<PathPoint>, String> {
+        if s.is_empty() {
+            return Ok(Vec::new());
+        }
+        let body = s.strip_prefix("1:").ok_or("unknown path format")?;
+        let mut bytes = Vec::with_capacity(body.len() * 3 / 4);
+        let (mut acc, mut bits) = (0u32, 0u32);
+        for c in body.bytes() {
+            let v = B64.iter().position(|&b| b == c).ok_or("bad character in a path")? as u32;
+            acc = (acc << 6) | v;
+            bits += 6;
+            if bits >= 8 {
+                bits -= 8;
+                bytes.push((acc >> bits) as u8);
+                acc &= (1 << bits) - 1;
+            }
+        }
+        let mut it = bytes.into_iter();
+        let mut next = || -> Option<u64> {
+            let (mut v, mut shift) = (0u64, 0u32);
+            loop {
+                let b = it.next()?;
+                v |= u64::from(b & 0x7f) << shift;
+                if b & 0x80 == 0 {
+                    return Some(v);
+                }
+                shift += 7;
+                if shift > 63 {
+                    return None;
+                }
+            }
+        };
+        let (mut x, mut y, mut t) = (0i64, 0i64, 0i64);
+        let mut out = Vec::new();
+        while let Some(dx) = next() {
+            let (dy, dt) = (next().ok_or("cut-off path")?, next().ok_or("cut-off path")?);
+            x += unzigzag(dx);
+            y += unzigzag(dy);
+            t += unzigzag(dt);
+            let fit = |v: i64| i32::try_from(v).map_err(|_| "path point out of range".to_string());
+            out.push(PathPoint { x: fit(x)?, y: fit(y)?, t: u32::try_from(t).map_err(|_| "path time out of range")? });
+        }
+        Ok(out)
+    }
+
+    pub fn serialize<S: Serializer>(path: &[PathPoint], s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&encode(path))
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<PathPoint>, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Either {
+            Packed(String),
+            Points(Vec<PathPoint>),
+        }
+        match Either::deserialize(d)? {
+            Either::Packed(s) => decode(&s).map_err(de::Error::custom),
+            Either::Points(p) => Ok(p),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Step {
@@ -165,8 +308,19 @@ pub enum Step {
         /// both sides of the click, or the release registers somewhere else.
         #[serde(default = "default_settle")]
         settle_ms: Jitter,
+        /// The pause after the release when it is not `settle_ms`: a recorded
+        /// click rests as long as the user did on each side (30 ms on the
+        /// target, then off again 2 ms after letting go). `None`: `settle_ms`
+        /// on both sides.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        dwell_ms: Option<Jitter>,
         #[serde(default)]
         move_duration_ms: u32,
+        /// The way the cursor went here when this was recorded, replayed
+        /// over `move_duration_ms` instead of a straight glide. Empty: glide
+        /// (or jump, with no travel). See `PathPoint`.
+        #[serde(default, skip_serializing_if = "Vec::is_empty", with = "packed_path")]
+        path: Vec<PathPoint>,
         /// Held from when the cursor arrives until the release has settled
         /// (Shift for a shift-click), so a frame-polling target sees them on
         /// both sides of the click. This step only, like `Step::Key::modifiers`.
@@ -195,6 +349,9 @@ pub enum Step {
         coord_jitter_px: u32,
         #[serde(default)]
         move_duration_ms: u32,
+        /// See `Step::Click::path`.
+        #[serde(default, skip_serializing_if = "Vec::is_empty", with = "packed_path")]
+        path: Vec<PathPoint>,
         #[serde(default)]
         capture: Option<CaptureMeta>,
     },
@@ -208,6 +365,10 @@ pub enum Step {
         axis: ScrollAxis,
         #[serde(default)]
         at: Option<(i32, i32)>,
+        /// A recorded scroll, replayed turn by turn with its own timing
+        /// instead of `amount` notches at once. See `WheelTick`.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        ticks: Vec<WheelTick>,
     },
     Key {
         id: String,
@@ -219,6 +380,9 @@ pub enum Step {
         modifiers: Vec<Modifier>,
         #[serde(default = "default_hold")]
         hold_ms: Jitter,
+        /// Repeats while held, as the recorded key did. See `KeyRepeat`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        repeat: Option<KeyRepeat>,
     },
     Text {
         id: String,
@@ -373,11 +537,13 @@ impl Step {
                 action,
                 hold_ms,
                 settle_ms,
+                dwell_ms,
                 move_duration_ms,
                 ..
             } => {
                 let (a, b) = of(hold_ms);
                 let (sa, sb) = of(settle_ms);
+                let (da, db) = of(dwell_ms.as_ref().unwrap_or(settle_ms));
                 // A double click holds, waits a hold's length, and holds
                 // again; a lone press or release does not hold at all.
                 let n = match action {
@@ -386,7 +552,7 @@ impl Step {
                     ClickAction::Down | ClickAction::Up => 0,
                 };
                 let travel = *move_duration_ms as u64;
-                (a * n + 2 * sa + travel, b * n + 2 * sb + travel)
+                (a * n + sa + da + travel, b * n + sb + db + travel)
             }
             Step::Key { hold_ms, .. } => of(hold_ms),
             Step::Text {
@@ -400,7 +566,10 @@ impl Step {
             Step::Move {
                 move_duration_ms, ..
             } => (*move_duration_ms as u64, *move_duration_ms as u64),
-            Step::Scroll { .. } => (0, 0),
+            Step::Scroll { ticks, .. } => {
+                let t = ticks.last().map_or(0, |k| u64::from(k.t));
+                (t, t)
+            }
             Step::WaitColor { timeout_ms, .. } => (0, *timeout_ms),
         }
     }
@@ -701,6 +870,54 @@ impl Default for Settings {
 mod tests {
     use super::*;
 
+    fn pts(v: &[(i32, i32, u32)]) -> Vec<PathPoint> {
+        v.iter().map(|&(x, y, t)| PathPoint { x, y, t }).collect()
+    }
+
+    #[test]
+    fn a_path_packs_into_a_short_string_and_back() {
+        let path = pts(&[(30, 25, 0), (80, 40, 200), (120, 60, 400), (-1919, 1439, 400), (5, 5, 70_000)]);
+        let s = packed_path::encode(&path);
+        assert_eq!(packed_path::decode(&s).unwrap(), path);
+        // The same string the TypeScript reader is tested against (src/lib/path.test.ts).
+        assert_eq!(packed_path::encode(&pts(&[(30, 25, 0), (80, 40, 200), (120, 60, 400)])), "1:PDIAZB6QA1AokAM");
+        assert!(packed_path::decode("").unwrap().is_empty());
+        assert!(packed_path::decode("2:abc").is_err());
+    }
+
+    #[test]
+    fn a_2000_hz_second_of_movement_stays_small() {
+        let path: Vec<PathPoint> = (0..2000).map(|i| PathPoint { x: 500 + i / 3, y: 300 + i / 7, t: i as u32 / 2 }).collect();
+        let s = packed_path::encode(&path);
+        assert!(s.len() < 2000 * 5, "{} characters", s.len());
+        assert_eq!(packed_path::decode(&s).unwrap(), path);
+    }
+
+    #[test]
+    fn a_step_saves_its_path_packed_and_reads_the_old_plain_list_too() {
+        let json = r#"{"type":"move","id":"m","x":1,"y":2,"path":[{"x":0,"y":0,"t":0},{"x":1,"y":2,"t":5}]}"#;
+        let step: Step = serde_json::from_str(json).unwrap();
+        let out = serde_json::to_value(&step).unwrap();
+        assert!(out["path"].as_str().unwrap().starts_with("1:"));
+        let back: Step = serde_json::from_value(out).unwrap();
+        assert_eq!(back, step);
+    }
+
+    /// A click's own pause after the release is saved only when it has one,
+    /// and a click without it rests `settle_ms` on both sides, as before.
+    #[test]
+    fn a_clicks_dwell_is_saved_only_when_it_has_one() {
+        let plain: Step = serde_json::from_str(r#"{"type":"click","id":"c","x":1,"y":2,"button":"left","action":"click","settle_ms":{"base":40,"jitter":0}}"#).unwrap();
+        assert!(matches!(plain, Step::Click { dwell_ms: None, .. }));
+        assert!(serde_json::to_value(&plain).unwrap().get("dwell_ms").is_none());
+        assert_eq!(plain.duration_range().0, default_hold().base as u64 + 80);
+
+        let json = r#"{"type":"click","id":"c","x":1,"y":2,"button":"left","action":"click","settle_ms":{"base":40,"jitter":0},"dwell_ms":{"base":2,"jitter":0}}"#;
+        let recorded: Step = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_value(&recorded).unwrap()["dwell_ms"]["base"], 2);
+        assert_eq!(recorded.duration_range().0, default_hold().base as u64 + 42);
+    }
+
     #[test]
     fn jitter_range_is_inclusive_and_saturating() {
         assert_eq!(Jitter { base: 500, jitter: 200 }.range(), (500, 700));
@@ -970,7 +1187,9 @@ mod tests {
             coord_jitter_px: 0,
             hold_ms: Jitter { base: 10, jitter: 5 },
             settle_ms: Jitter { base: 3, jitter: 1 },
+            dwell_ms: None,
             move_duration_ms: 0,
+            path: Vec::new(),
             modifiers: vec![],
             held_key: None,
             capture: None,

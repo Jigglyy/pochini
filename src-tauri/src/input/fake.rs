@@ -19,6 +19,8 @@ pub enum Event {
     Move(i32, i32),
     Button(MouseButton, bool),
     Scroll(ScrollAxis, i32, Option<(i32, i32)>),
+    /// A wheel turn in raw wheel units (120 a notch): a recorded scroll.
+    ScrollRaw(ScrollAxis, i32, Option<(i32, i32)>),
     Key { scan: u16, extended: bool, down: bool },
     Modifier(Modifier, bool),
     Unicode(u16, bool),
@@ -109,7 +111,7 @@ impl FakeInput {
                 Event::Unicode(u, false) => {
                     held.retain(|h| !matches!(h, Event::Unicode(hu, _) if hu == u))
                 }
-                Event::Move(..) | Event::Scroll(..) => {}
+                Event::Move(..) | Event::Scroll(..) | Event::ScrollRaw(..) => {}
             }
         }
         held
@@ -157,6 +159,10 @@ impl InputBackend for FakeInput {
 
     fn scroll(&self, axis: ScrollAxis, notches: i32, at: Option<(i32, i32)>) -> Result<()> {
         self.push(Event::Scroll(axis, notches, at))
+    }
+
+    fn wheel(&self, axis: ScrollAxis, units: i32, at: Option<(i32, i32)>) -> Result<()> {
+        self.push(Event::ScrollRaw(axis, units, at))
     }
 
     fn key(&self, scan: u16, extended: bool, down: bool) -> Result<()> {

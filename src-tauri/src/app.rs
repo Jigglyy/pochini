@@ -38,10 +38,17 @@ pub trait Notify: Send + Sync {
 pub struct Recording {
     pub events: Vec<crate::record::Rec>,
     pub options: crate::record::Options,
+    /// Where the last kept mouse move was: a report of the same position
+    /// adds nothing and is dropped.
+    pub last_move: Option<(i32, i32)>,
 }
 
-/// A recording keeps at most this many events (hours of clicking).
-pub const MAX_RECORDED: usize = 20_000;
+/// A recording keeps at most this many events: every report of a 2000 Hz
+/// mouse, for about a quarter of an hour of moving it nonstop (some 40 MB).
+pub const MAX_RECORDED: usize = 2_000_000;
+/// Mouse moves fill a recording only up to here, so clicks and keys always
+/// have room.
+const MAX_RECORDED_MOVES: usize = MAX_RECORDED - 20_000;
 
 /// How a run ended, for the run history and the run pill.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -201,7 +208,7 @@ impl AppState {
     /// Stop or the panic key becomes a step. `seed`: events to start with
     /// (the e2e test mode, which has no hooks, records from a file).
     pub fn start_recording(&self, options: crate::record::Options, seed: Vec<crate::record::Rec>) {
-        *self.recorder.lock().unwrap() = Some(Recording { events: seed, options });
+        *self.recorder.lock().unwrap() = Some(Recording { events: seed, options, last_move: None });
         self.refresh_bindings();
         crate::hotkey::set_capture(Capture::Record);
     }
@@ -475,6 +482,13 @@ fn handle(state: &Arc<AppState>, ev: TriggerEvent) {
         TriggerEvent::Seen(seen) => state.record_seen(seen),
         TriggerEvent::Recorded(rec) => {
             if let Some(r) = state.recorder.lock().unwrap().as_mut() {
+                // Every report the mouse makes, but repeats of a position.
+                if let crate::record::Rec::Move { x, y, .. } = rec {
+                    if r.last_move == Some((x, y)) || r.events.len() >= MAX_RECORDED_MOVES {
+                        return;
+                    }
+                    r.last_move = Some((x, y));
+                }
                 if r.events.len() < MAX_RECORDED {
                     r.events.push(rec);
                 }
@@ -619,7 +633,7 @@ fn launch(state: &Arc<AppState>, first: Pending, queueable: bool) {
 mod tests {
     use super::*;
     use crate::input::fake::{Event, FakeInput};
-    use crate::model::{Anchor, Jitter, KeyRef, Step, Trigger};
+    use crate::model::{Anchor, Jitter, KeyRef, MouseButton, Step, Trigger};
     use std::time::{Duration, Instant};
 
     struct Recorder(Mutex<Vec<bool>>, Mutex<Vec<usize>>);
@@ -684,6 +698,7 @@ mod tests {
             dy: 0,
             coord_jitter_px: 0,
             move_duration_ms: 0,
+            path: Vec::new(),
             capture: None,
         });
         m.steps.push(Step::Wait { id: "w".into(), shuffle: false, ms: Jitter::exact(40) });
@@ -715,6 +730,75 @@ mod tests {
         handle(&st, TriggerEvent::Panic);
         assert!(wait_until(|| st.running_id().is_none(), 1000), "still running after Panic");
         assert!(t.elapsed() < Duration::from_millis(500), "panic took {:?}", t.elapsed());
+    }
+
+    /// Regression: while recording (or picking), the panic key only ended the
+    /// capture, so a run going at the same time kept going.
+    #[test]
+    fn the_panic_key_during_a_recording_stops_a_run_too() {
+        let (st, _, _) = state_with(vec![long_wait("m")]);
+        st.start_recording(crate::record::Options { keep_timing: true }, vec![]);
+        handle(&st, start("m"));
+        assert!(wait_until(|| st.running_id().is_some(), 500));
+        for ev in crate::hotkey::logic::CAPTURE_PANIC {
+            handle(&st, ev);
+        }
+        assert!(st.recorder.lock().unwrap().is_none(), "the recording should have ended");
+        assert!(wait_until(|| st.running_id().is_none(), 1000), "the run should have stopped");
+    }
+
+    /// Every report a mouse makes is kept (a 2000 Hz mouse reports every half
+    /// millisecond, and a replay should go exactly where it went); only
+    /// reports of the position already kept are dropped, adding nothing.
+    #[test]
+    fn every_mouse_report_is_kept_but_repeats_of_a_position() {
+        use crate::record::Rec;
+        let (st, _, _) = state_with(vec![]);
+        st.start_recording(crate::record::Options { keep_timing: true }, vec![]);
+        // 200 reports in 100 ms, two at each position.
+        for i in 0..200u32 {
+            handle(&st, TriggerEvent::Recorded(Rec::Move { x: (i / 2) as i32, y: 0, t: i / 2 }));
+        }
+        handle(&st, TriggerEvent::Recorded(Rec::Button { button: MouseButton::Left, down: true, x: 99, y: 0, t: 101 }));
+        let g = st.recorder.lock().unwrap();
+        let events = &g.as_ref().unwrap().events;
+        let moves = events.iter().filter(|e| matches!(e, Rec::Move { .. })).count();
+        assert_eq!(moves, 100, "one per position");
+        assert!(matches!(events.last(), Some(Rec::Button { .. })), "buttons are always kept");
+    }
+
+    /// The panic key stops a dry run (Run's countdown is over, the mouse is
+    /// visiting the points) as it stops a real one.
+    #[test]
+    fn panic_stops_a_dry_run() {
+        let (st, input, _) = state_with(vec![]);
+        let mut m = Macro::new("Dry");
+        m.id = "d".into();
+        for i in 0..10 {
+            m.steps.push(Step::Move {
+                id: format!("p{i}"),
+                shuffle: false,
+                x: i * 10,
+                y: 0,
+                anchor: Anchor::Fixed,
+                dx: 0,
+                dy: 0,
+                coord_jitter_px: 0,
+                move_duration_ms: 0,
+                path: Vec::new(),
+                capture: None,
+            });
+        }
+        handle(&st, TriggerEvent::RunAdhoc { mac: Box::new(m), delay_ms: 0, dry: true });
+        assert!(wait_until(|| st.running_id().is_some(), 500));
+        std::thread::sleep(Duration::from_millis(50)); // on the first point
+        let t = Instant::now();
+        handle(&st, TriggerEvent::Panic);
+        assert!(wait_until(|| st.running_id().is_none(), 1000), "dry run still going after Panic");
+        assert!(t.elapsed() < Duration::from_millis(300), "panic took {:?}", t.elapsed());
+        std::thread::sleep(Duration::from_millis(crate::engine::DRY_PAUSE_MS + 100));
+        let moves = input.events().iter().filter(|e| matches!(e, Event::Move(..))).count();
+        assert!(moves <= 2, "kept moving after Panic: {moves} moves");
     }
 
     /// Regression: releasing a "repeat while held" key used to queue behind
@@ -864,7 +948,9 @@ mod tests {
             coord_jitter_px: 0,
             hold_ms: Jitter::exact(5),
             settle_ms: Jitter::exact(5),
+            dwell_ms: None,
             move_duration_ms: 0,
+            path: Vec::new(),
             modifiers: vec![],
             held_key: None,
             capture: None,
@@ -1005,6 +1091,7 @@ mod tests {
             dy: 0,
             coord_jitter_px: 0,
             move_duration_ms: 0,
+            path: Vec::new(),
             capture: None,
         });
         let (st, input, _) = state_with(vec![m]);
@@ -1204,7 +1291,7 @@ mod tests {
         m.id = "fast".into();
         m.repeat = Repeat::Forever;
         for id in ["a", "b"] {
-            m.steps.push(Step::Scroll { id: id.into(), shuffle: false, amount: 1, axis: crate::model::ScrollAxis::Vertical, at: None });
+            m.steps.push(Step::Scroll { id: id.into(), shuffle: false, amount: 1, axis: crate::model::ScrollAxis::Vertical, at: None, ticks: Vec::new() });
         }
         m.steps.push(Step::Wait { id: "slow".into(), shuffle: false, ms: Jitter::exact(0) });
         let (st, _, rec) = state_with(vec![m]);
@@ -1218,7 +1305,7 @@ mod tests {
         // A long step still gets reported, however quick the one before.
         let mut m = Macro::new("long");
         m.id = "long".into();
-        m.steps.push(Step::Scroll { id: "q".into(), shuffle: false, amount: 1, axis: crate::model::ScrollAxis::Vertical, at: None });
+        m.steps.push(Step::Scroll { id: "q".into(), shuffle: false, amount: 1, axis: crate::model::ScrollAxis::Vertical, at: None, ticks: Vec::new() });
         m.steps.push(Step::Wait { id: "w".into(), shuffle: false, ms: Jitter::exact(300) });
         let (st, _, rec) = state_with(vec![m]);
         handle(&st, start("long"));

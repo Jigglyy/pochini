@@ -111,6 +111,18 @@ pub trait InputBackend: Send + Sync {
     fn button(&self, button: MouseButton, down: bool) -> Result<()>;
     fn scroll(&self, axis: ScrollAxis, notches: i32, at: Option<(i32, i32)>) -> Result<()>;
 
+    /// One turn of the wheel in raw wheel units (120 is a notch), to replay a
+    /// recorded scroll exactly: a smooth wheel and a touchpad turn by less
+    /// than a notch, which `scroll` cannot express. Backends that cannot send
+    /// part of a notch round to whole ones.
+    fn wheel(&self, axis: ScrollAxis, units: i32, at: Option<(i32, i32)>) -> Result<()> {
+        let notches = match units / 120 {
+            0 => units.signum(),
+            n => n,
+        };
+        self.scroll(axis, notches, at)
+    }
+
     /// `scan` is a scan code, not a virtual key code.
     fn key(&self, scan: u16, extended: bool, down: bool) -> Result<()>;
     fn modifier(&self, m: Modifier, down: bool) -> Result<()>;

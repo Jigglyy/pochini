@@ -15,8 +15,8 @@ use rand::{Rng, SeedableRng};
 use crate::input::coords::jitter_point;
 use crate::input::{InputBackend, InputError};
 use crate::model::{
-    parse_hex, to_hex, Anchor, ClickAction, Jitter, KeyAction, KeyRef, Macro, Modifier, MouseButton, Repeat, Step,
-    TimeoutAction,
+    parse_hex, to_hex, Anchor, ClickAction, Jitter, KeyAction, KeyRef, KeyRepeat, Macro, Modifier, MouseButton, PathPoint,
+    Repeat, Step, TimeoutAction,
 };
 
 pub use timer::CancelToken;
@@ -44,6 +44,9 @@ pub enum EngineError {
 
 /// A dry run pauses this long on each point it shows.
 pub const DRY_PAUSE_MS: u64 = 600;
+/// Further behind its timeline than this (the machine stalled), a run stops
+/// making up the time and carries on from now, rather than rushing.
+const CATCH_UP_MS: u64 = 250;
 
 /// How often a "wait for a color" step looks at the screen.
 pub const COLOR_POLL_MS: u64 = 25;
@@ -108,6 +111,32 @@ impl HeldState {
     }
 }
 
+/// Each path point's moment in ms, with points that share a millisecond
+/// spread evenly across it. Times are recorded in whole milliseconds, and a
+/// 2000 Hz mouse reports twice in each, evenly, so this puts every report
+/// back within about a quarter of a millisecond instead of replaying pairs
+/// at once.
+fn spread_within_ms(path: &[PathPoint]) -> Vec<f64> {
+    let mut out = Vec::with_capacity(path.len());
+    let mut i = 0;
+    while i < path.len() {
+        let n = path[i..].iter().take_while(|p| p.t == path[i].t).count();
+        out.extend((0..n).map(|k| f64::from(path[i].t) + k as f64 / n as f64));
+        i += n;
+    }
+    out
+}
+
+/// A key the engine repeats while a step holds it down. Windows repeats a
+/// key the user holds but never one a program holds, so a recorded hold
+/// (W held while walking, Backspace held in a text box) would otherwise
+/// replay as a single press.
+struct Repeater {
+    key: (u16, bool),
+    stop: CancelToken,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
 pub struct Engine {
     /// A dry run: the mouse visits every click and move point, pausing on
     /// each, and nothing is clicked, pressed or typed.
@@ -118,6 +147,16 @@ pub struct Engine {
     window_app: Option<String>,
     /// When "stop after" runs out: waits end there instead of running on.
     deadline: Option<std::time::Instant>,
+    /// Where the run should be by now: every pause adds its length. A Wait
+    /// step sleeps until it, so the time lost to every late wake-up and to
+    /// sending input is made up there instead of adding up. (A recorded
+    /// macro replayed 2 ms per click late, 74 ms after 40 clicks.) Pauses
+    /// inside a step (settle, hold) always run their full length.
+    plan: Option<std::time::Instant>,
+    /// Held keys being repeated (`KeyRepeat`), stopped before their release.
+    repeaters: Vec<Repeater>,
+    /// A step has moved the cursor this run (see `travel`).
+    traveled: bool,
     input: Arc<dyn InputBackend>,
     rng: StdRng,
     /// Cursor position when the current run started. See `Anchor::Activation`.
@@ -134,6 +173,9 @@ impl Engine {
             on_step: None,
             window_app: None,
             deadline: None,
+            plan: None,
+            repeaters: Vec::new(),
+            traveled: false,
             input,
             rng: match seed {
                 Some(s) => StdRng::seed_from_u64(s),
@@ -170,6 +212,8 @@ impl Engine {
         };
         self.previous = self.activation;
         self.window_app = m.guard.as_ref().map(|g| g.process.clone()).filter(|p| !p.is_empty());
+        self.plan = None;
+        self.traveled = false;
         let mut held = HeldState::default();
         // A bug in a step must not leave a key held down across the whole OS:
         // catch the panic, run the release pass, report it as an error.
@@ -273,7 +317,32 @@ impl Engine {
         order
     }
 
-    fn wait(&self, ms: u64, cancel: &CancelToken) -> Result<()> {
+    /// The run's timeline moves on by `ms`.
+    fn plan_add(&mut self, ms: u64) {
+        let base = self.plan.unwrap_or_else(std::time::Instant::now);
+        self.plan = Some(base + std::time::Duration::from_millis(ms));
+    }
+
+    /// A pause inside a step: its full length, on the timeline.
+    fn wait(&mut self, ms: u64, cancel: &CancelToken) -> Result<()> {
+        self.plan_add(ms);
+        self.sleep(ms, cancel)
+    }
+
+    /// A Wait step: `ms` on the timeline, made shorter by however far the run
+    /// has fallen behind it, so a long macro keeps its pace.
+    fn wait_step(&mut self, ms: u64, cancel: &CancelToken) -> Result<()> {
+        let now = std::time::Instant::now();
+        let mut behind = self.plan.map_or(0, |p| now.saturating_duration_since(p).as_millis() as u64);
+        if behind > CATCH_UP_MS {
+            self.plan = Some(now);
+            behind = 0;
+        }
+        self.plan_add(ms);
+        self.sleep(ms.saturating_sub(behind), cancel)
+    }
+
+    fn sleep(&self, ms: u64, cancel: &CancelToken) -> Result<()> {
         // A wait never runs past "stop after".
         let left = self.deadline.map(|d| d.saturating_duration_since(std::time::Instant::now()).as_millis() as u64);
         let (ms, time_up) = match left {
@@ -360,16 +429,94 @@ impl Engine {
         Ok(())
     }
 
+    /// The cursor's way to `to`: a recorded path when the step has one,
+    /// otherwise a glide.
+    fn travel(&mut self, to: (i32, i32), path: &[PathPoint], duration_ms: u32, anchor: Anchor, cancel: &CancelToken) -> Result<()> {
+        // The run's first travel along a path starts where the path was
+        // recorded, as the recording did (unless the step aims relative to
+        // something, which a recorded spot means nothing to).
+        let from_recorded_start = !self.traveled && anchor == Anchor::Fixed;
+        self.traveled = true;
+        if path.len() < 2 || duration_ms == 0 {
+            return self.glide(to, duration_ms, cancel);
+        }
+        self.follow_path(to, path, duration_ms, from_recorded_start, cancel)
+    }
+
+    /// Replay a recorded path (see `PathPoint`), point by point on its own
+    /// timing stretched to `duration_ms`. It is bent so it starts where the
+    /// cursor is (unless `from_recorded_start`) and ends on `to`: each point
+    /// is shifted by the start's difference fading out and the end's fading
+    /// in, so a path replayed from where it was recorded is exact, and one
+    /// whose step was moved still arrives without a jump.
+    fn follow_path(&mut self, to: (i32, i32), path: &[PathPoint], duration_ms: u32, from_recorded_start: bool, cancel: &CancelToken) -> Result<()> {
+        let (first, last) = (path[0], path[path.len() - 1]);
+        let span = f64::from(last.t.max(1));
+        let from = match from_recorded_start {
+            true => (first.x, first.y),
+            false => self.input.cursor_pos().unwrap_or((first.x, first.y)),
+        };
+        let (sx, sy) = (f64::from(from.0 - first.x), f64::from(from.1 - first.y));
+        let (ex, ey) = (f64::from(to.0 - last.x), f64::from(to.1 - last.y));
+        let scale = f64::from(duration_ms) / span;
+        // On the run's timeline (see `plan`), point by point: each point at
+        // its own moment from the start, to a fraction of a millisecond (a
+        // 2000 Hz mouse makes a point every half millisecond).
+        let start = self.timeline_start();
+        let at = spread_within_ms(path);
+        for (p, t) in path.iter().zip(at) {
+            if cancel.is_cancelled() {
+                return Err(EngineError::Cancelled);
+            }
+            let f = f64::from(p.t) / span;
+            let due = start + std::time::Duration::from_micros((t * scale * 1000.0) as u64);
+            self.sleep_until(due, cancel)?;
+            let x = f64::from(p.x) + sx * (1.0 - f) + ex * f;
+            let y = f64::from(p.y) + sy * (1.0 - f) + ey * f;
+            self.input.move_to(x.round() as i32, y.round() as i32)?;
+        }
+        self.input.move_to(to.0, to.1)?;
+        self.plan = Some(start + std::time::Duration::from_millis(u64::from(duration_ms)));
+        Ok(())
+    }
+
+    /// Where a step that plays out over time (a path, a recorded scroll)
+    /// starts on the run's timeline: where the run should be by now, unless
+    /// it has fallen far behind (a stall), then now.
+    fn timeline_start(&self) -> std::time::Instant {
+        let now = std::time::Instant::now();
+        self.plan
+            .filter(|p| now.saturating_duration_since(*p).as_millis() as u64 <= CATCH_UP_MS)
+            .unwrap_or(now)
+    }
+
+    /// Sleep until `due`, to a fraction of a millisecond (`timer::wait_until`).
+    /// Never past "stop after".
+    fn sleep_until(&self, due: std::time::Instant, cancel: &CancelToken) -> Result<()> {
+        match self.deadline.filter(|d| *d <= due) {
+            Some(d) if timer::wait_until(d, cancel) => Err(EngineError::TimeUp),
+            None if timer::wait_until(due, cancel) => Ok(()),
+            _ => Err(EngineError::Cancelled),
+        }
+    }
+
+    /// A pause inside a step (a settle, a dwell): its full length from now,
+    /// ended to a fraction of a millisecond, on the timeline.
+    fn pause(&mut self, ms: u64, cancel: &CancelToken) -> Result<()> {
+        self.plan_add(ms);
+        self.sleep_until(std::time::Instant::now() + std::time::Duration::from_millis(ms), cancel)
+    }
+
     fn run_step(&mut self, step: &Step, cancel: &CancelToken, held: &mut HeldState) -> Result<()> {
         match step {
             Step::Wait { ms, .. } => {
                 let d = self.sample(*ms);
-                self.wait(d, cancel)?;
+                self.wait_step(d, cancel)?;
             }
 
-            Step::Move { x, y, anchor, dx, dy, coord_jitter_px, move_duration_ms, .. } => {
+            Step::Move { x, y, anchor, dx, dy, coord_jitter_px, move_duration_ms, path, .. } => {
                 let p = self.resolve_point(*anchor, (*x, *y), (*dx, *dy), *coord_jitter_px)?;
-                self.glide(p, *move_duration_ms, cancel)?;
+                self.travel(p, path, *move_duration_ms, *anchor, cancel)?;
             }
 
             Step::Click {
@@ -383,13 +530,15 @@ impl Engine {
                 coord_jitter_px,
                 hold_ms,
                 settle_ms,
+                dwell_ms,
                 move_duration_ms,
+                path,
                 modifiers,
                 held_key,
                 ..
             } => {
                 let p = self.resolve_point(*anchor, (*x, *y), (*dx, *dy), *coord_jitter_px)?;
-                self.glide(p, *move_duration_ms, cancel)?;
+                self.travel(p, path, *move_duration_ms, *anchor, cancel)?;
                 // Windows would drop the click without a word (UIPI): say so.
                 if self.input.blocked(Some(p)) {
                     return Err(InputError::AccessDenied.into());
@@ -399,7 +548,7 @@ impl Engine {
                 let pressed = self.hold_keys(modifiers, held_key.as_ref(), held)?;
                 // Let the target see the cursor at rest before the press...
                 let s = self.sample(*settle_ms);
-                self.wait(s, cancel)?;
+                self.pause(s, cancel)?;
                 match action {
                     ClickAction::Down => {
                         self.input.button(*button, true)?;
@@ -420,9 +569,10 @@ impl Engine {
                 // ...and see the release while the cursor is still on it. Without
                 // this the next step moves the cursor away ~0.05 ms after the
                 // button comes up, and a target that samples once per frame
-                // registers the release somewhere else.
-                let s = self.sample(*settle_ms);
-                self.wait(s, cancel)?;
+                // registers the release somewhere else. (A recorded click
+                // stays as long as the user did: its own `dwell_ms`.)
+                let s = self.sample(dwell_ms.unwrap_or(*settle_ms));
+                self.pause(s, cancel)?;
                 if let Some((scan, extended)) = pressed {
                     self.input.key(scan, extended, false)?;
                     held.key(scan, extended, false);
@@ -430,12 +580,26 @@ impl Engine {
                 self.release_modifiers(modifiers, held)?;
             }
 
-            Step::Scroll { amount, axis, at, .. } => {
+            Step::Scroll { amount, axis, at, ticks, .. } => {
                 let target = at.or_else(|| self.input.cursor_pos().ok());
                 if target.is_some_and(|p| self.input.blocked(Some(p))) {
                     return Err(InputError::AccessDenied.into());
                 }
-                self.input.scroll(*axis, *amount, *at)?;
+                // Scrolling at a point puts the cursor there.
+                self.traveled |= at.is_some();
+                if ticks.is_empty() {
+                    self.input.scroll(*axis, *amount, *at)?;
+                } else {
+                    // A recorded scroll: each turn, by as much as it turned,
+                    // at its own moment on the run's timeline.
+                    let start = self.timeline_start();
+                    for (i, k) in ticks.iter().enumerate() {
+                        self.sleep_until(start + std::time::Duration::from_millis(u64::from(k.t)), cancel)?;
+                        self.input.wheel(*axis, k.delta, if i == 0 { *at } else { None })?;
+                    }
+                    let last = ticks.last().map_or(0, |k| u64::from(k.t));
+                    self.plan = Some(start + std::time::Duration::from_millis(last));
+                }
             }
 
             Step::WaitColor { x, y, color, tolerance, timeout_ms, on_timeout, .. } => {
@@ -462,7 +626,7 @@ impl Engine {
                 }
             }
 
-            Step::Key { key, action, modifiers, hold_ms, .. } => {
+            Step::Key { key, action, modifiers, hold_ms, repeat, .. } => {
                 if self.input.blocked(None) {
                     return Err(InputError::AccessDenied.into());
                 }
@@ -470,22 +634,33 @@ impl Engine {
                     self.input.modifier(*m, true)?;
                     held.modifier(*m, true);
                 }
+                let k = (key.scancode, key.extended);
                 match action {
                     KeyAction::Down => {
                         self.input.key(key.scancode, key.extended, true)?;
                         held.key(key.scancode, key.extended, true);
+                        // Repeats until the step that releases it.
+                        if let Some(r) = repeat {
+                            self.start_repeat(k, *r);
+                        }
                     }
                     KeyAction::Up => {
+                        self.stop_repeat(k);
                         self.input.key(key.scancode, key.extended, false)?;
                         held.key(key.scancode, key.extended, false);
                     }
                     KeyAction::Press => {
                         self.input.key(key.scancode, key.extended, true)?;
                         held.key(key.scancode, key.extended, true);
+                        if let Some(r) = repeat {
+                            self.start_repeat(k, *r);
+                        }
                         let d = self.sample(*hold_ms);
+                        self.plan_add(d);
                         // Release before propagating a cancellation, so an abort
                         // during the hold does not strand the key.
-                        let cancelled = !timer::wait(d, cancel);
+                        let cancelled = !timer::wait_until(std::time::Instant::now() + std::time::Duration::from_millis(d), cancel);
+                        self.stop_repeat(k);
                         self.input.key(key.scancode, key.extended, false)?;
                         held.key(key.scancode, key.extended, false);
                         if cancelled {
@@ -526,7 +701,8 @@ impl Engine {
         self.input.button(b, true)?;
         held.button(b, true);
         let d = self.sample(hold);
-        let cancelled = !timer::wait(d, cancel);
+        self.plan_add(d);
+        let cancelled = !timer::wait_until(std::time::Instant::now() + std::time::Duration::from_millis(d), cancel);
         self.input.button(b, false)?;
         held.button(b, false);
         if cancelled {
@@ -563,7 +739,51 @@ impl Engine {
 
     /// Force-release anything still down. Best effort: a failure here must not
     /// stop us trying the rest, or one stuck key becomes several.
-    fn release_all(&self, held: &mut HeldState) {
+    /// Repeat a held key from now on: first after `r.delay_ms`, then every
+    /// `r.every_ms`, until `stop_repeat`.
+    fn start_repeat(&mut self, (scan, extended): (u16, bool), r: KeyRepeat) {
+        self.stop_repeat((scan, extended));
+        let stop = CancelToken::new();
+        let (input, s) = (self.input.clone(), stop.clone());
+        let thread = std::thread::Builder::new()
+            .name("key-repeat".into())
+            .spawn(move || {
+                // Each repeat at its own moment from the press, so late
+                // wake-ups do not add up. To the millisecond is plenty here.
+                let mut due = std::time::Instant::now() + std::time::Duration::from_millis(u64::from(r.delay_ms));
+                let every = std::time::Duration::from_millis(u64::from(r.every_ms.max(1)));
+                loop {
+                    let left = due.saturating_duration_since(std::time::Instant::now());
+                    if !timer::wait(left.as_micros().div_ceil(1000) as u64, &s) || input.key(scan, extended, true).is_err() {
+                        return;
+                    }
+                    due += every;
+                }
+            })
+            .ok();
+        self.repeaters.push(Repeater { key: (scan, extended), stop, thread });
+    }
+
+    /// Stop repeating a key, and wait until it has, so no repeat can come
+    /// after the release that follows.
+    fn stop_repeat(&mut self, key: (u16, bool)) {
+        self.repeaters.retain_mut(|r| {
+            if r.key != key {
+                return true;
+            }
+            r.stop.cancel();
+            if let Some(t) = r.thread.take() {
+                let _ = t.join();
+            }
+            false
+        });
+    }
+
+    fn release_all(&mut self, held: &mut HeldState) {
+        // Repeats stop before anything is released.
+        for key in self.repeaters.iter().map(|r| r.key).collect::<Vec<_>>() {
+            self.stop_repeat(key);
+        }
         for b in std::mem::take(&mut held.buttons) {
             let _ = self.input.button(b, false);
         }
@@ -581,7 +801,8 @@ impl Engine {
 mod tests {
     use super::*;
     use crate::input::fake::{Event, FakeInput};
-    use crate::model::{KeyRef, ScrollAxis};
+    use crate::model::{KeyRef, ScrollAxis, WheelTick};
+    use std::time::Duration;
 
     fn key(scan: u16) -> KeyRef {
         KeyRef { vk: 0x41, scancode: scan, extended: false, label: "A".into() }
@@ -665,7 +886,9 @@ mod tests {
             coord_jitter_px: 0,
             hold_ms: Jitter::exact(1),
             settle_ms: Jitter::exact(0),
+            dwell_ms: None,
             move_duration_ms: 0,
+            path: Vec::new(),
             modifiers: vec![],
             held_key: None,
             capture: None,
@@ -679,6 +902,80 @@ mod tests {
                 Event::Button(MouseButton::Left, false),
             ]
         );
+    }
+
+    fn path_move(x: i32, y: i32, move_duration_ms: u32, path: Vec<PathPoint>) -> Step {
+        Step::Move {
+            id: "p".into(),
+            shuffle: false,
+            x,
+            y,
+            anchor: Anchor::Fixed,
+            dx: 0,
+            dy: 0,
+            coord_jitter_px: 0,
+            move_duration_ms,
+            path,
+            capture: None,
+        }
+    }
+
+    const fn pt(x: i32, y: i32, t: u32) -> PathPoint {
+        PathPoint { x, y, t }
+    }
+
+    /// A recorded path is replayed point by point. It starts where the
+    /// cursor really is and ends on the step's point, bending smoothly in
+    /// between when either differs from the recording.
+    #[test]
+    fn a_recorded_path_is_followed_and_bent_to_the_real_start_and_target() {
+        let f = Arc::new(FakeInput::with_cursor(500, 500));
+        let mut e = Engine::new(f.clone(), Some(1));
+        let path = vec![pt(10, 0, 0), pt(60, 30, 20), pt(110, 0, 40)];
+        // A step before it put the cursor 10 px from where the path began.
+        e.run(&mac(vec![path_move(0, 0, 0, Vec::new()), path_move(110, 0, 40, path)]), &CancelToken::new()).unwrap();
+        let moves: Vec<(i32, i32)> = f
+            .events()
+            .into_iter()
+            .filter_map(|ev| if let Event::Move(x, y) = ev { Some((x, y)) } else { None })
+            .collect();
+        // Start: the recorded start, moved onto the real cursor. Middle: half
+        // of that correction. End: exactly on the step's point.
+        assert_eq!(moves[..2], [(0, 0), (0, 0)]);
+        assert!(moves.contains(&(55, 30)), "{moves:?}");
+        assert_eq!(moves.last(), Some(&(110, 0)));
+    }
+
+    /// Regression: a macro whose first steps were deleted (with them the
+    /// jump to where the recording began) bent its first path from wherever
+    /// the cursor was when the hotkey was pressed: a fast sweep across the
+    /// screen where the user had nudged the mouse a few pixels.
+    #[test]
+    fn the_first_path_of_a_run_starts_where_it_was_recorded() {
+        let f = Arc::new(FakeInput::with_cursor(900, 700));
+        let mut e = Engine::new(f.clone(), Some(1));
+        let path = vec![pt(10, 0, 0), pt(60, 30, 20), pt(110, 0, 40)];
+        e.run(&mac(vec![path_move(110, 0, 40, path)]), &CancelToken::new()).unwrap();
+        let moves: Vec<(i32, i32)> = f
+            .events()
+            .into_iter()
+            .filter_map(|ev| if let Event::Move(x, y) = ev { Some((x, y)) } else { None })
+            .collect();
+        assert_eq!(moves[..3], [(10, 0), (60, 30), (110, 0)]);
+    }
+
+    #[test]
+    fn a_path_ends_on_a_moved_target_and_travel_rescales_its_timing() {
+        let f = Arc::new(FakeInput::with_cursor(10, 0));
+        let mut e = Engine::new(f.clone(), Some(1));
+        // Recorded over 40 ms to (110, 0); the step now aims at (200, 100)
+        // and its travel was raised to 120 ms.
+        let path = vec![pt(10, 0, 0), pt(60, 0, 20), pt(110, 0, 40)];
+        e.run(&mac(vec![path_move(200, 100, 120, path)]), &CancelToken::new()).unwrap();
+        let t = f.timeline();
+        assert_eq!(t.last().map(|(_, ev)| ev.clone()), Some(Event::Move(200, 100)));
+        let took = t.last().unwrap().0 - t.first().unwrap().0;
+        assert!(took >= Duration::from_millis(100), "the path took {took:?}, not about 120 ms");
     }
 
     fn click_holding(settle: u32, modifiers: Vec<Modifier>, held_key: Option<KeyRef>) -> Step {
@@ -695,7 +992,9 @@ mod tests {
             coord_jitter_px: 0,
             hold_ms: Jitter::exact(1),
             settle_ms: Jitter::exact(settle),
+            dwell_ms: None,
             move_duration_ms: 0,
+            path: Vec::new(),
             modifiers,
             held_key,
             capture: None,
@@ -767,6 +1066,7 @@ mod tests {
                 action: KeyAction::Down,
                 modifiers: vec![],
                 hold_ms: Jitter::exact(0),
+                repeat: None,
             },
             click_holding(0, vec![], Some(key(0x10))),
         ]);
@@ -847,7 +1147,9 @@ mod tests {
             coord_jitter_px: 0,
             hold_ms: Jitter::exact(1),
             settle_ms: Jitter::exact(40),
+            dwell_ms: None,
             move_duration_ms: 0,
+            path: Vec::new(),
             modifiers: vec![],
             held_key: None,
             capture: None,
@@ -872,6 +1174,75 @@ mod tests {
         assert!(dwell >= 38.0, "left the target only {dwell:.2} ms after releasing");
     }
 
+    fn timed_click(id: &str, x: i32, hold: u32, settle: u32, dwell: Option<u32>) -> Step {
+        Step::Click {
+            id: id.into(),
+            shuffle: false,
+            x,
+            y: 100,
+            button: MouseButton::Left,
+            action: ClickAction::Click,
+            anchor: Anchor::Fixed,
+            dx: 0,
+            dy: 0,
+            coord_jitter_px: 0,
+            hold_ms: Jitter::exact(hold),
+            settle_ms: Jitter::exact(settle),
+            dwell_ms: dwell.map(Jitter::exact),
+            move_duration_ms: 0,
+            path: Vec::new(),
+            modifiers: vec![],
+            held_key: None,
+            capture: None,
+        }
+    }
+
+    /// A recorded click rests on its target as long as the user did before
+    /// the press, and leaves as soon after the release as they did.
+    #[test]
+    fn a_click_with_its_own_dwell_rests_that_long_after_the_release() {
+        let (f, mut e) = engine();
+        e.run(&mac(vec![timed_click("a", 100, 1, 30, Some(3)), timed_click("b", 500, 1, 0, None)]), &CancelToken::new()).unwrap();
+        let tl = f.timeline();
+        let at = |pred: &dyn Fn(&Event) -> bool| tl.iter().position(|(_, ev)| pred(ev)).unwrap();
+        let ms = |a: usize, b: usize| tl[b].0.duration_since(tl[a].0).as_secs_f64() * 1000.0;
+        let (arrive, down, up, leave) = (
+            at(&|ev| *ev == Event::Move(100, 100)),
+            at(&|ev| matches!(ev, Event::Button(_, true))),
+            at(&|ev| matches!(ev, Event::Button(_, false))),
+            at(&|ev| *ev == Event::Move(500, 100)),
+        );
+        assert!(ms(arrive, down) >= 29.5, "rested {:.2} ms before the press", ms(arrive, down));
+        let dwell = ms(up, leave);
+        assert!((2.5..10.0).contains(&dwell), "left {dwell:.2} ms after the release, not 3");
+    }
+
+    /// Pauses inside a step end on time to a fraction of a millisecond. The
+    /// timer alone wakes up to a millisecond late every time, and a recorded
+    /// click has three of them.
+    #[test]
+    fn pauses_inside_a_step_end_on_time() {
+        let (f, mut e) = engine();
+        let steps = (0..12).map(|i| timed_click("c", 100 + i, 4, 3, Some(2))).collect();
+        e.run(&mac(steps), &CancelToken::new()).unwrap();
+        let tl = f.timeline();
+        let mut late: Vec<f64> = Vec::new();
+        for w in tl.windows(2) {
+            let ms = w[1].0.duration_since(w[0].0).as_secs_f64() * 1000.0;
+            match (&w[0].1, &w[1].1) {
+                (Event::Move(..), Event::Button(_, true)) => late.push(ms - 3.0),
+                (Event::Button(_, true), Event::Button(_, false)) => late.push(ms - 4.0),
+                (Event::Button(_, false), Event::Move(..)) => late.push(ms - 2.0),
+                _ => {}
+            }
+        }
+        assert_eq!(late.len(), 12 * 3 - 1);
+        late.sort_by(f64::total_cmp);
+        let median = late[late.len() / 2];
+        assert!(late[0] >= -0.05, "a pause ended {:.3} ms early", -late[0]);
+        assert!(median < 0.3, "pauses ended {median:.3} ms late (median): {late:?}");
+    }
+
     #[test]
     fn an_activation_click_lands_where_the_mouse_was_when_the_run_started() {
         let f = Arc::new(FakeInput::with_cursor(777, 333));
@@ -891,7 +1262,9 @@ mod tests {
                 coord_jitter_px: 0,
                 hold_ms: Jitter::exact(0),
                 settle_ms: Jitter::exact(0),
+                dwell_ms: None,
                 move_duration_ms: 0,
+                path: Vec::new(),
                 modifiers: vec![],
                 held_key: None,
                 capture: None,
@@ -909,7 +1282,9 @@ mod tests {
                 coord_jitter_px: 0,
                 hold_ms: Jitter::exact(0),
                 settle_ms: Jitter::exact(0),
+                dwell_ms: None,
                 move_duration_ms: 0,
+                path: Vec::new(),
                 modifiers: vec![],
                 held_key: None,
                 capture: None,
@@ -938,6 +1313,7 @@ mod tests {
             dy: 0,
             coord_jitter_px: 0,
             move_duration_ms: 0,
+            path: Vec::new(),
             capture: None,
         }]);
         e.run_at(&m, &CancelToken::new(), Some((640, 480))).unwrap();
@@ -955,6 +1331,7 @@ mod tests {
             dy: 0,
             coord_jitter_px: 0,
             move_duration_ms: 0,
+            path: Vec::new(),
             capture: None,
         }
     }
@@ -1008,7 +1385,9 @@ mod tests {
             coord_jitter_px: 0,
             hold_ms: Jitter::exact(0),
             settle_ms: Jitter::exact(0),
+            dwell_ms: None,
             move_duration_ms: 0,
+            path: Vec::new(),
             modifiers: vec![],
             held_key: None,
             capture: None,
@@ -1059,6 +1438,7 @@ mod tests {
             dy,
             coord_jitter_px: 0,
             move_duration_ms: 0,
+            path: Vec::new(),
             capture: None,
         }
     }
@@ -1177,6 +1557,7 @@ mod tests {
                 dy: 0,
                 coord_jitter_px: 8,
                 move_duration_ms: 0,
+                path: Vec::new(),
                 capture: None,
             }]);
             e.run(&m, &CancelToken::new()).unwrap();
@@ -1205,6 +1586,7 @@ mod tests {
                 dy: 0,
                 coord_jitter_px: 0,
                 move_duration_ms: 0,
+                path: Vec::new(),
                 capture: None,
             },
             Step::Move {
@@ -1217,6 +1599,7 @@ mod tests {
                 dy: 0,
                 coord_jitter_px: 0,
                 move_duration_ms: 0,
+                path: Vec::new(),
                 capture: None,
             },
         ]);
@@ -1249,7 +1632,9 @@ mod tests {
             coord_jitter_px: 0,
             hold_ms: Jitter::exact(1),
             settle_ms: Jitter::exact(0),
+            dwell_ms: None,
             move_duration_ms: 0,
+            path: Vec::new(),
             modifiers: vec![],
             held_key: None,
             capture: None,
@@ -1270,6 +1655,7 @@ mod tests {
             action: KeyAction::Press,
             modifiers: vec![Modifier::Ctrl, Modifier::Shift],
             hold_ms: Jitter::exact(1),
+            repeat: None,
         }]);
         e.run(&m, &CancelToken::new()).unwrap();
         assert_eq!(
@@ -1297,6 +1683,7 @@ mod tests {
                 action: KeyAction::Down,
                 modifiers: vec![],
                 hold_ms: Jitter::exact(0),
+                repeat: None,
             },
             Step::Click {
                 id: "hold".into(),
@@ -1311,7 +1698,9 @@ mod tests {
                 coord_jitter_px: 0,
                 hold_ms: Jitter::exact(0),
                 settle_ms: Jitter::exact(0),
+                dwell_ms: None,
                 move_duration_ms: 0,
+                path: Vec::new(),
                 modifiers: vec![],
                 held_key: None,
                 capture: None,
@@ -1347,6 +1736,7 @@ mod tests {
             action: KeyAction::Press,
             modifiers: vec![Modifier::Shift],
             hold_ms: Jitter::exact(30_000),
+            repeat: None,
         }]);
         let cancel = CancelToken::new();
         let c2 = cancel.clone();
@@ -1367,6 +1757,7 @@ mod tests {
             amount: -1,
             axis: ScrollAxis::Vertical,
             at: None,
+            ticks: Vec::new(),
         }]);
         m.repeat = Repeat::Count { n: 4 };
         e.run(&m, &CancelToken::new()).unwrap();
@@ -1395,7 +1786,7 @@ mod tests {
         let (f, mut e) = engine();
         let mut m = mac(vec![
             Step::Wait { id: "w".into(), shuffle: false, ms: Jitter::exact(30_000) },
-            Step::Scroll { id: "s".into(), shuffle: false, amount: 1, axis: ScrollAxis::Vertical, at: None },
+            Step::Scroll { id: "s".into(), shuffle: false, amount: 1, axis: ScrollAxis::Vertical, at: None, ticks: Vec::new() },
         ]);
         m.stop_after_ms = Some(80);
         let t = std::time::Instant::now();
@@ -1421,6 +1812,7 @@ mod tests {
                 action: KeyAction::Down,
                 modifiers: vec![],
                 hold_ms: Jitter::exact(0),
+                repeat: None,
             },
             Step::Wait { id: "w".into(), shuffle: false, ms: Jitter::exact(5) },
         ]);
@@ -1455,6 +1847,7 @@ mod tests {
             amount: 1,
             axis: ScrollAxis::Vertical,
             at: None,
+            ticks: Vec::new(),
         }]);
         e.run(&m, &CancelToken::new()).unwrap();
         assert!(t.elapsed() >= std::time::Duration::from_millis(55), "{:?}", t.elapsed());
@@ -1517,6 +1910,7 @@ mod tests {
             dy,
             coord_jitter_px: 0,
             move_duration_ms: 0,
+            path: Vec::new(),
             capture: None,
         }
     }
@@ -1547,6 +1941,152 @@ mod tests {
             Err(EngineError::NoWindow(why)) => assert_eq!(why, "game.exe has no window open."),
             other => panic!("{other:?}"),
         }
+    }
+
+    #[test]
+    fn points_sharing_a_millisecond_are_spread_across_it() {
+        let p = |t| PathPoint { x: 0, y: 0, t };
+        assert_eq!(spread_within_ms(&[p(0), p(0), p(1), p(1), p(1), p(1), p(3)]), [0.0, 0.5, 1.0, 1.25, 1.5, 1.75, 3.0]);
+    }
+
+    /// A 2000 Hz mouse makes a point every half millisecond: every one is
+    /// replayed, each at its own moment, not in bursts at whole milliseconds.
+    #[test]
+    fn every_point_of_a_2000_hz_path_is_replayed_on_time() {
+        let f = Arc::new(FakeInput::with_cursor(0, 0));
+        let mut e = Engine::new(f.clone(), Some(1));
+        // 200 points, half a millisecond apart: 100 ms (t is in ms, so the
+        // half-millisecond points are spread by stretching 50 ms to 100).
+        let path: Vec<PathPoint> = (0..200).map(|i| PathPoint { x: i, y: 0, t: i as u32 / 4 }).collect();
+        let started = std::time::Instant::now();
+        e.run(&mac(vec![path_move(199, 0, 100, path)]), &CancelToken::new()).unwrap();
+        let moves: Vec<std::time::Instant> =
+            f.timeline().into_iter().filter(|(_, ev)| matches!(ev, Event::Move(..))).map(|(at, _)| at).collect();
+        assert_eq!(moves.len(), 201, "every point, then the target");
+        let took = moves[moves.len() - 1] - started;
+        assert!(took >= Duration::from_millis(95) && took <= Duration::from_millis(140), "{took:?}");
+        // Halfway through the path is halfway through the time, give or take.
+        let mid = moves[100] - started;
+        assert!(mid >= Duration::from_millis(45) && mid <= Duration::from_millis(70), "{mid:?}");
+    }
+
+    /// Windows repeats a key the user holds, never one a program holds, so
+    /// the engine repeats it itself to replay the hold as it was.
+    #[test]
+    fn a_held_key_repeats_the_way_it_was_recorded() {
+        let (f, mut e) = engine();
+        let held = Step::Key {
+            id: "w".into(),
+            shuffle: false,
+            key: key(0x57),
+            action: KeyAction::Down,
+            modifiers: vec![],
+            hold_ms: Jitter::exact(0),
+            repeat: Some(KeyRepeat { delay_ms: 40, every_ms: 10 }),
+        };
+        let up = Step::Key {
+            id: "wu".into(),
+            shuffle: false,
+            key: key(0x57),
+            action: KeyAction::Up,
+            modifiers: vec![],
+            hold_ms: Jitter::exact(0),
+            repeat: None,
+        };
+        let m = mac(vec![held, Step::Wait { id: "p".into(), shuffle: false, ms: Jitter::exact(100) }, up]);
+        e.run(&m, &CancelToken::new()).unwrap();
+        let downs = f.events().iter().filter(|ev| matches!(ev, Event::Key { down: true, .. })).count();
+        // One press, then about six repeats in the 100 ms wait.
+        assert!((5..=9).contains(&downs), "{downs} presses of a held key");
+        assert_eq!(f.events().iter().filter(|ev| matches!(ev, Event::Key { down: false, .. })).count(), 1);
+        assert!(f.still_held().is_empty());
+    }
+
+    /// Repeats keep to their schedule: each one at its own moment from the
+    /// press, not a timer's late wake-up after the one before (that lost a
+    /// fraction of a millisecond a repeat, adding up while the key was held).
+    #[test]
+    fn a_held_keys_repeats_do_not_drift() {
+        let (f, mut e) = engine();
+        let k = |action, repeat| Step::Key {
+            id: "k".into(),
+            shuffle: false,
+            key: key(0x57),
+            action,
+            modifiers: vec![],
+            hold_ms: Jitter::exact(0),
+            repeat,
+        };
+        let wait = Step::Wait { id: "p".into(), shuffle: false, ms: Jitter::exact(330) };
+        let m = mac(vec![k(KeyAction::Down, Some(KeyRepeat { delay_ms: 20, every_ms: 5 })), wait, k(KeyAction::Up, None)]);
+        e.run(&m, &CancelToken::new()).unwrap();
+        let downs: Vec<std::time::Instant> =
+            f.timeline().into_iter().filter(|(_, ev)| matches!(ev, Event::Key { down: true, .. })).map(|(at, _)| at).collect();
+        // The press, then a repeat at 20, 25, ... 320 ms: the 61st is due at
+        // 320 ms.
+        assert!(downs.len() >= 62, "{} presses", downs.len());
+        let off = downs[61].duration_since(downs[0]).as_secs_f64() * 1000.0 - 320.0;
+        assert!(off.abs() < 3.0, "the 61st repeat was {off:.2} ms off its moment");
+    }
+
+    #[test]
+    fn a_held_key_without_a_recorded_repeat_is_pressed_once() {
+        let (f, mut e) = engine();
+        let down = Step::Key {
+            id: "d".into(),
+            shuffle: false,
+            key: key(0x57),
+            action: KeyAction::Down,
+            modifiers: vec![],
+            hold_ms: Jitter::exact(0),
+            repeat: None,
+        };
+        let m = mac(vec![down, Step::Wait { id: "p".into(), shuffle: false, ms: Jitter::exact(60) }]);
+        e.run(&m, &CancelToken::new()).unwrap();
+        assert_eq!(f.events().iter().filter(|ev| matches!(ev, Event::Key { down: true, .. })).count(), 1);
+    }
+
+    #[test]
+    fn a_recorded_scroll_turns_the_wheel_tick_by_tick_with_its_timing() {
+        let (f, mut e) = engine();
+        let m = mac(vec![Step::Scroll {
+            id: "s".into(),
+            shuffle: false,
+            amount: -1,
+            axis: ScrollAxis::Vertical,
+            at: Some((10, 20)),
+            ticks: vec![
+                WheelTick { t: 0, delta: -30 },
+                WheelTick { t: 20, delta: -30 },
+                WheelTick { t: 40, delta: -60 },
+            ],
+        }]);
+        let before = std::time::Instant::now();
+        e.run(&m, &CancelToken::new()).unwrap();
+        assert_eq!(
+            f.events().iter().filter(|ev| matches!(ev, Event::ScrollRaw(..))).cloned().collect::<Vec<_>>(),
+            vec![
+                Event::ScrollRaw(ScrollAxis::Vertical, -30, Some((10, 20))),
+                Event::ScrollRaw(ScrollAxis::Vertical, -30, None),
+                Event::ScrollRaw(ScrollAxis::Vertical, -60, None),
+            ]
+        );
+        assert!(before.elapsed() >= Duration::from_millis(35), "the ticks kept their timing");
+    }
+
+    #[test]
+    fn a_scroll_without_ticks_still_scrolls_its_notches_at_once() {
+        let (f, mut e) = engine();
+        let m = mac(vec![Step::Scroll {
+            id: "s".into(),
+            shuffle: false,
+            amount: -3,
+            axis: ScrollAxis::Vertical,
+            at: None,
+            ticks: Vec::new(),
+        }]);
+        e.run(&m, &CancelToken::new()).unwrap();
+        assert_eq!(f.events(), vec![Event::Scroll(ScrollAxis::Vertical, -3, None)]);
     }
 
     #[test]
@@ -1595,6 +2135,7 @@ mod tests {
             amount: -1,
             axis: ScrollAxis::Vertical,
             at: None,
+            ticks: Vec::new(),
         }]);
         m.repeat = Repeat::Forever;
         let cancel = CancelToken::new();
@@ -1646,6 +2187,7 @@ mod tests {
                 dy: 0,
                 coord_jitter_px: 12,
                 move_duration_ms: 0,
+                path: Vec::new(),
                 capture: None,
             }]);
             e.run(&m, &CancelToken::new()).unwrap();
@@ -1689,6 +2231,7 @@ mod tests {
                 dy: 0,
                 coord_jitter_px: 20,
                 move_duration_ms: 0,
+                path: Vec::new(),
                 capture: None,
             }]);
             e.run(&m, &CancelToken::new()).unwrap();
@@ -1710,6 +2253,7 @@ mod tests {
             dy: 0,
             coord_jitter_px: 0,
             move_duration_ms: 0,
+            path: Vec::new(),
             capture: None,
         }]);
         e.run(&m, &CancelToken::new()).unwrap();
@@ -1730,6 +2274,7 @@ mod tests {
             dy: 0,
             coord_jitter_px: 0,
             move_duration_ms: 40,
+            path: Vec::new(),
             capture: None,
         }]);
         e.run(&m, &CancelToken::new()).unwrap();
@@ -1749,6 +2294,7 @@ mod tests {
             action: KeyAction::Down,
             modifiers: vec![],
             hold_ms: Jitter::exact(0),
+            repeat: None,
         }]);
         *f.fail_with.lock().unwrap() = Some("uipi");
         let r = e.run(&m, &CancelToken::new());

@@ -270,7 +270,13 @@ export function BulkEdit({
                 help="Pauses before pressing and after releasing. Raise it if clicks get dropped."
                 values={of("click").map((s) => s.settle_ms)}
                 onChange={(part, n) =>
-                  apply("click", `settle:${part}`, (s) => ({ ...s, settle_ms: setJitterPart(s.settle_ms, part, n) }))
+                  // One settle typed for them all is the rest on both sides,
+                  // recorded clicks' own rest after the release included.
+                  apply("click", `settle:${part}`, (s) => ({
+                    ...s,
+                    settle_ms: setJitterPart(s.settle_ms, part, n),
+                    dwell_ms: part === "base" ? undefined : s.dwell_ms,
+                  }))
                 }
               />
             </>
@@ -338,7 +344,7 @@ export function BulkEdit({
                 label="Notches"
                 min={-1000}
                 value={shared(of("scroll"), (s) => s.amount)}
-                onChange={(amount) => apply("scroll", "amount", (s) => ({ ...s, amount }))}
+                onChange={(amount) => apply("scroll", "amount", (s) => ({ ...s, amount, ticks: undefined }))}
               />
               <span className="text-xs text-muted-foreground">notches</span>
             </Field>

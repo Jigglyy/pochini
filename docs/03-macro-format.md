@@ -98,7 +98,9 @@ just before it; the editor's "Lands at" readout shows the unshuffled first pass.
   "coord_jitter_px": 0,          // radius of a uniform disc around (x,y)
   "hold_ms": { "base": 25, "jitter": 15 },   // gap between down and up
   "settle_ms": { "base": 50, "jitter": 25 }, // pause before the press AND after the release
+  "dwell_ms": { "base": 2, "jitter": 0 },    // optional: the pause after the release instead
   "move_duration_ms": 0,         // 0 = teleport; >0 = interpolated move, see below
+  "path": [{ "x": 30, "y": 25, "t": 0 }, { "x": 120, "y": 60, "t": 400 }], // optional, see below
   "modifiers": ["shift"],        // held while clicking (any of ctrl | alt | shift | win)
   "held_key": null,              // or a key object like `key` steps use, held the same way
   "capture": {                   // metadata from when the coordinate was picked
@@ -122,6 +124,15 @@ held and abandoned. The 50–75 ms default spans at least two frames at 60 fps. 
 before this field existed pick up the default on load; no schema bump, since it is an
 additive field with a serde default.
 
+`dwell_ms` (optional, absent when not set) is the pause after the release when it differs
+from the one before the press; `settle_ms` is then only the pause before. Record mode sets
+both from what the user did: how long the cursor rested on the target before the press, and
+how soon it set off again after the release (when that is under 15 ms; a longer rest is a
+Wait step and `dwell_ms` is 0). One value for both sides used to be cut to the shorter of
+the two, and as people set off again almost at once after letting go, a replay moved late
+and arrived just as it pressed. Typing one settle for several clicks at once drops it.
+Additive with a default, so no schema bump.
+
 `modifiers` and `held_key` are held for this step only ("While holding" in the editor): pressed
 after the cursor arrives (so nothing sees Shift+move), held through the settle on both sides of
 the press, and released after the second settle, `held_key` first, then the modifiers in
@@ -134,6 +145,24 @@ they existed.
 `move_duration_ms > 0` interpolates the cursor over that many milliseconds instead of jumping.
 Some targets only register hover state on real movement, and some reject a click that arrives
 in the same frame the cursor appeared. Curve: ease-in-out, with a small per-point jitter.
+
+`path` (optional, absent when empty) is the way the cursor went to this point when the step
+was recorded: points in virtual-desktop pixels, `t` ms after the cursor set off. Record mode
+keeps every report the mouse makes (a 2000 Hz mouse makes one every half millisecond), less
+repeats of the same position. It is saved packed, as a string: `"1:"`, then URL-safe base64
+without padding of each point's change from the one before (x, y, t) as zigzag LEB128 varints
+(about four characters a point; `model::packed_path`, read back by `src/lib/path.ts`). A plain
+list of `{x, y, t}` objects is read too. Points that share a millisecond replay spread evenly
+across it, which puts a 2000 Hz recording's reports back within about a quarter of a
+millisecond. When it has two or more points and
+`move_duration_ms > 0`, the engine replays it instead of the eased glide, on the recording's
+own timing stretched to `move_duration_ms` (so changing the travel speeds it up or slows it
+down). The path is bent to fit: each point is shifted by the difference between the recorded
+start and where the cursor really is, fading out along the path, and by the difference between
+the recorded end and the step's point (jitter and anchors included), fading in. Replayed from
+where it was recorded it is exact; with a moved target it still arrives without a jump. The
+editor's "Straight line instead" drops it. Additive with a serde default: no schema bump, and
+an older Pochini reading the file simply glides.
 
 `anchor` picks what the step aims at. `"fixed"` (the default) uses the step's own `x`/`y`
 and ignores `dx`/`dy`.
@@ -170,16 +199,23 @@ window open. `x`/`y` are ignored.
 ### `move`
 
 Same shape as `click` minus `button` / `action` / `hold_ms` / `settle_ms`, including
-`anchor`, `dx` and `dy`.
+`anchor`, `dx`, `dy` and `path`.
 
 ### `scroll`
 
 ```jsonc
-{ "id": "…", "type": "scroll", "amount": -3, "axis": "vertical", "at": null }
+{ "id": "…", "type": "scroll", "amount": -3, "axis": "vertical", "at": null,
+  "ticks": [{ "t": 0, "delta": -30 }, { "t": 20, "delta": -90 }] }   // optional, see below
 ```
 
 `amount` is in notches (multiplied by `WHEEL_DELTA` = 120). `at` is an optional `{x, y}`;
 `null` scrolls at the current cursor position.
+
+`ticks` (optional, absent when empty) is a recorded scroll: each turn of the wheel in raw wheel
+units (`delta`, 120 a notch; a smooth wheel or a touchpad turns by less) and `t` ms after the
+first. When present, the engine replays the turns one by one on their own timing (the first at
+`at`) instead of `amount` notches at once; `amount` is then only the rounded total, shown in the
+editor. Typing an amount, or "Plain scroll instead", drops them.
 
 ### `key`
 
@@ -189,12 +225,19 @@ Same shape as `click` minus `button` / `action` / `hold_ms` / `settle_ms`, inclu
   "key": { "vk": 65, "scancode": 30, "extended": false, "label": "A" },
   "action": "press",             // press | down | up
   "modifiers": ["shift"],        // held for the duration of this step only
-  "hold_ms": { "base": 25, "jitter": 15 }
+  "hold_ms": { "base": 25, "jitter": 15 },
+  "repeat": { "delay_ms": 500, "every_ms": 33 }   // optional, see below
 }
 ```
 
 Modifiers listed here are pressed before and released after, in reverse order. As with mouse
 buttons, `down` without a matching `up` is tracked and force-released at macro end.
+
+`repeat` (optional) is how a recorded key repeated while held. Windows repeats a key a person
+holds but never one a program holds, so the engine does it: from a `press` or `down`, a key-down
+again after `delay_ms` and then every `every_ms`, until the step's own release (a `press`) or
+the `up` step (or the end of the run). Record mode takes both from the repeats Windows sent
+(Windows' usual 33 ms when only one was caught). "Don't repeat" in the editor drops it.
 
 ### `text`
 

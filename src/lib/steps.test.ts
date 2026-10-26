@@ -42,11 +42,45 @@ describe("summarize", () => {
     expect(summarize(scroll(-1, "horizontal"))).toBe("Scroll left 1");
   });
 
+  it("says when a click or move follows a recorded path", () => {
+    // Three points, packed as the backend saves them (lib/path.ts).
+    const path = "1:PDIAZB6QA1AokAM";
+    expect(summarize(click({ x: 10, y: 20, modifiers: ["shift"], move_duration_ms: 300, path }))).toBe(
+      "Click at (10, 20) holding Shift (recorded path)",
+    );
+    const move: Step = { ...(blankStep("move") as Extract<Step, { type: "move" }>), x: 10, y: 20, move_duration_ms: 300, path };
+    expect(summarize(move)).toBe("Move to (10, 20) over 300 ms (recorded path)");
+  });
+
   it("shortens long text and shows wait ranges", () => {
     const text = (value: string): Step => ({ type: "text", id: "t", shuffle: false, value, per_char_ms: { base: 1, jitter: 0 } });
     expect(summarize(text(""))).toBe("Type text");
     expect(summarize(text("a".repeat(40)))).toBe(`Type "${"a".repeat(32)}..."`);
     expect(summarize({ type: "wait", id: "w", shuffle: false, ms: { base: 50, jitter: 25 } })).toBe("Wait 50-75 ms");
+  });
+});
+
+describe("recorded scrolls", () => {
+  const recorded: Step = {
+    type: "scroll",
+    id: "s",
+    shuffle: false,
+    amount: -1,
+    axis: "vertical",
+    at: null,
+    ticks: [
+      { t: 0, delta: -30 },
+      { t: 20, delta: -30 },
+      { t: 45, delta: -120 },
+    ],
+  };
+
+  it("say how far they really turned, fractions of a notch included", () => {
+    expect(summarize(recorded)).toBe("Scroll down 1.5 (recorded)");
+  });
+
+  it("take as long as their turns did", () => {
+    expect(stepRange(recorded)).toEqual([45, 45]);
   });
 });
 
@@ -56,6 +90,8 @@ describe("stepRange", () => {
     expect(stepRange(click({ action: "double" }))).toEqual([36, 53]);
     expect(stepRange(click({ action: "click" }))).toEqual([16, 23]);
     expect(stepRange(click({ action: "down" }))).toEqual([6, 8]);
+    // A recorded click's own rest after the release replaces the second settle.
+    expect(stepRange(click({ action: "click", dwell_ms: { base: 0, jitter: 0 } }))).toEqual([13, 19]);
   });
 
   it("waits once per UTF-16 unit of typed text", () => {

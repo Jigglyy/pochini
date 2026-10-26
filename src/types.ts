@@ -24,6 +24,17 @@ export type KeyRef = {
 
 export type Hotkey = { key: KeyRef; modifiers: Modifier[] };
 
+/** One point of a recorded mouse path (model.rs PathPoint): where the cursor
+ *  was, `t` ms after it set off. Steps carry paths packed (lib/path.ts). */
+export type PathPoint = { x: number; y: number; t: number };
+
+/** How a recorded key repeated while held (model.rs KeyRepeat). */
+export type KeyRepeat = { delay_ms: number; every_ms: number };
+
+/** One wheel turn of a recorded scroll: `delta` wheel units (120 a notch),
+ *  `t` ms after the first (model.rs WheelTick). */
+export type WheelTick = { t: number; delta: number };
+
 export type CaptureMeta = {
   monitor: string;
   monitor_rect: [number, number, number, number];
@@ -47,7 +58,14 @@ export type Step =
       coord_jitter_px: number;
       hold_ms: Jitter;
       settle_ms: Jitter;
+      /** The pause after the release when it is not `settle_ms` (a recorded
+       *  click: as long as the user stayed). Absent: `settle_ms` both sides. */
+      dwell_ms?: Jitter;
       move_duration_ms: number;
+      /** The way the cursor went here when recorded, replayed over
+       *  `move_duration_ms`, packed (decodePath in lib/path.ts); absent or
+       *  empty: a straight glide. */
+      path?: string;
       /** Held from the cursor's arrival until the release has settled. */
       modifiers: Modifier[];
       /** Any other key held the same way. */
@@ -65,6 +83,7 @@ export type Step =
       dy: number;
       coord_jitter_px: number;
       move_duration_ms: number;
+      path?: string;
       capture: CaptureMeta | null;
     }
   | {
@@ -74,6 +93,8 @@ export type Step =
       amount: number;
       axis: ScrollAxis;
       at: [number, number] | null;
+      /** A recorded scroll, replayed turn by turn instead of `amount` at once. */
+      ticks?: WheelTick[];
     }
   | {
       type: "key";
@@ -83,6 +104,8 @@ export type Step =
       action: KeyActionKind;
       modifiers: Modifier[];
       hold_ms: Jitter;
+      /** Repeats while held, as the recorded key did. */
+      repeat?: KeyRepeat;
     }
   | { type: "text"; id: string; shuffle: boolean; value: string; per_char_ms: Jitter }
   | { type: "wait"; id: string; shuffle: boolean; ms: Jitter }

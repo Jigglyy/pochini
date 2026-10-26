@@ -6,6 +6,49 @@ Each version is built with `npm run release` into `release/Pochini-<version>.exe
 
 ## Unreleased
 
+### Added
+
+- **Record steps replays what you did exactly.** Every press and release happens when it did
+  and for as long as it did, and the mouse goes the way it went:
+  - every report your mouse makes is kept, all 2000 a second on a 2000 Hz mouse, and replayed
+    point by point to a fraction of a millisecond; paths are saved packed, so a long recording
+    stays small;
+  - a recorded click (and the release of a drag) follows the path your mouse took, with the
+    same travel time; it rests on the target before the press as long as you did, and leaves
+    as soon after the release as you did (Rest before and Rest after in the editor);
+    movement that stops short, or comes before a key press, is a Move step of its own, and a
+    recording that begins with movement begins where your mouse was, even when you delete
+    the steps before the first one you kept;
+  - a key held while you do other things (W held while clicking or moving) is held down and
+    released around them, instead of being pressed and let go first; long holds are kept in
+    full (they were cut to one second);
+  - a held key repeats the way it did (Windows repeats only keys a person holds, so holding
+    Backspace or a letter in a text box used to replay as one press);
+  - Ctrl, Alt, Shift and Win go down and come up at the moments you pressed and released them,
+    as their own steps;
+  - scrolling keeps every turn of the wheel with its timing, fractions of a notch from a
+    smooth wheel or a touchpad included;
+  - timing comes from a precise clock and is kept to the millisecond, short and long pauses
+    alike (a gap too short for a Wait step used to be added to the next one, so the steps
+    before it ran early); recorded clicks add no pause of their own (each used to add 40 ms,
+    so replays ran slow), and holds and rests end to a fraction of a millisecond;
+  Changing a step's Travel speeds its path up or slows it down, and "Straight line instead"
+  goes back to a straight glide.
+
+### Fixed
+
+- **Macros keep their pace.** Every pause woke up a fraction of a millisecond late and
+  sending input takes a moment too, and it added up: a recorded macro ran about 2 ms late per
+  click (74 ms after 40 clicks). Wait steps now make up the time lost before them, so every
+  action lands on its moment (within a millisecond, measured). Pauses inside a click (settle,
+  hold) still run in full, and now end on time to a fraction of a millisecond. A held key's
+  repeats keep to their schedule too.
+- **The panic key now stops a run during a recording or a Pick.** It only ended the recording
+  or the pick, so a Test, dry run or macro started meanwhile kept going.
+- **A shift-click right after a plain click on the same spot lost its Shift**: the two were
+  taken for a double click. Clicks now only join into a double click when they hold the same
+  keys and the mouse did not go anywhere in between.
+
 ## 0.16.0 - 2026-10-26
 
 ### Changed

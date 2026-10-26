@@ -851,7 +851,7 @@ export function MacroEditor({
               <TooltipContent>
                 {recording
                   ? `Or press ${panicKey}`
-                  : "Records your clicks, keys and wheel turns in any app as steps, with the pauses between them"}
+                  : "Records what you do in any app (clicks, keys held and pressed, wheel turns, the way the mouse moves) as steps that replay it exactly"}
               </TooltipContent>
             </Tooltip>
           </div>

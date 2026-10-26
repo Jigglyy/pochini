@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Page } from "@playwright/test";
 import { drag, expect, test } from "./_launch";
+import { decodePath } from "../src/lib/path";
 import { clickAt, macro, wait } from "./data";
 
 // The step editor: dragging steps, the arrow buttons, and offset targets.
@@ -297,15 +298,183 @@ test.describe("record mode", () => {
     await expect(page.getByRole("status").filter({ hasText: "Recording." })).toContainText("Press Esc or Stop recording");
     await page.getByRole("button", { name: "Stop recording" }).click();
 
-    await expect(page.getByText("Recorded 3 steps.")).toBeVisible();
+    // Ctrl is held around C, each at the moment it went down and came up.
+    await expect(page.getByText("Recorded 7 steps.")).toBeVisible();
     const headers = page.locator('[data-step-id] [role="button"][aria-expanded]');
-    await expect(headers).toHaveCount(3);
+    await expect(headers).toHaveCount(7);
     await expect(headers.nth(0)).toContainText("Click at (10, 20)");
-    await expect(headers.nth(1)).toContainText("Wait 760 ms"); // from the release to the C press
-    await expect(headers.nth(2)).toContainText("Press Ctrl+C");
+    await expect(headers.nth(1)).toContainText("Wait 740 ms"); // from the release to Ctrl going down
+    await expect(headers.nth(2)).toContainText("Hold Ctrl");
+    await expect(headers.nth(3)).toContainText("Wait 20 ms");
+    await expect(headers.nth(4)).toContainText("Press C");
+    await expect(headers.nth(5)).toContainText("Wait 20 ms");
+    await expect(headers.nth(6)).toContainText("Release Ctrl");
 
-    await page.getByRole("status").filter({ hasText: "Recorded 3 steps." }).getByRole("button", { name: "Undo" }).click();
+    await page.getByRole("status").filter({ hasText: "Recorded 7 steps." }).getByRole("button", { name: "Undo" }).click();
     await expect(headers).toHaveCount(0);
+  });
+});
+
+test.describe("recording the way the mouse went", () => {
+  // A click; then the mouse travels (300 to 700 ms after it) and Shift goes
+  // down (left Shift, as the hook reports it) for a shift-click there.
+  const events = [
+    { kind: "button", button: "left", down: true, x: 10, y: 20, t: 1000 },
+    { kind: "button", button: "left", down: false, x: 10, y: 20, t: 1060 },
+    { kind: "move", x: 30, y: 25, t: 1300 },
+    { kind: "move", x: 80, y: 40, t: 1500 },
+    { kind: "move", x: 120, y: 60, t: 1700 },
+    { kind: "key", vk: 0xa0, scan: 0x2a, extended: false, down: true, t: 1720 },
+    { kind: "button", button: "left", down: true, x: 120, y: 60, t: 1760 },
+    { kind: "button", button: "left", down: false, x: 120, y: 60, t: 1800 },
+    { kind: "key", vk: 0xa0, scan: 0x2a, extended: false, down: false, t: 1850 },
+  ];
+  test.use({ seed: { macros: [macro("Traced")], files: { "record.json": JSON.stringify(events) } } });
+
+  test("the movement keeps its path and travel time, and Shift is held when it was", async ({ app: { page, dataDir } }) => {
+    await page.getByRole("button", { name: /^Traced/ }).click();
+    await page.getByRole("button", { name: "Record steps" }).click();
+    await page.getByRole("button", { name: "Stop recording" }).click();
+
+    const headers = page.locator("[data-step-id] [data-step-header]");
+    await expect(headers).toHaveCount(9);
+    await expect(headers.nth(0)).toContainText("Click at (10, 20)");
+    // The mouse set off 240 ms after the click ended and took 400 ms.
+    await expect(headers.nth(1)).toContainText("Wait 240 ms");
+    await expect(headers.nth(2)).toContainText("Move to (120, 60) over 400 ms (recorded path)");
+    // Shift went down 20 ms after it arrived, the click 40 ms after that,
+    // and Shift came up 50 ms after the click.
+    await expect(headers.nth(3)).toContainText("Wait 20 ms");
+    await expect(headers.nth(4)).toContainText("Hold LShift");
+    await expect(headers.nth(5)).toContainText("Wait 40 ms");
+    await expect(headers.nth(6)).toContainText("Click at (120, 60)");
+    await expect(headers.nth(7)).toContainText("Wait 50 ms");
+    await expect(headers.nth(8)).toContainText("Release LShift");
+
+    await headers.nth(2).click();
+    const move = page.locator("[data-step-id]").nth(2);
+    await expect(move.getByRole("spinbutton", { name: "Travel" })).toHaveValue("400");
+    await expect(move.getByText("Follows the recorded path (3 points).", { exact: false })).toBeVisible();
+
+    await save(page);
+    const saved = await savedSteps(dataDir);
+    expect(saved[2]).toMatchObject({ type: "move", move_duration_ms: 400 });
+    // Saved packed (lib/path.ts reads it).
+    expect(decodePath(saved[2].path as string)).toEqual([
+      { x: 30, y: 25, t: 0 },
+      { x: 80, y: 40, t: 200 },
+      { x: 120, y: 60, t: 400 },
+    ]);
+    expect([saved[4].action, saved[8].action]).toEqual(["down", "up"]);
+
+    // Straight line instead drops the path, and the travel stays.
+    await move.getByRole("button", { name: "Straight line instead" }).click();
+    await expect(headers.nth(2)).not.toContainText("recorded path");
+    await save(page);
+    expect((await savedSteps(dataDir))[2].path).toBeUndefined();
+  });
+});
+
+test.describe("recording a smooth wheel", () => {
+  // Turns of less than a notch (a free-spinning wheel or a touchpad).
+  const events = [
+    { kind: "wheel", axis: "vertical", delta: -30, x: 40, y: 50, t: 1000 },
+    { kind: "wheel", axis: "vertical", delta: -30, x: 40, y: 50, t: 1020 },
+    { kind: "wheel", axis: "vertical", delta: -120, x: 40, y: 50, t: 1045 },
+  ];
+  test.use({ seed: { macros: [macro("Wheel")], files: { "record.json": JSON.stringify(events) } } });
+
+  test("keeps every turn, fractions of a notch included, with its timing", async ({ app: { page, dataDir } }) => {
+    await page.getByRole("button", { name: /^Wheel/ }).click();
+    await page.getByRole("button", { name: "Record steps" }).click();
+    await page.getByRole("button", { name: "Stop recording" }).click();
+
+    const headers = page.locator("[data-step-id] [data-step-header]");
+    await expect(headers).toHaveCount(1);
+    await expect(headers.nth(0)).toContainText("Scroll down 1.5 (recorded)");
+
+    await save(page);
+    expect((await savedSteps(dataDir))[0].ticks).toEqual([
+      { t: 0, delta: -30 },
+      { t: 20, delta: -30 },
+      { t: 45, delta: -120 },
+    ]);
+  });
+});
+
+test.describe("recording a key held through other actions", () => {
+  // W goes down, a click happens half a second later, W comes up a second in
+  // (Windows repeats the held key meanwhile).
+  const events = [
+    { kind: "key", vk: 0x57, scan: 0x11, extended: false, down: true, t: 1000 },
+    { kind: "key", vk: 0x57, scan: 0x11, extended: false, down: true, t: 1500 },
+    { kind: "button", button: "left", down: true, x: 40, y: 50, t: 1500 },
+    { kind: "button", button: "left", down: false, x: 40, y: 50, t: 1550 },
+    { kind: "key", vk: 0x57, scan: 0x11, extended: false, down: false, t: 2000 },
+  ];
+  test.use({ seed: { macros: [macro("Held")], files: { "record.json": JSON.stringify(events) } } });
+
+  test("it is held down and released around the click, each at its moment", async ({ app: { page, dataDir } }) => {
+    await page.getByRole("button", { name: /^Held/ }).click();
+    await page.getByRole("button", { name: "Record steps" }).click();
+    await page.getByRole("button", { name: "Stop recording" }).click();
+
+    const headers = page.locator("[data-step-id] [data-step-header]");
+    await expect(headers).toHaveCount(5);
+    await expect(headers.nth(0)).toContainText("Hold W");
+    await expect(headers.nth(1)).toContainText("Wait 500 ms");
+    await expect(headers.nth(2)).toContainText("Click at (40, 50)");
+    await expect(headers.nth(3)).toContainText("Wait 450 ms");
+    await expect(headers.nth(4)).toContainText("Release W");
+
+    await save(page);
+    const saved = await savedSteps(dataDir);
+    expect(saved.map((s) => [s.type, s.action])).toEqual([
+      ["key", "down"],
+      ["wait", undefined],
+      ["click", "click"],
+      ["wait", undefined],
+      ["key", "up"],
+    ]);
+    // The click holds for as long as it was held, with no pause added.
+    expect(saved[2]).toMatchObject({ hold_ms: { base: 50, jitter: 0 }, settle_ms: { base: 0, jitter: 0 } });
+    // W repeated half a second in, as Windows repeats a held key: the replay
+    // repeats it the same way (at Windows' usual pace after the first).
+    expect(saved[0].repeat).toEqual({ delay_ms: 500, every_ms: 33 });
+  });
+});
+
+test.describe("recording a click you rested on", () => {
+  // The mouse arrives, rests 30 ms, clicks, and sets off again 2 ms after
+  // the release.
+  const events = [
+    { kind: "move", x: 60, y: 50, t: 1000 },
+    { kind: "move", x: 80, y: 50, t: 1020 },
+    { kind: "move", x: 100, y: 50, t: 1040 },
+    { kind: "button", button: "left", down: true, x: 100, y: 50, t: 1070 },
+    { kind: "button", button: "left", down: false, x: 100, y: 50, t: 1120 },
+    { kind: "move", x: 105, y: 50, t: 1122 },
+    { kind: "move", x: 140, y: 50, t: 1150 },
+    { kind: "button", button: "left", down: true, x: 140, y: 50, t: 1180 },
+    { kind: "button", button: "left", down: false, x: 140, y: 50, t: 1230 },
+  ];
+  test.use({ seed: { macros: [macro("Rested")], files: { "record.json": JSON.stringify(events) } } });
+
+  test("keeps the rest before the press and after the release apart", async ({ app: { page, dataDir } }) => {
+    await page.getByRole("button", { name: /^Rested/ }).click();
+    await page.getByRole("button", { name: "Record steps" }).click();
+    await page.getByRole("button", { name: "Stop recording" }).click();
+
+    const headers = page.locator("[data-step-id] [data-step-header]");
+    await expect(headers).toHaveCount(3);
+    await headers.nth(1).click();
+    const first = page.locator("[data-step-id]").nth(1);
+    await expect(first.getByRole("spinbutton", { name: "Rest before", exact: true })).toHaveValue("30");
+    await expect(first.getByRole("spinbutton", { name: "Rest after", exact: true })).toHaveValue("2");
+
+    await save(page);
+    const saved = await savedSteps(dataDir);
+    expect(saved[1]).toMatchObject({ settle_ms: { base: 30, jitter: 0 }, dwell_ms: { base: 2, jitter: 0 } });
   });
 });
 

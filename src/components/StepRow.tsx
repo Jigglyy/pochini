@@ -12,6 +12,7 @@ import {
   ListPlus,
   Pipette,
   RotateCcw,
+  Route,
   Shuffle,
   SquareCheck,
   Trash2,
@@ -47,9 +48,10 @@ import {
   type ColorKind,
 } from "@/lib/colors";
 import { cancelPick, pixelAt, windowOrigin } from "@/lib/ipc";
+import { decodePath } from "@/lib/path";
 import { pickPoint } from "@/lib/pick";
 import { cn } from "@/lib/utils";
-import { fmtAim, summarize, type Aim, type NewStepKind } from "@/lib/steps";
+import { fmtAim, hasPath, summarize, type Aim, type NewStepKind } from "@/lib/steps";
 import type { Anchor, Guard, Modifier, Step } from "@/types";
 import { CoordPicker } from "./CoordPicker";
 import { JitterField } from "./JitterField";
@@ -627,7 +629,12 @@ export function StepFields({
           </Field>
           <Field
             label="Travel"
-            help="0 jumps straight to the target. Above 0 glides the cursor there over that many milliseconds; some targets only react to real movement."
+            help="0 jumps straight to the target. Above 0 glides the cursor there over that many milliseconds; some targets only react to real movement. A recorded step follows the way your mouse went instead, over the same time."
+            hint={
+              hasPath(step)
+                ? `Follows the recorded path (${decodePath(step.path).length} points). Changing the travel speeds it up or slows it down.`
+                : undefined
+            }
           >
             <Input
               type="number"
@@ -638,6 +645,12 @@ export function StepFields({
               onChange={(e) => set({ move_duration_ms: Math.max(0, +e.target.value || 0) })}
             />
             <span className="text-xs text-muted-foreground">ms</span>
+            {hasPath(step) && (
+              <Button variant="outline" onClick={() => set({ path: undefined })}>
+                <Route />
+                Straight line instead
+              </Button>
+            )}
           </Field>
         </>
       )}
@@ -687,23 +700,49 @@ export function StepFields({
             value={step.hold_ms}
             onChange={(hold_ms) => set({ hold_ms })}
           />
-          <JitterField
-            label="Settle"
-            help="Pauses before pressing and after releasing, so the target sees the cursor resting on it. Raise it if clicks get dropped."
-            value={step.settle_ms}
-            onChange={(settle_ms) => set({ settle_ms })}
-          />
+          {step.dwell_ms ? (
+            <>
+              <JitterField
+                label="Rest before"
+                help="How long the cursor rests on the target before pressing, as recorded. Raise it if clicks get dropped."
+                value={step.settle_ms}
+                onChange={(settle_ms) => set({ settle_ms })}
+              />
+              <JitterField
+                label="Rest after"
+                help="How long the cursor stays after the release before moving on, as recorded."
+                value={step.dwell_ms}
+                onChange={(dwell_ms) => set({ dwell_ms })}
+              />
+            </>
+          ) : (
+            <JitterField
+              label="Settle"
+              help="Pauses before pressing and after releasing, so the target sees the cursor resting on it. Raise it if clicks get dropped."
+              value={step.settle_ms}
+              onChange={(settle_ms) => set({ settle_ms })}
+            />
+          )}
         </>
       )}
 
       {step.type === "scroll" && (
-        <Field label="Scroll" help="Notches of the mouse wheel. Negative scrolls down (or left), positive up (or right).">
+        <Field
+          label="Scroll"
+          help="Notches of the mouse wheel. Negative scrolls down (or left), positive up (or right). A recorded scroll turns the wheel the way you did, turn by turn; changing the notches makes it a plain scroll."
+          hint={
+            step.ticks?.length
+              ? `Turns the wheel as recorded: ${step.ticks.length} turn${step.ticks.length === 1 ? "" : "s"} over ${step.ticks[step.ticks.length - 1].t} ms.`
+              : undefined
+          }
+        >
           <Input
             type="number"
             aria-label="Notches"
             className="w-24 tabular-nums"
             value={step.amount}
-            onChange={(e) => set({ amount: +e.target.value || 0 })}
+            // An amount typed in replaces the recorded turns.
+            onChange={(e) => set({ amount: +e.target.value || 0, ticks: undefined })}
           />
           <span className="text-xs text-muted-foreground">notches</span>
           <Select value={step.axis} onValueChange={(v) => set({ axis: v as typeof step.axis })}>
@@ -715,6 +754,11 @@ export function StepFields({
               <SelectItem value="horizontal">Horizontal</SelectItem>
             </SelectContent>
           </Select>
+          {step.ticks?.length ? (
+            <Button variant="outline" onClick={() => set({ ticks: undefined })}>
+              Plain scroll instead
+            </Button>
+          ) : null}
         </Field>
       )}
 
@@ -747,6 +791,17 @@ export function StepFields({
             value={step.hold_ms}
             onChange={(hold_ms) => set({ hold_ms })}
           />
+          {step.repeat && step.action !== "up" && (
+            <Field
+              label="Repeat"
+              help="Windows repeats a key you hold, but never one a program holds, so Pochini repeats it the way it repeated when you recorded it (typing in a text box, holding Backspace)."
+              hint={`Repeats while held: first after ${step.repeat.delay_ms} ms, then every ${step.repeat.every_ms} ms.`}
+            >
+              <Button variant="outline" onClick={() => set({ repeat: undefined })}>
+                Don't repeat
+              </Button>
+            </Field>
+          )}
         </>
       )}
 

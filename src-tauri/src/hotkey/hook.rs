@@ -38,13 +38,13 @@ use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, DispatchMessageW, GetMessageW, KillTimer, PostThreadMessageW, SetTimer,
     SetWindowsHookExW, TranslateMessage, UnhookWindowsHookEx, HHOOK, KBDLLHOOKSTRUCT, LLKHF_EXTENDED,
     LLMHF_INJECTED, MSG, MSLLHOOKSTRUCT, WH_KEYBOARD_LL, WH_MOUSE_LL, WM_APP, WM_HOTKEY, WM_KEYDOWN,
-    WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEWHEEL,
+    WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL,
     WM_QUIT, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TIMER, WM_XBUTTONDOWN,
     WM_XBUTTONUP,
 };
 
 use super::bindings::BindingTable;
-use super::logic::{self, mod_bits, pick_click, KeyContext, KeyLogic, PickClick, Seen, SeenResult, Via};
+use super::logic::{self, mod_bits, pick_click, KeyContext, KeyLogic, PickClick, Seen, SeenResult, Via, CAPTURE_PANIC};
 use super::{Capture, HookStatus, TriggerEvent};
 use crate::input::{INJECTED, INJECT_STAMP};
 use crate::model::{Modifier, MouseButton, ScrollAxis};
@@ -346,6 +346,15 @@ fn on_windows_toggle() {
     }
 }
 
+/// When a recorded event happened, in ms on a precise clock. The events'
+/// own `time` is the system tick, which moves in steps of about 16 ms, so a
+/// replay timed by it was off by that much at every step. The callbacks run
+/// as the input arrives, so the moment they run is the moment it happened.
+fn rec_ms() -> u32 {
+    static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    START.get_or_init(std::time::Instant::now).elapsed().as_millis() as u32
+}
+
 unsafe extern "system" fn callback(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     // HC_ACTION == 0; anything else must be passed straight on.
     if code != 0 {
@@ -376,17 +385,20 @@ unsafe extern "system" fn callback(code: i32, wparam: WPARAM, lparam: LPARAM) ->
     let vk = k.vkCode as u16;
     let table = state.table.load();
 
-    // Record mode and click-to-pick: no hotkeys. The panic key ends them;
-    // in record mode every other key is reported. Nothing is swallowed.
+    // Record mode and click-to-pick: no hotkeys. The panic key ends them, and
+    // stops whatever runs, as it always does; in record mode every other key
+    // is reported. Nothing is swallowed.
     let capture = CAPTURE.load(Ordering::Relaxed);
     if capture != Capture::Off as u8 {
         if vk == table.panic_vk {
             if down {
-                let _ = state.tx.send(TriggerEvent::CaptureEnd);
+                for ev in CAPTURE_PANIC {
+                    let _ = state.tx.send(ev);
+                }
             }
         } else if capture == Capture::Record as u8 {
             let extended = k.flags.0 & LLKHF_EXTENDED.0 != 0;
-            let rec = Rec::Key { vk, scan: k.scanCode as u16, extended, down, t: k.time };
+            let rec = Rec::Key { vk, scan: k.scanCode as u16, extended, down, t: rec_ms() };
             let _ = state.tx.send(TriggerEvent::Recorded(rec));
         }
         return CallNextHookEx(None, code, wparam, lparam);
@@ -433,7 +445,7 @@ unsafe extern "system" fn mouse_callback(code: i32, wparam: WPARAM, lparam: LPAR
         return CallNextHookEx(None, code, wparam, lparam);
     }
     let msg = wparam.0 as u32;
-    let (x, y, t) = (m.pt.x, m.pt.y, m.time);
+    let (x, y, t) = (m.pt.x, m.pt.y, rec_ms());
     let xbutton = if (m.mouseData >> 16) & 0xFFFF == 2 { MouseButton::X2 } else { MouseButton::X1 };
     let button = match msg {
         WM_LBUTTONDOWN => Some((MouseButton::Left, true)),
@@ -464,12 +476,15 @@ unsafe extern "system" fn mouse_callback(code: i32, wparam: WPARAM, lparam: LPAR
     } else if capture == Capture::Record as u8 && !over_own_window(x, y) {
         let rec = match button {
             Some((button, down)) => Some(Rec::Button { button, down, x, y, t }),
+            // The way the mouse goes, report by report (the worker drops
+            // repeats of the same position).
+            None if msg == WM_MOUSEMOVE => Some(Rec::Move { x, y, t }),
             None if msg == WM_MOUSEWHEEL || msg == WM_MOUSEHWHEEL => {
+                // Wheel units as they come: 120 is a notch, a smooth wheel
+                // or a touchpad sends less, and the replay turns it the same.
                 let delta = (m.mouseData >> 16) as u16 as i16 as i32;
-                // A smooth wheel sends less than a notch at a time.
-                let notches = if delta.abs() >= 120 { delta / 120 } else { delta.signum() };
                 let axis = if msg == WM_MOUSEWHEEL { ScrollAxis::Vertical } else { ScrollAxis::Horizontal };
-                (notches != 0).then_some(Rec::Wheel { axis, notches, x, y, t })
+                (delta != 0).then_some(Rec::Wheel { axis, delta, x, y, t })
             }
             None => None,
         };

@@ -28,9 +28,9 @@ this app owns.
 ## Status
 
 Implemented and building. `src-tauri/` has the full Rust core (model, storage, input,
-hotkey, engine, IPC) with **208 passing unit tests**; `src/` is a ShadCN + Tailwind v4 UI
-styled after Kanbini (macro list, step editor, settings), with **98 Vitest tests** for its
-helpers and components, and **109 Playwright e2e tests** against the real app. `npm run tauri dev` opens the app.
+hotkey, engine, IPC) with **248 passing unit tests**; `src/` is a ShadCN + Tailwind v4 UI
+styled after Kanbini (macro list, step editor, settings), with **104 Vitest tests** for its
+helpers and components, and **113 Playwright e2e tests** against the real app. `npm run tauri dev` opens the app.
 
 The M0/M1 Win32 assumptions were measured before being ported; see
 [tools/m0-probe/README.md](tools/m0-probe/README.md). That harness found three errors in the
@@ -253,9 +253,14 @@ These are the things that silently break this category of app. Full reasoning in
    toggle stand aside (and the registration is dropped) so the combo is recorded instead of
    firing; the panic key still works, and a forgotten recording expires after 60 s.
    Record mode and click-to-pick are `hotkey::Capture` modes (`set_capture`): no hotkeys,
-   the panic key ends them, and a `WH_MOUSE_LL` hook is installed on the hook thread only
-   while they last. Its callback follows the same rules, ignores all injected input
-   (`LLMHF_INJECTED`), and in pick mode swallows only the picking left click. A 30 s thread
+   the panic key ends them and still stops any run (`logic::CAPTURE_PANIC`), and a
+   `WH_MOUSE_LL` hook is installed on the hook thread only while they last. Its callback
+   follows the same rules, ignores all injected input (`LLMHF_INJECTED`), and in pick mode
+   swallows only the picking left click. In record mode it also reports every mouse move
+   (the worker drops only repeats of the same position; they become recorded paths, saved
+   packed, `model::packed_path`). Recorded
+   events are timestamped in the callbacks with a precise clock (`hook::rec_ms`), never the
+   events' own `time`, which moves in ~16 ms steps. A 30 s thread
    timer reinstalls the hook (new before old is removed), because Windows removes a slow hook
    silently and permanently.
 
@@ -276,6 +281,10 @@ These are the things that silently break this category of app. Full reasoning in
 
 7. **Never sleep naively.** Default timer granularity is ~15.6 ms, so `sleep(5ms)` overshoots
    badly. Use a high-resolution waitable timer (`CREATE_WAITABLE_TIMER_HIGH_RESOLUTION`).
+   Even that wakes a little late, and over a long macro it adds up (a recording replayed 74 ms
+   late after 40 clicks), so the engine keeps the run's timeline (`Engine::plan`): every pause
+   adds its length, a Wait step sleeps only until the timeline, and recorded paths are
+   scheduled on it. Pauses inside a step (settle, hold) always run in full.
 
 8. **Every run is cancellable, there is always a panic stop, and the worker never blocks.**
    Each macro runs on its own thread so the worker loop handles Panic, Stop and Toggle the
@@ -286,6 +295,9 @@ These are the things that silently break this category of app. Full reasoning in
 9. **Click steps settle.** Pause after the cursor arrives and again after the release
    (`settle_ms`, default 50 to 75 ms). Without it the cursor left the target 0.05 ms after
    the button came up and frame-polling targets (games) registered the release elsewhere.
+   A recorded click keeps the user's own rests on each side (`settle_ms` before the press,
+   `dwell_ms` after the release): one value for both was cut to the shorter, and the replay
+   arrived just as it pressed.
 
 10. **Do not ship elevated by default.** A non-elevated process cannot inject into an
     elevated window (UIPI). Surface that as an explicit, user-initiated "restart as
@@ -436,9 +448,9 @@ Mostly carried over from Kanbini, whose renderer this UI copies the look of:
 
 ## Testing
 
-`cargo test` is the gate: 208 tests, no Windows APIs required for most of them. The UI has
-`npm test` (98 Vitest tests: the pure helpers in `src/lib`, and components with their IPC
-mocked, in jsdom) and `npm run e2e` (109 Playwright tests), all run locally before every release and by
+`cargo test` is the gate: 248 tests, no Windows APIs required for most of them. The UI has
+`npm test` (104 Vitest tests: the pure helpers in `src/lib`, and components with their IPC
+mocked, in jsdom) and `npm run e2e` (113 Playwright tests), all run locally before every release and by
 CI on pull requests.
 
 - Vitest is for logic that needs no app: summaries and estimates (`lib/steps.ts`, which
