@@ -90,7 +90,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\m0-probe\probe.ps1 saf
 **No releases unless the owner asks for one.** Do not run `npm run release`, bump the
 version, make or push a `chore(release):` commit, or approve the `release` environment's
 publish job until the owner explicitly asks for a release (the owner's rule since
-2026-10-26). Ordinary commits and pushes to main are fine: they never publish anything. New
+2026-10-26). Commits and pushes need the owner's word too (see How to work here). New
 changes collect under `## Unreleased` in `CHANGELOG.md` until then.
 
 When a release is asked for, every version gets a new executable and the previous one is
@@ -312,6 +312,10 @@ input, the answer is "that target is unsupported," documented in
 [docs/02-windows-input-research.md](docs/02-windows-input-research.md#5-what-this-project-will-not-do).
 
 ## How to work here
+
+- **No commits or pushes unless the owner asks.** Leave finished work in the working tree,
+  tested, and say what is ready; run `git commit` or `git push` only when the owner says to
+  (the owner's rule since 2026-10-26). Releases have their own rule, under Releases.
 
 Adopted from Kanbini:
 
